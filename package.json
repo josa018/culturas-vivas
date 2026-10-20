@@ -9,7 +9,12 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@libsql/client": "^0.18.0",
     "@types/aframe": "^1.2.10",
+    "@types/node": "^26.6.5",
+    "dotenv": "^18.0.8",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vite": "^8.3.4"
   },
