@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Respuesta de encuesta SUS - Culturas Vivas",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id_sesion", "modo", "respuestas"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "id_sesion": { "type": "string", "pattern": "^[a-z0-9]{6,12}$" },
+    "modo": { "type": "string", "enum": ["vr", "2d"] },
+    "respuestas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["q1", "q2", "q3"],
+      "properties": {
+        "q1": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "q2": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "q3": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    }
+  }
+}
