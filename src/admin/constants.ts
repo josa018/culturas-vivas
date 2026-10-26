@@ -40,11 +40,14 @@ export const ADMIN_UI_CLASSES = {
   COUNTER_WIDGET: "cv-admin-counter-widget",
   COUNTER_METRIC_CONTAINER: "cv-admin-counter-metric-container",
   COUNTER_VALUE: "cv-admin-counter-value",
+  COUNTER_LABEL: "cv-admin-counter-label",
 
   // Attendance Chart Widget
   CHART_WIDGET: "cv-admin-chart-widget",
   CHART_CONTAINER: "cv-admin-chart-container",
   CHART_CANVAS: "cv-admin-chart-canvas",
+  CHART_KPI_GROUP: "cv-admin-chart-kpi",
+  CHART_PEAK_BADGE: "cv-admin-peak-badge",
 
   // Surveys Table Widget
   SURVEY_WIDGET: "cv-admin-survey-widget",
@@ -79,9 +82,12 @@ export const ADMIN_UI_TEXT = {
   COUNTER_SUBTITLE: "Sesiones concurrentes en la experiencia WebXR",
 
   // Attendance Chart
-  CHART_TITLE: "Concurrencia por Hora",
+  CHART_TITLE: "Concurrencia de Visitantes",
   CHART_SUBTITLE: "Distribución de sesiones activas (Hoy)",
   CHART_DATASET_LABEL: "Usuarios conectados",
+  COUNTER_LABEL: "Usuarios en Línea",
+  PEAK_LABEL_PREFIX: "Pico de hoy: ",
+  PEAK_LABEL_SUFFIX: " sesiones",
 
   // Survey Table
   SURVEY_TITLE: "Encuestas Recientes",

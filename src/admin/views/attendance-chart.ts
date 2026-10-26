@@ -7,6 +7,7 @@ import {
   Tooltip,
 } from "chart.js";
 import { AdminDashboardStore } from "../admin-dashboard-store";
+import type { DashboardState } from "../admin-dashboard-store";
 import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 
 // Strict tree-shaking registration
@@ -26,6 +27,8 @@ const CHART_THEME_TOKENS = {
 export class AttendanceChartWidget {
   private container: HTMLElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
+  private valueElement: HTMLElement | null = null;
+  private peakElement: HTMLElement | null = null;
   private chartInstance: Chart | null = null;
   private unsubscribe: (() => void) | null = null;
   private readonly store: AdminDashboardStore;
@@ -42,6 +45,7 @@ export class AttendanceChartWidget {
     const card = document.createElement("section");
     card.className = `${ADMIN_UI_CLASSES.CARD} ${ADMIN_UI_CLASSES.CHART_WIDGET}`;
 
+    // Header: Title (left) + Peak badge (right)
     const header = document.createElement("header");
     header.className = ADMIN_UI_CLASSES.CARD_HEADER;
 
@@ -53,8 +57,29 @@ export class AttendanceChartWidget {
     title.textContent = ADMIN_UI_TEXT.CHART_TITLE;
 
     titleGroup.appendChild(title);
-    header.appendChild(titleGroup);
 
+    const peakBadge = document.createElement("span");
+    peakBadge.className = ADMIN_UI_CLASSES.CHART_PEAK_BADGE;
+    this.peakElement = peakBadge;
+
+    header.append(titleGroup, peakBadge);
+
+    // KPI Summary Row: Number + Label
+    const kpiRow = document.createElement("div");
+    kpiRow.className = ADMIN_UI_CLASSES.CHART_KPI_GROUP;
+
+    const valueSpan = document.createElement("span");
+    valueSpan.className = ADMIN_UI_CLASSES.COUNTER_VALUE;
+    valueSpan.setAttribute("data-admin-metric", "active-online-users");
+    this.valueElement = valueSpan;
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = ADMIN_UI_CLASSES.COUNTER_LABEL;
+    labelSpan.textContent = ADMIN_UI_TEXT.COUNTER_LABEL;
+
+    kpiRow.append(valueSpan, labelSpan);
+
+    // Body: Chart Container + Canvas
     const body = document.createElement("div");
     body.className = `${ADMIN_UI_CLASSES.CARD_BODY} ${ADMIN_UI_CLASSES.CHART_CONTAINER}`;
 
@@ -65,13 +90,15 @@ export class AttendanceChartWidget {
     this.canvasElement = canvas;
 
     body.appendChild(canvas);
-    card.append(header, body);
+    card.append(header, kpiRow, body);
     parent.appendChild(card);
     this.container = card;
 
+    this.updateMetrics(this.store.getState());
     this.renderChart();
 
     this.unsubscribe = this.store.subscribe((state) => {
+      this.updateMetrics(state);
       this.updateChart(state.hourlyAttendance.values);
     });
   }
@@ -90,6 +117,8 @@ export class AttendanceChartWidget {
       this.container = null;
     }
     this.canvasElement = null;
+    this.valueElement = null;
+    this.peakElement = null;
   }
 
   public getElement(): HTMLElement | null {
@@ -98,6 +127,19 @@ export class AttendanceChartWidget {
 
   public getChartInstance(): Chart | null {
     return this.chartInstance;
+  }
+
+  private updateMetrics(state: DashboardState): void {
+    if (this.valueElement) {
+      this.valueElement.textContent = String(state.activeVisitorsCount);
+    }
+    if (this.peakElement) {
+      const peak =
+        state.hourlyAttendance.values.length > 0
+          ? Math.max(...state.hourlyAttendance.values)
+          : 0;
+      this.peakElement.textContent = `${ADMIN_UI_TEXT.PEAK_LABEL_PREFIX}${peak}${ADMIN_UI_TEXT.PEAK_LABEL_SUFFIX}`;
+    }
   }
 
   private renderChart(): void {

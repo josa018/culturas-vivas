@@ -371,9 +371,21 @@ function runAdminDashboardUnitTests(): void {
     const el = chartWidget.getElement() as unknown as MockElement;
     assert.ok(el !== null);
 
-    const canvas = el.children[1].children[0];
+    const header = el.children[0];
+    const peakBadge = header.children[1];
+    assert.ok(peakBadge.textContent.includes(ADMIN_UI_TEXT.PEAK_LABEL_PREFIX));
+
+    const kpiRow = el.children[1];
+    const valueSpan = kpiRow.children[0];
+    assert.equal(valueSpan.textContent, "5");
+
+    const canvas = el.children[2].children[0];
     assert.equal(canvas.getAttribute("role"), "img");
     assert.equal(canvas.getAttribute("aria-label"), ADMIN_UI_TEXT.CHART_TITLE);
+
+    // Reactivity check on live visitor change
+    store.incrementVisitor();
+    assert.equal(valueSpan.textContent, "6");
 
     chartWidget.unmount();
     assert.equal(chartWidget.getElement(), null);

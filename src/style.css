@@ -598,7 +598,7 @@ a-scene {
 .cv-admin-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: 24px;
   padding: 28px;
   max-width: 1400px;
   width: 100%;
@@ -620,21 +620,6 @@ a-scene {
 .cv-admin-card-body {
   min-width: 0;
   max-width: 100%;
-}
-
-@media (min-width: 768px) {
-  .cv-admin-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .cv-admin-survey-widget {
-    grid-column: span 2;
-  }
-}
-
-@media (min-width: 1024px) {
-  .cv-admin-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-  }
 }
 
 /* M3 Elevated Cards */
@@ -681,37 +666,44 @@ a-scene {
   flex: 1;
 }
 
-/* Metric Stat Card */
-.cv-admin-counter-metric-container {
+/* Unified Concurrency & Telemetry Card */
+.cv-admin-chart-kpi {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0 12px 0;
 }
 
 .cv-admin-counter-value {
-  font-size: 5.5rem;
+  font-size: 3.4rem;
   font-weight: 700;
   color: var(--md-sys-color-primary);
   line-height: 1;
-  letter-spacing: -2px;
-  text-align: center;
+  letter-spacing: -1px;
 }
 
-.cv-admin-counter-widget .cv-admin-card-body {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
+.cv-admin-counter-label {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  letter-spacing: 0.1px;
 }
 
-/* Attendance Chart */
+.cv-admin-peak-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 6px 14px;
+  border-radius: var(--cv-radius-pill);
+}
+
 .cv-admin-chart-container {
   position: relative;
-  height: 180px;
-  min-height: 180px;
-  max-height: 180px;
+  height: 220px;
+  min-height: 220px;
+  max-height: 240px;
   width: 100%;
 }
 

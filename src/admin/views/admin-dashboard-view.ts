@@ -2,7 +2,6 @@ import { AdminAuthStore } from "../admin-auth-store";
 import { AdminDashboardStore } from "../admin-dashboard-store";
 import { ADMIN_UI_CLASSES } from "../constants";
 import { AdminHeaderWidget } from "./admin-header";
-import { CapacityCounterCardWidget } from "./capacity-counter-card";
 import { AttendanceChartWidget } from "./attendance-chart";
 import { SurveysTableWidget } from "./surveys-table";
 
@@ -15,7 +14,6 @@ export interface AdminDashboardViewOptions {
 export class AdminDashboardView {
   private container: HTMLElement | null = null;
   private headerWidget: AdminHeaderWidget | null = null;
-  private counterWidget: CapacityCounterCardWidget | null = null;
   private chartWidget: AttendanceChartWidget | null = null;
   private surveyWidget: SurveysTableWidget | null = null;
   private readonly authStore: AdminAuthStore;
@@ -47,9 +45,6 @@ export class AdminDashboardView {
     const grid = document.createElement("div");
     grid.className = ADMIN_UI_CLASSES.GRID_LAYOUT;
 
-    this.counterWidget = new CapacityCounterCardWidget(this.dashboardStore);
-    this.counterWidget.mount(grid);
-
     this.chartWidget = new AttendanceChartWidget(this.dashboardStore);
     this.chartWidget.mount(grid);
 
@@ -65,10 +60,6 @@ export class AdminDashboardView {
     if (this.headerWidget) {
       this.headerWidget.unmount();
       this.headerWidget = null;
-    }
-    if (this.counterWidget) {
-      this.counterWidget.unmount();
-      this.counterWidget = null;
     }
     if (this.chartWidget) {
       this.chartWidget.unmount();
@@ -98,10 +89,6 @@ export class AdminDashboardView {
 
   public getElement(): HTMLElement | null {
     return this.container;
-  }
-
-  public getCounterWidget(): CapacityCounterCardWidget | null {
-    return this.counterWidget;
   }
 
   public getChartWidget(): AttendanceChartWidget | null {
