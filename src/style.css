@@ -681,121 +681,29 @@ a-scene {
   flex: 1;
 }
 
-/* Capacity KPI Card */
+/* Metric Stat Card */
 .cv-admin-counter-metric-container {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
 .cv-admin-counter-value {
-  font-size: 3.8rem;
+  font-size: 5.5rem;
   font-weight: 700;
-  color: var(--md-sys-color-on-surface);
+  color: var(--md-sys-color-primary);
   line-height: 1;
-  letter-spacing: -1px;
-}
-
-.cv-admin-counter-subtext {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-/* M3 Linear Progress Indicator */
-.cv-admin-progress-track {
-  width: 100%;
-  height: 8px;
-  border-radius: var(--cv-radius-pill);
-  background-color: var(--md-sys-color-surface-container-highest);
-  overflow: hidden;
-}
-
-.cv-admin-progress-fill {
-  height: 100%;
-  border-radius: var(--cv-radius-pill);
-  background-color: var(--md-custom-capacity-optimal);
-  transition: width 350ms var(--cv-transition-easing),
-              background-color var(--cv-transition-duration) ease;
+  letter-spacing: -2px;
+  text-align: center;
 }
 
 .cv-admin-counter-widget .cv-admin-card-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.cv-admin-counter-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-/* Status Chips */
-.cv-admin-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: var(--cv-radius-pill);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.1px;
-  transition: all var(--cv-transition-duration) ease;
-}
-
-.cv-admin-chip--optimal {
-  background-color: rgba(109, 213, 140, 0.12);
-  color: var(--md-custom-capacity-optimal);
-  border: 1px solid var(--md-custom-capacity-optimal);
-}
-
-.cv-admin-chip--moderate {
-  background-color: rgba(249, 188, 44, 0.12);
-  color: var(--md-custom-capacity-moderate);
-  border: 1px solid var(--md-custom-capacity-moderate);
-}
-
-.cv-admin-chip--high {
-  background-color: rgba(255, 137, 125, 0.12);
-  color: var(--md-custom-capacity-high);
-  border: 1px solid var(--md-custom-capacity-high);
-}
-
-/* Stepper Controls */
-.cv-admin-counter-controls {
-  display: inline-flex;
-  gap: 8px;
-}
-
-.cv-admin-stepper-btn {
-  width: var(--cv-min-touch-target);
-  height: var(--cv-min-touch-target);
-  border-radius: var(--cv-radius-medium);
-  background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-surface);
-  font-size: 22px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: transform 120ms ease, background-color 150ms ease;
-}
-
-.cv-admin-stepper-btn:hover {
-  background-color: var(--md-sys-color-surface-container-highest);
-}
-
-.cv-admin-stepper-btn:active {
-  transform: scale(0.94);
-}
-
-.cv-admin-stepper-btn:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
+  align-items: center;
+  text-align: center;
 }
 
 /* Attendance Chart */

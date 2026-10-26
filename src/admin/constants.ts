@@ -40,15 +40,6 @@ export const ADMIN_UI_CLASSES = {
   COUNTER_WIDGET: "cv-admin-counter-widget",
   COUNTER_METRIC_CONTAINER: "cv-admin-counter-metric-container",
   COUNTER_VALUE: "cv-admin-counter-value",
-  COUNTER_SUBTEXT: "cv-admin-counter-subtext",
-  PROGRESS_TRACK: "cv-admin-progress-track",
-  PROGRESS_FILL: "cv-admin-progress-fill",
-  COUNTER_FOOTER: "cv-admin-counter-footer",
-  COUNTER_STATUS_OPTIMAL: "cv-admin-chip cv-admin-chip--optimal",
-  COUNTER_STATUS_MODERATE: "cv-admin-chip cv-admin-chip--moderate",
-  COUNTER_STATUS_HIGH: "cv-admin-chip cv-admin-chip--high",
-  COUNTER_CONTROLS: "cv-admin-counter-controls",
-  COUNTER_STEPPER_BTN: "cv-admin-stepper-btn",
 
   // Attendance Chart Widget
   CHART_WIDGET: "cv-admin-chart-widget",
@@ -84,18 +75,13 @@ export const ADMIN_UI_TEXT = {
   HEADER_LOGOUT_BTN: "Cerrar Sesión",
 
   // Capacity Counter
-  COUNTER_TITLE: "Aforo en Sala",
-  COUNTER_SUBTITLE: "Capacidad WebXR en tiempo real",
-  STATUS_OPTIMAL: "● Aforo Óptimo",
-  STATUS_MODERATE: "● Aforo Moderado",
-  STATUS_HIGH: "● Aforo Máximo",
-  STEPPER_INC_LABEL: "+",
-  STEPPER_DEC_LABEL: "−",
+  COUNTER_TITLE: "Usuarios en Línea",
+  COUNTER_SUBTITLE: "Sesiones concurrentes en la experiencia WebXR",
 
   // Attendance Chart
-  CHART_TITLE: "Aforo Histórico",
-  CHART_SUBTITLE: "Visitantes por hora (Hoy)",
-  CHART_DATASET_LABEL: "Visitantes por hora",
+  CHART_TITLE: "Concurrencia por Hora",
+  CHART_SUBTITLE: "Distribución de sesiones activas (Hoy)",
+  CHART_DATASET_LABEL: "Usuarios conectados",
 
   // Survey Table
   SURVEY_TITLE: "Encuestas Recientes",

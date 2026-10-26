@@ -33,6 +33,7 @@ export class AdminController {
   }
 
   public destroy(): void {
+    this.dashboardStore.stopSimulation();
     if (this.unsubscribeAuth) {
       this.unsubscribeAuth();
       this.unsubscribeAuth = null;
@@ -95,7 +96,9 @@ export class AdminController {
         this.dashboardView.mount(this.rootContainer);
       }
       this.dashboardView.show();
+      this.dashboardStore.startSimulation();
     } else {
+      this.dashboardStore.stopSimulation();
       if (this.dashboardView) {
         this.dashboardView.unmount();
         this.dashboardView = null;

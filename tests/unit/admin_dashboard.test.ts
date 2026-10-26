@@ -127,6 +127,18 @@ function runAdminDashboardUnitTests(): void {
 
     store.decrementVisitor();
     assert.equal(store.getState().activeVisitorsCount, 0); // Must remain clamped at 0
+
+    // Fluctuation logic
+    store.fluctuateVisitors();
+    assert.ok(store.getState().activeVisitorsCount >= 0);
+
+    // Simulation lifecycle
+    assert.equal(store.isSimulating(), false);
+    store.startSimulation(100);
+    assert.equal(store.isSimulating(), true);
+    store.stopSimulation();
+    assert.equal(store.isSimulating(), false);
+
     console.log(
       "✓ Test 3 Passed: AdminDashboardStore counter and clamp operations valid",
     );
@@ -277,7 +289,7 @@ function runAdminDashboardUnitTests(): void {
     );
   }
 
-  // Test 8: CapacityCounterCardWidget increment, decrement, progress, and threshold badges
+  // Test 8: CapacityCounterCardWidget active metric display and reactive updates
   {
     setupMockDocument();
     const parent = new MockElement("div") as unknown as HTMLElement;
@@ -289,41 +301,25 @@ function runAdminDashboardUnitTests(): void {
     const el = counter.getElement() as unknown as MockElement;
     assert.ok(el !== null);
 
-    // Query elements via data-action
-    const incBtn = el.querySelector(
-      '[data-action="inc-visitor"]',
-    ) as MockElement;
-    const decBtn = el.querySelector(
-      '[data-action="dec-visitor"]',
-    ) as MockElement;
-    assert.ok(incBtn !== null);
-    assert.ok(decBtn !== null);
-
     const cardBody = el.children[1];
-    const footer = cardBody.children[1];
-    const statusBadge = footer.children[0];
-    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_OPTIMAL);
+    const metricContainer = cardBody.children[0];
+    const valueSpan = metricContainer.children[0];
 
-    // Increment
-    incBtn.dispatchEvent("click");
+    assert.equal(valueSpan.textContent, "5");
+
+    // Direct store fluctuation reactivity
+    store.incrementVisitor();
     assert.equal(store.getState().activeVisitorsCount, 6);
+    assert.equal(valueSpan.textContent, "6");
 
-    // Decrement
-    decBtn.dispatchEvent("click");
+    store.decrementVisitor();
     assert.equal(store.getState().activeVisitorsCount, 5);
-
-    // Moderate Threshold check
-    store.setVisitorCount(ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX + 2);
-    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_MODERATE);
-
-    // High Threshold check
-    store.setVisitorCount(ADMIN_THRESHOLDS.CAPACITY_MODERATE_MAX + 5);
-    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_HIGH);
+    assert.equal(valueSpan.textContent, "5");
 
     counter.unmount();
     assert.equal(counter.getElement(), null);
     console.log(
-      "✓ Test 8 Passed: CapacityCounterCardWidget M3 progress and threshold reactivity valid",
+      "✓ Test 8 Passed: CapacityCounterCardWidget M3 metric display and reactive updates valid",
     );
   }
 
@@ -413,10 +409,12 @@ function runAdminDashboardUnitTests(): void {
       password: ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
     });
     assert.equal(authStore.getState().isAuthenticated, true);
+    assert.equal(dashboardStore.isSimulating(), true);
 
     // Logout transition
     authStore.logout();
     assert.equal(authStore.getState().isAuthenticated, false);
+    assert.equal(dashboardStore.isSimulating(), false);
 
     controller.destroy();
     console.log(

@@ -52,11 +52,7 @@ export class AttendanceChartWidget {
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.CHART_TITLE;
 
-    const subtitle = document.createElement("p");
-    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
-    subtitle.textContent = ADMIN_UI_TEXT.CHART_SUBTITLE;
-
-    titleGroup.append(title, subtitle);
+    titleGroup.appendChild(title);
     header.appendChild(titleGroup);
 
     const body = document.createElement("div");
