@@ -557,35 +557,6 @@ a-scene {
   gap: 14px;
 }
 
-.cv-admin-avatar-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  padding: 4px 14px 4px 6px;
-  border-radius: var(--cv-radius-pill);
-}
-
-.cv-admin-avatar-circle {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.cv-admin-user-text {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface);
-}
-
 .cv-admin-btn-logout {
   width: auto !important;
   min-height: 38px !important;

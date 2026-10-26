@@ -44,20 +44,6 @@ export class AdminHeaderWidget {
     const actions = document.createElement("div");
     actions.className = ADMIN_UI_CLASSES.HEADER_ACTIONS;
 
-    // User Avatar Chip (M3 style)
-    const userChip = document.createElement("div");
-    userChip.className = ADMIN_UI_CLASSES.HEADER_AVATAR_CHIP;
-
-    const avatarCircle = document.createElement("span");
-    avatarCircle.className = ADMIN_UI_CLASSES.HEADER_AVATAR_CIRCLE;
-    avatarCircle.textContent = (this.options.username[0] || "A").toUpperCase();
-
-    const userText = document.createElement("span");
-    userText.className = ADMIN_UI_CLASSES.HEADER_USER_TEXT;
-    userText.textContent = `${this.options.username} (${this.options.role})`;
-
-    userChip.append(avatarCircle, userText);
-
     // Logout Button (M3 Outlined style)
     const logoutBtn = document.createElement("button");
     logoutBtn.type = "button";
@@ -68,7 +54,7 @@ export class AdminHeaderWidget {
       this.options.onLogout();
     });
 
-    actions.append(userChip, logoutBtn);
+    actions.appendChild(logoutBtn);
     header.append(brand, actions);
 
     parent.appendChild(header);

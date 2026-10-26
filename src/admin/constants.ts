@@ -22,9 +22,6 @@ export const ADMIN_UI_CLASSES = {
   HEADER_APP_TITLE: "cv-admin-app-title",
   HEADER_APP_SUBTITLE: "cv-admin-app-subtitle",
   HEADER_ACTIONS: "cv-admin-header-actions",
-  HEADER_AVATAR_CHIP: "cv-admin-avatar-chip",
-  HEADER_AVATAR_CIRCLE: "cv-admin-avatar-circle",
-  HEADER_USER_TEXT: "cv-admin-user-text",
   BUTTON_LOGOUT: "cv-btn cv-btn--outline cv-admin-btn-logout",
 
   // Grid Layout

@@ -274,9 +274,9 @@ function runAdminDashboardUnitTests(): void {
       ADMIN_UI_TEXT.HEADER_TITLE,
     );
 
-    // Actions: child 0 is avatar chip, child 1 is logout button
+    // Actions: child 0 is logout button
     const actions = el.children[1];
-    const logoutBtn = actions.children[1];
+    const logoutBtn = actions.children[0];
     assert.equal(logoutBtn.textContent, ADMIN_UI_TEXT.HEADER_LOGOUT_BTN);
 
     logoutBtn.dispatchEvent("click");
