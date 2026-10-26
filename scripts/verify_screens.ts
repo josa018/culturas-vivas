@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import { assert } from "./assert";
 import { NavigationAction, ScreenId } from "../src/navigation/index";
 import type { DispatchPayload } from "../src/navigation/index";
 import {

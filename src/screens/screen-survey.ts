@@ -101,10 +101,13 @@ export class SurveyScreenView implements ScreenView {
 
     submitBtn.addEventListener("click", (event) => {
       event.stopPropagation();
+      const feedbackValue = feedbackTextarea.value
+        ? feedbackTextarea.value.trim()
+        : "";
       this.dispatch(NavigationAction.COMPLETE_SURVEY, {
         surveyAnswers: {
           rating: this.selectedRating,
-          feedback: feedbackTextarea.value.trim() || undefined,
+          feedback: feedbackValue || undefined,
         },
       });
     });
