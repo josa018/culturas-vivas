@@ -300,7 +300,7 @@ function runAdminDashboardUnitTests(): void {
     assert.ok(decBtn !== null);
 
     const cardBody = el.children[1];
-    const footer = cardBody.children[2];
+    const footer = cardBody.children[1];
     const statusBadge = footer.children[0];
     assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_OPTIMAL);
 

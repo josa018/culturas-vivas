@@ -685,7 +685,7 @@ a-scene {
 .cv-admin-counter-metric-container {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .cv-admin-counter-value {
@@ -719,12 +719,17 @@ a-scene {
               background-color var(--cv-transition-duration) ease;
 }
 
+.cv-admin-counter-widget .cv-admin-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .cv-admin-counter-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-top: auto;
 }
 
 /* Status Chips */
@@ -796,7 +801,9 @@ a-scene {
 /* Attendance Chart */
 .cv-admin-chart-container {
   position: relative;
-  min-height: 260px;
+  height: 180px;
+  min-height: 180px;
+  max-height: 180px;
   width: 100%;
 }
 

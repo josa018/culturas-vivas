@@ -78,7 +78,7 @@ export const ADMIN_UI_TEXT = {
   LOGIN_ERROR_MESSAGE:
     "Credenciales incorrectas. Verifica usuario y contraseña.",
 
-  // Header (Clean Google M3 - No redundant shift badge)
+  // Header
   HEADER_TITLE: "Culturas Vivas",
   HEADER_SUBTITLE: "Panel de Recepción",
   HEADER_LOGOUT_BTN: "Cerrar Sesión",

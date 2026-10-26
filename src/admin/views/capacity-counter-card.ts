@@ -48,7 +48,7 @@ export class CapacityCounterCardWidget {
     const body = document.createElement("div");
     body.className = ADMIN_UI_CLASSES.CARD_BODY;
 
-    // Metric display container
+    // Metric display container (Number + Subtext + Progress)
     const metricContainer = document.createElement("div");
     metricContainer.className = ADMIN_UI_CLASSES.COUNTER_METRIC_CONTAINER;
 
@@ -60,8 +60,6 @@ export class CapacityCounterCardWidget {
     const subtext = document.createElement("span");
     subtext.className = ADMIN_UI_CLASSES.COUNTER_SUBTEXT;
     this.subtextElement = subtext;
-
-    metricContainer.append(valueSpan, subtext);
 
     // M3 Linear Progress Indicator
     const progressTrack = document.createElement("div");
@@ -78,6 +76,7 @@ export class CapacityCounterCardWidget {
     this.progressFillElement = progressFill;
 
     progressTrack.appendChild(progressFill);
+    metricContainer.append(valueSpan, subtext, progressTrack);
 
     // Footer with Status Chip (left) and Stepper (+ / -) (right)
     const footer = document.createElement("div");
@@ -115,7 +114,7 @@ export class CapacityCounterCardWidget {
     controls.append(decBtn, incBtn);
     footer.append(statusBadge, controls);
 
-    body.append(metricContainer, progressTrack, footer);
+    body.append(metricContainer, footer);
     card.append(header, body);
 
     parent.appendChild(card);
