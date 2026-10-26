@@ -14,34 +14,41 @@ export const ADMIN_UI_CLASSES = {
   TITLE: "cv-title",
   SUBTITLE: "cv-description",
 
-  // Dashboard Shell
+  // Dashboard Shell & Top App Bar
   DASHBOARD_CONTAINER: "cv-admin-dashboard",
   HEADER: "cv-admin-header",
   HEADER_BRAND: "cv-admin-header-brand",
+  HEADER_TITLE_GROUP: "cv-admin-header-title-group",
+  HEADER_APP_TITLE: "cv-admin-app-title",
+  HEADER_APP_SUBTITLE: "cv-admin-app-subtitle",
   HEADER_ACTIONS: "cv-admin-header-actions",
-  HEADER_BADGE: "cv-admin-badge cv-admin-badge--online",
-  HEADER_USER: "cv-admin-header-user",
+  HEADER_AVATAR_CHIP: "cv-admin-avatar-chip",
+  HEADER_AVATAR_CIRCLE: "cv-admin-avatar-circle",
+  HEADER_USER_TEXT: "cv-admin-user-text",
   BUTTON_LOGOUT: "cv-btn cv-btn--outline cv-admin-btn-logout",
 
   // Grid Layout
   GRID_LAYOUT: "cv-admin-grid",
   CARD: "cv-card cv-admin-card",
   CARD_HEADER: "cv-admin-card-header",
+  CARD_TITLE_GROUP: "cv-admin-card-title-group",
   CARD_TITLE: "cv-admin-card-title",
+  CARD_SUBTITLE: "cv-admin-card-subtitle",
   CARD_BODY: "cv-admin-card-body",
 
   // Capacity Counter Widget
   COUNTER_WIDGET: "cv-admin-counter-widget",
+  COUNTER_METRIC_CONTAINER: "cv-admin-counter-metric-container",
   COUNTER_VALUE: "cv-admin-counter-value",
-  COUNTER_STATUS: "cv-admin-counter-status",
-  COUNTER_STATUS_OPTIMAL: "cv-admin-badge cv-admin-badge--optimal",
-  COUNTER_STATUS_MODERATE: "cv-admin-badge cv-admin-badge--moderate",
-  COUNTER_STATUS_HIGH: "cv-admin-badge cv-admin-badge--high",
+  COUNTER_SUBTEXT: "cv-admin-counter-subtext",
+  PROGRESS_TRACK: "cv-admin-progress-track",
+  PROGRESS_FILL: "cv-admin-progress-fill",
+  COUNTER_FOOTER: "cv-admin-counter-footer",
+  COUNTER_STATUS_OPTIMAL: "cv-admin-chip cv-admin-chip--optimal",
+  COUNTER_STATUS_MODERATE: "cv-admin-chip cv-admin-chip--moderate",
+  COUNTER_STATUS_HIGH: "cv-admin-chip cv-admin-chip--high",
   COUNTER_CONTROLS: "cv-admin-counter-controls",
-  COUNTER_BTN_INC: "cv-btn cv-btn--primary cv-admin-btn-step",
-  COUNTER_BTN_DEC: "cv-btn cv-btn--secondary cv-admin-btn-step",
-  SIMULATION_TOGGLE: "cv-admin-sim-toggle",
-  SIMULATION_CHECKBOX: "cv-admin-sim-checkbox",
+  COUNTER_STEPPER_BTN: "cv-admin-stepper-btn",
 
   // Attendance Chart Widget
   CHART_WIDGET: "cv-admin-chart-widget",
@@ -56,7 +63,7 @@ export const ADMIN_UI_CLASSES = {
   TABLE_TH: "cv-admin-th",
   TABLE_TD: "cv-admin-td",
   TABLE_STARS: "cv-admin-stars",
-  TABLE_MODE_BADGE: "cv-admin-mode-badge",
+  TABLE_MODE_CHIP: "cv-admin-mode-chip",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -71,37 +78,37 @@ export const ADMIN_UI_TEXT = {
   LOGIN_ERROR_MESSAGE:
     "Credenciales incorrectas. Verifica usuario y contraseña.",
 
-  // Header
-  HEADER_TITLE: "Culturas Vivas — Panel del Bibliotecario",
-  HEADER_STATUS_ONLINE: "En Turno (Recepción)",
+  // Header (Clean Google M3 - No redundant shift badge)
+  HEADER_TITLE: "Culturas Vivas",
+  HEADER_SUBTITLE: "Panel de Recepción",
   HEADER_LOGOUT_BTN: "Cerrar Sesión",
 
   // Capacity Counter
-  COUNTER_TITLE: "Aforo Actual en Sala",
-  COUNTER_UNIT: "visitantes activos",
-  COUNTER_BTN_INC: "+ Entrar",
-  COUNTER_BTN_DEC: "− Salir",
-  COUNTER_AUTO_SIM_LABEL: "Simular fluctuación en tiempo real (5s)",
-  STATUS_OPTIMAL: "Aforo Óptimo",
-  STATUS_MODERATE: "Aforo Moderado",
-  STATUS_HIGH: "Aforo Máximo",
+  COUNTER_TITLE: "Aforo en Sala",
+  COUNTER_SUBTITLE: "Capacidad WebXR en tiempo real",
+  STATUS_OPTIMAL: "● Aforo Óptimo",
+  STATUS_MODERATE: "● Aforo Moderado",
+  STATUS_HIGH: "● Aforo Máximo",
+  STEPPER_INC_LABEL: "+",
+  STEPPER_DEC_LABEL: "−",
 
   // Attendance Chart
-  CHART_TITLE: "Aforo Histórico por Horario",
+  CHART_TITLE: "Aforo Histórico",
+  CHART_SUBTITLE: "Visitantes por hora (Hoy)",
   CHART_DATASET_LABEL: "Visitantes por hora",
 
   // Survey Table
-  SURVEY_TITLE: "Encuestas de Satisfacción Recientes",
-  SURVEY_AVG_PREFIX: "Promedio:",
+  SURVEY_TITLE: "Encuestas Recientes",
+  SURVEY_AVG_PREFIX: "★",
   TABLE_COL_TIME: "Hora",
   TABLE_COL_MODE: "Modo",
   TABLE_COL_RATING: "Calificación",
-  TABLE_COL_FEEDBACK: "Comentarios",
+  TABLE_COL_FEEDBACK: "Comentario",
   NO_SURVEYS: "Sin encuestas registradas en la jornada actual.",
 } as const;
 
 export const ADMIN_THRESHOLDS = {
+  MAX_CAPACITY: 25,
   CAPACITY_OPTIMAL_MAX: 10,
   CAPACITY_MODERATE_MAX: 20,
-  AUTO_SIMULATION_INTERVAL_MS: 5000,
 } as const;

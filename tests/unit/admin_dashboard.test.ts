@@ -21,7 +21,7 @@ import {
 
 function runAdminDashboardUnitTests(): void {
   console.log(
-    "--- [UNIT TEST] Admin Dashboard Full Vertical Slice (1, 2 & 3) ---",
+    "--- [UNIT TEST] Admin Dashboard Full Vertical Slice (M3 Redesign) ---",
   );
 
   // Test 1: RouteMatcher matching patterns
@@ -255,18 +255,29 @@ function runAdminDashboardUnitTests(): void {
     const el = header.getElement() as unknown as MockElement;
     assert.ok(el !== null);
 
-    const logoutBtn = el.children[1].children[1];
+    // Verify brand title and subtitle
+    const brand = el.children[0];
+    assert.equal(
+      brand.children[0].children[0].textContent,
+      ADMIN_UI_TEXT.HEADER_TITLE,
+    );
+
+    // Actions: child 0 is avatar chip, child 1 is logout button
+    const actions = el.children[1];
+    const logoutBtn = actions.children[1];
+    assert.equal(logoutBtn.textContent, ADMIN_UI_TEXT.HEADER_LOGOUT_BTN);
+
     logoutBtn.dispatchEvent("click");
     assert.equal(loggedOut, true);
 
     header.unmount();
     assert.equal(header.getElement(), null);
     console.log(
-      "✓ Test 7 Passed: AdminHeaderWidget mounts and triggers logout",
+      "✓ Test 7 Passed: AdminHeaderWidget mounts clean M3 top bar and triggers logout",
     );
   }
 
-  // Test 8: CapacityCounterCardWidget increment, decrement, and threshold badges
+  // Test 8: CapacityCounterCardWidget increment, decrement, progress, and threshold badges
   {
     setupMockDocument();
     const parent = new MockElement("div") as unknown as HTMLElement;
@@ -278,14 +289,20 @@ function runAdminDashboardUnitTests(): void {
     const el = counter.getElement() as unknown as MockElement;
     assert.ok(el !== null);
 
-    const cardHeader = el.children[0];
-    const statusBadge = cardHeader.children[1];
-    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_OPTIMAL);
+    // Query elements via data-action
+    const incBtn = el.querySelector(
+      '[data-action="inc-visitor"]',
+    ) as MockElement;
+    const decBtn = el.querySelector(
+      '[data-action="dec-visitor"]',
+    ) as MockElement;
+    assert.ok(incBtn !== null);
+    assert.ok(decBtn !== null);
 
     const cardBody = el.children[1];
-    const controls = cardBody.children[1];
-    const incBtn = controls.children[0];
-    const decBtn = controls.children[1];
+    const footer = cardBody.children[2];
+    const statusBadge = footer.children[0];
+    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_OPTIMAL);
 
     // Increment
     incBtn.dispatchEvent("click");
@@ -306,7 +323,7 @@ function runAdminDashboardUnitTests(): void {
     counter.unmount();
     assert.equal(counter.getElement(), null);
     console.log(
-      "✓ Test 8 Passed: CapacityCounterCardWidget dynamic threshold reactivity valid",
+      "✓ Test 8 Passed: CapacityCounterCardWidget M3 progress and threshold reactivity valid",
     );
   }
 
@@ -407,7 +424,37 @@ function runAdminDashboardUnitTests(): void {
     );
   }
 
-  console.log("All Slice 1, 2 & 3 unit tests passed successfully.");
+  // Test 12: CSS class token contract consistency
+  {
+    for (const [key, className] of Object.entries(ADMIN_UI_CLASSES)) {
+      assert.ok(
+        typeof className === "string" && className.length > 0,
+        `CSS class for ${key} must not be empty`,
+      );
+      assert.ok(
+        className.includes("cv-admin") || className.includes("cv-"),
+        `Class token for ${key} must use standard design token namespace prefix ('${className}')`,
+      );
+    }
+    console.log(
+      "✓ Test 12 Passed: CSS class tokens strictly adhere to design system namespaces",
+    );
+  }
+
+  // Test 13: Responsive thresholds consistency
+  {
+    assert.ok(ADMIN_THRESHOLDS.MAX_CAPACITY >= 20);
+    assert.ok(ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX > 0);
+    assert.ok(
+      ADMIN_THRESHOLDS.CAPACITY_MODERATE_MAX >
+        ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX,
+    );
+    console.log(
+      "✓ Test 13 Passed: Dashboard capacity threshold hierarchy valid",
+    );
+  }
+
+  console.log("All M3 Redesign unit tests passed successfully.");
 }
 
 runAdminDashboardUnitTests();

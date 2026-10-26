@@ -1,25 +1,47 @@
 :root {
-  /* Material Design 3 Dark Theme Tokens */
-  --md-sys-color-background: #121212;
-  --md-sys-color-surface: #1e1e1e;
-  --md-sys-color-surface-container: #282828;
-  --md-sys-color-surface-container-high: #323232;
-  --md-sys-color-primary: #bb86fc;
-  --md-sys-color-on-primary: #121212;
-  --md-sys-color-secondary: #03dac6;
-  --md-sys-color-on-secondary: #000000;
-  --md-sys-color-outline: #4a4a4a;
-  --md-sys-color-on-surface: #f3f4f6;
-  --md-sys-color-on-surface-variant: #9ca3af;
-  --md-sys-color-error: #cf6679;
+  /* Material Design 3 Dark Theme Tonal Palette */
+  --md-sys-color-background: #111318;
+  --md-sys-color-surface: #111318;
+  --md-sys-color-surface-container-lowest: #0c0e13;
+  --md-sys-color-surface-container-low: #191c20;
+  --md-sys-color-surface-container: #1d2024;
+  --md-sys-color-surface-container-high: #282a2f;
+  --md-sys-color-surface-container-highest: #33353a;
+
+  /* Primary & Accent Tones */
+  --md-sys-color-primary: #d0bcff;
+  --md-sys-color-on-primary: #381e72;
+  --md-sys-color-primary-container: #4f378b;
+  --md-sys-color-on-primary-container: #eaddff;
+  --md-sys-color-secondary: #ccc2dc;
+  --md-sys-color-secondary-container: #4a4458;
+  --md-sys-color-on-secondary: #332d41;
+  --md-sys-color-tertiary: #7ddcde;
+
+  /* Neutrals & Outlines */
+  --md-sys-color-outline: #938f99;
+  --md-sys-color-outline-variant: #49454f;
+  --md-sys-color-on-surface: #e6e1e5;
+  --md-sys-color-on-surface-variant: #cac4d0;
+  --md-sys-color-error: #f2b8b5;
+  --md-sys-color-error-container: #8c1d18;
+
+  /* Semantic Capacity Tones */
+  --md-custom-capacity-optimal: #6dd58c;
+  --md-custom-capacity-moderate: #f9bc2c;
+  --md-custom-capacity-high: #ff897d;
+  --md-custom-star-gold: #e5c158;
 
   /* Typography */
   --cv-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  
-  /* Sizing & Touch Targets */
+
+  /* Sizing, Elevation & Transitions */
   --cv-min-touch-target: 48px;
+  --cv-radius-small: 8px;
+  --cv-radius-medium: 12px;
+  --cv-radius-card: 16px;
+  --cv-radius-modal: 24px;
   --cv-radius-pill: 9999px;
-  --cv-radius-card: 20px;
   --cv-transition-duration: 250ms;
   --cv-transition-easing: cubic-bezier(0.2, 0, 0, 1);
 }
@@ -113,13 +135,13 @@ html, body {
   align-items: center;
   justify-content: center;
   letter-spacing: -1px;
-  box-shadow: 0 8px 24px rgba(187, 134, 252, 0.3);
+  box-shadow: 0 8px 24px rgba(208, 188, 255, 0.25);
 }
 
 .cv-loader-spinner {
   width: 36px;
   height: 36px;
-  border: 3px solid rgba(187, 134, 252, 0.2);
+  border: 3px solid rgba(208, 188, 255, 0.2);
   border-top-color: var(--md-sys-color-primary);
   border-radius: 50%;
   animation: cv-spin 900ms linear infinite;
@@ -137,14 +159,14 @@ html, body {
 .cv-survey-card {
   width: 100%;
   max-width: 420px;
-  background-color: var(--md-sys-color-surface);
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--cv-radius-card);
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--cv-radius-modal);
   padding: 28px 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 /* Typography Hierarchy */
@@ -215,14 +237,14 @@ html, body {
 }
 
 .cv-btn--secondary {
-  background-color: var(--md-sys-color-secondary);
-  color: var(--md-sys-color-on-secondary);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-surface);
 }
 
 .cv-btn--outline {
   background-color: transparent;
   color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .cv-btn--outline:hover {
@@ -284,7 +306,7 @@ html, body {
 
 .cv-badge {
   background-color: rgba(18, 18, 18, 0.75);
-  border: 1px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline-variant);
   padding: 6px 14px;
   border-radius: var(--cv-radius-pill);
   font-size: 13px;
@@ -326,7 +348,7 @@ html, body {
   height: var(--cv-min-touch-target);
   border-radius: 12px;
   background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline-variant);
   color: var(--md-sys-color-on-surface-variant);
   font-size: 24px;
   display: flex;
@@ -337,16 +359,16 @@ html, body {
 }
 
 .cv-rating-btn--active {
-  color: #ffd700;
+  color: var(--md-custom-star-gold);
   background-color: var(--md-sys-color-surface-container-high);
-  border-color: #ffd700;
+  border-color: var(--md-custom-star-gold);
   transform: scale(1.06);
 }
 
 .cv-textarea {
   width: 100%;
   background-color: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 12px;
   padding: 12px;
   color: var(--md-sys-color-on-surface);
@@ -369,9 +391,13 @@ a-scene {
   z-index: 10 !important;
 }
 
+/* ==========================================================================
+   Google Material Design 3 (M3) — Admin Dashboard & Reception Layer
+   ========================================================================== */
 
-/* Admin Dashboard & Login Modal Layer */
+/* Login Modal */
 .cv-admin-modal-backdrop {
+  pointer-events: auto;
   position: fixed;
   inset: 0;
   width: 100%;
@@ -380,22 +406,23 @@ a-scene {
   justify-content: center;
   align-items: center;
   padding: 20px;
-  background-color: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+  background-color: rgba(17, 19, 24, 0.85);
+  backdrop-filter: blur(10px);
   z-index: 300;
 }
 
 .cv-admin-modal-card {
+  pointer-events: auto;
   width: 100%;
   max-width: 440px;
   background-color: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--cv-radius-card);
-  padding: 32px 28px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--cv-radius-modal);
+  padding: 36px 32px;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
 }
 
 .cv-admin-modal-header {
@@ -419,33 +446,35 @@ a-scene {
 }
 
 .cv-admin-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--md-sys-color-on-surface);
+  color: var(--md-sys-color-on-surface-variant);
+  letter-spacing: 0.1px;
 }
 
 .cv-admin-input {
   width: 100%;
   height: var(--cv-min-touch-target);
   background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--cv-radius-medium);
   padding: 0 16px;
   font-family: inherit;
   font-size: 15px;
   color: var(--md-sys-color-on-surface);
   outline: none;
-  transition: border-color var(--cv-transition-duration) var(--cv-transition-easing);
+  transition: border-color var(--cv-transition-duration) var(--cv-transition-easing),
+              box-shadow var(--cv-transition-duration) var(--cv-transition-easing);
 }
 
 .cv-admin-input:focus {
   border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 2px rgba(187, 134, 252, 0.25);
+  box-shadow: 0 0 0 2px rgba(208, 188, 255, 0.25);
 }
 
 .cv-admin-error-container {
   padding: 10px 14px;
-  background-color: rgba(207, 102, 121, 0.12);
+  background-color: rgba(242, 184, 181, 0.12);
   border: 1px solid var(--md-sys-color-error);
   border-radius: 10px;
 }
@@ -463,11 +492,10 @@ a-scene {
 
 .cv-admin-btn-submit {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
-
-/* Admin Dashboard Shell & Responsive Grid */
+/* Dashboard Shell */
 .cv-admin-dashboard {
   position: fixed;
   inset: 0;
@@ -483,11 +511,12 @@ a-scene {
   pointer-events: auto;
 }
 
+/* Top App Bar (Google M3) */
 .cv-admin-header {
   width: 100%;
-  padding: 16px 24px;
-  background-color: var(--md-sys-color-surface);
-  border-bottom: 1px solid var(--md-sys-color-outline);
+  padding: 16px 28px;
+  background-color: var(--md-sys-color-surface-container-low);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -498,80 +527,104 @@ a-scene {
 .cv-admin-header-brand {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.cv-admin-header-brand h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
+.cv-admin-header-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv-admin-app-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.cv-admin-app-subtitle {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  letter-spacing: 0.1px;
 }
 
 .cv-admin-header-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
-.cv-admin-badge {
+.cv-admin-avatar-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  gap: 10px;
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 4px 14px 4px 6px;
   border-radius: var(--cv-radius-pill);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
-.cv-admin-badge--online {
-  background-color: rgba(3, 218, 198, 0.15);
-  color: var(--md-sys-color-secondary);
-  border: 1px solid var(--md-sys-color-secondary);
+.cv-admin-avatar-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.cv-admin-badge--optimal {
-  background-color: rgba(3, 218, 198, 0.15);
-  color: var(--md-sys-color-secondary);
-  border: 1px solid var(--md-sys-color-secondary);
-}
-
-.cv-admin-badge--moderate {
-  background-color: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
-  border: 1px solid #ffd700;
-}
-
-.cv-admin-badge--high {
-  background-color: rgba(207, 102, 121, 0.15);
-  color: var(--md-sys-color-error);
-  border: 1px solid var(--md-sys-color-error);
-}
-
-.cv-admin-header-user {
-  font-size: 14px;
-  color: var(--md-sys-color-on-surface-variant);
+.cv-admin-user-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
 }
 
 .cv-admin-btn-logout {
-  padding: 8px 16px;
-  height: 38px;
-  font-size: 13px;
+  width: auto !important;
+  min-height: 38px !important;
+  padding: 8px 18px !important;
+  font-size: 13px !important;
+  border-radius: var(--cv-radius-pill);
 }
 
 /* Grid Layout */
 .cv-admin-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
-  padding: 24px;
+  padding: 28px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.cv-admin-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cv-admin-card {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.cv-admin-card-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 768px) {
   .cv-admin-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .cv-admin-survey-widget {
     grid-column: span 2;
@@ -580,93 +633,164 @@ a-scene {
 
 @media (min-width: 1024px) {
   .cv-admin-grid {
-    grid-template-columns: 1fr 1.6fr;
-  }
-  .cv-admin-survey-widget {
-    grid-column: span 2;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   }
 }
 
-/* Cards */
+/* M3 Elevated Cards */
 .cv-admin-card {
-  background-color: var(--md-sys-color-surface);
-  border: 1px solid var(--md-sys-color-outline);
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--cv-radius-card);
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .cv-admin-card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+}
+
+.cv-admin-card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .cv-admin-card-title {
   font-size: 1.1rem;
   font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  letter-spacing: 0.1px;
+}
+
+.cv-admin-card-subtitle {
+  font-size: 0.85rem;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .cv-admin-card-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   flex: 1;
 }
 
-/* Capacity Counter */
-.cv-admin-counter-value {
+/* Capacity KPI Card */
+.cv-admin-counter-metric-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px 0;
   gap: 4px;
 }
 
-.cv-admin-counter-value [data-admin-metric="active-visitors"] {
-  font-size: 4.5rem;
+.cv-admin-counter-value {
+  font-size: 3.8rem;
   font-weight: 700;
-  color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-surface);
   line-height: 1;
+  letter-spacing: -1px;
 }
 
-.cv-admin-counter-value small {
-  font-size: 14px;
+.cv-admin-counter-subtext {
+  font-size: 0.9rem;
+  font-weight: 500;
   color: var(--md-sys-color-on-surface-variant);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
-.cv-admin-counter-controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+/* M3 Linear Progress Indicator */
+.cv-admin-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--cv-radius-pill);
+  background-color: var(--md-sys-color-surface-container-highest);
+  overflow: hidden;
 }
 
-.cv-admin-btn-step {
-  height: var(--cv-min-touch-target);
-  font-size: 15px;
+.cv-admin-progress-fill {
+  height: 100%;
+  border-radius: var(--cv-radius-pill);
+  background-color: var(--md-custom-capacity-optimal);
+  transition: width 350ms var(--cv-transition-easing),
+              background-color var(--cv-transition-duration) ease;
+}
+
+.cv-admin-counter-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: auto;
+}
+
+/* Status Chips */
+.cv-admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--cv-radius-pill);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.1px;
+  transition: all var(--cv-transition-duration) ease;
 }
 
-.cv-admin-sim-toggle {
+.cv-admin-chip--optimal {
+  background-color: rgba(109, 213, 140, 0.12);
+  color: var(--md-custom-capacity-optimal);
+  border: 1px solid var(--md-custom-capacity-optimal);
+}
+
+.cv-admin-chip--moderate {
+  background-color: rgba(249, 188, 44, 0.12);
+  color: var(--md-custom-capacity-moderate);
+  border: 1px solid var(--md-custom-capacity-moderate);
+}
+
+.cv-admin-chip--high {
+  background-color: rgba(255, 137, 125, 0.12);
+  color: var(--md-custom-capacity-high);
+  border: 1px solid var(--md-custom-capacity-high);
+}
+
+/* Stepper Controls */
+.cv-admin-counter-controls {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.cv-admin-stepper-btn {
+  width: var(--cv-min-touch-target);
+  height: var(--cv-min-touch-target);
+  border-radius: var(--cv-radius-medium);
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+  font-size: 22px;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--md-sys-color-on-surface-variant);
+  justify-content: center;
   cursor: pointer;
-  user-select: none;
+  transition: transform 120ms ease, background-color 150ms ease;
 }
 
-.cv-admin-sim-checkbox {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--md-sys-color-primary);
+.cv-admin-stepper-btn:hover {
+  background-color: var(--md-sys-color-surface-container-highest);
+}
+
+.cv-admin-stepper-btn:active {
+  transform: scale(0.94);
+}
+
+.cv-admin-stepper-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 /* Attendance Chart */
@@ -681,41 +805,50 @@ a-scene {
   height: 100% !important;
 }
 
-/* Survey Table */
+/* Survey Data Table */
 .cv-admin-avg-badge {
   font-size: 13px;
   font-weight: 600;
-  color: #ffd700;
-  background-color: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline);
-  padding: 4px 10px;
+  color: var(--md-custom-star-gold);
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 6px 14px;
   border-radius: var(--cv-radius-pill);
 }
 
 .cv-admin-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
-  border-radius: 12px;
-  border: 1px solid var(--md-sys-color-outline);
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--cv-radius-card);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-low);
 }
 
 .cv-admin-table {
   width: 100%;
+  min-width: 480px;
   border-collapse: collapse;
   text-align: left;
-  font-size: 14px;
 }
 
 .cv-admin-th {
   background-color: var(--md-sys-color-surface-container);
-  padding: 12px 16px;
+  padding: 14px 18px;
+  font-size: 12px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--md-sys-color-on-surface-variant);
-  border-bottom: 1px solid var(--md-sys-color-outline);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .cv-admin-td {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline);
+  padding: 16px 18px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(73, 69, 79, 0.25);
   color: var(--md-sys-color-on-surface);
 }
 
@@ -728,16 +861,65 @@ a-scene {
 }
 
 .cv-admin-stars {
-  color: #ffd700;
+  color: var(--md-custom-star-gold);
   letter-spacing: 2px;
+  font-size: 14px;
 }
 
-.cv-admin-mode-badge {
+.cv-admin-mode-chip {
   font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--cv-radius-pill);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--cv-radius-small);
   background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-primary);
-  border: 1px solid var(--md-sys-color-primary);
+  color: var(--md-sys-color-secondary);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* Custom Sleek Scrollbars */
+.cv-admin-dashboard::-webkit-scrollbar,
+.cv-admin-table-wrapper::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cv-admin-dashboard::-webkit-scrollbar-track,
+.cv-admin-table-wrapper::-webkit-scrollbar-track {
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.cv-admin-dashboard::-webkit-scrollbar-thumb,
+.cv-admin-table-wrapper::-webkit-scrollbar-thumb {
+  background-color: var(--md-sys-color-outline-variant);
+  border-radius: var(--cv-radius-pill);
+}
+
+/* Compact Viewport Optimization (< 768px) */
+@media (max-width: 767px) {
+  .cv-admin-header {
+    padding: 12px 16px;
+  }
+
+  .cv-admin-app-title {
+    font-size: 1.05rem;
+  }
+
+  .cv-admin-grid {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .cv-admin-counter-value {
+    font-size: 3.2rem;
+  }
+
+  .cv-admin-table th,
+  .cv-admin-table td {
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  .cv-admin-chart-container {
+    min-height: 220px;
+  }
 }

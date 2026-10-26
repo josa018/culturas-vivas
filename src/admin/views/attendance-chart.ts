@@ -13,14 +13,14 @@ import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip);
 
 const CHART_THEME_TOKENS = {
-  BAR_BG_COLOR: "rgba(187, 134, 252, 0.75)",
-  BAR_HOVER_COLOR: "rgba(187, 134, 252, 1.0)",
+  BAR_BG_COLOR: "rgba(208, 188, 255, 0.85)",
+  BAR_HOVER_COLOR: "#d0bcff",
   BAR_BORDER_RADIUS: 6,
-  GRID_COLOR: "rgba(74, 74, 74, 0.35)",
-  TICK_COLOR: "#9ca3af",
-  TOOLTIP_BG: "#282828",
-  TOOLTIP_TITLE_COLOR: "#f3f4f6",
-  TOOLTIP_BODY_COLOR: "#03dac6",
+  GRID_COLOR: "rgba(67, 71, 78, 0.25)",
+  TICK_COLOR: "#8d9199",
+  TOOLTIP_BG: "#282a2f",
+  TOOLTIP_TITLE_COLOR: "#e6e1e5",
+  TOOLTIP_BODY_COLOR: "#7ddcde",
 } as const;
 
 export class AttendanceChartWidget {
@@ -45,11 +45,19 @@ export class AttendanceChartWidget {
     const header = document.createElement("header");
     header.className = ADMIN_UI_CLASSES.CARD_HEADER;
 
+    const titleGroup = document.createElement("div");
+    titleGroup.className = ADMIN_UI_CLASSES.CARD_TITLE_GROUP;
+
     const title = document.createElement("h2");
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.CHART_TITLE;
 
-    header.appendChild(title);
+    const subtitle = document.createElement("p");
+    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
+    subtitle.textContent = ADMIN_UI_TEXT.CHART_SUBTITLE;
+
+    titleGroup.append(title, subtitle);
+    header.appendChild(titleGroup);
 
     const body = document.createElement("div");
     body.className = `${ADMIN_UI_CLASSES.CARD_BODY} ${ADMIN_UI_CLASSES.CHART_CONTAINER}`;
@@ -101,7 +109,7 @@ export class AttendanceChartWidget {
       return;
     }
 
-    // Defensive check for headless / non-canvas testing environments
+    // Defensive check for headless testing environments
     if (typeof this.canvasElement.getContext !== "function") {
       return;
     }
@@ -119,7 +127,7 @@ export class AttendanceChartWidget {
             backgroundColor: CHART_THEME_TOKENS.BAR_BG_COLOR,
             hoverBackgroundColor: CHART_THEME_TOKENS.BAR_HOVER_COLOR,
             borderRadius: CHART_THEME_TOKENS.BAR_BORDER_RADIUS,
-            maxBarThickness: 36,
+            maxBarThickness: 34,
           },
         ],
       },

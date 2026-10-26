@@ -99,7 +99,7 @@ export class SurveysTableWidget {
       return;
     }
     const avg = this.store.getAverageRating();
-    this.avgBadgeElement.textContent = `★ ${ADMIN_UI_TEXT.SURVEY_AVG_PREFIX} ${avg.toFixed(1)} / 5.0`;
+    this.avgBadgeElement.textContent = `${ADMIN_UI_TEXT.SURVEY_AVG_PREFIX} ${avg.toFixed(1)} / 5.0`;
   }
 
   private renderRows(surveys: readonly SurveyLogEntry[]): void {
@@ -134,10 +134,11 @@ export class SurveysTableWidget {
       // Mode
       const modeCell = document.createElement("td");
       modeCell.className = ADMIN_UI_CLASSES.TABLE_TD;
-      const modeBadge = document.createElement("span");
-      modeBadge.className = ADMIN_UI_CLASSES.TABLE_MODE_BADGE;
-      modeBadge.textContent = item.viewMode.toUpperCase();
-      modeCell.appendChild(modeBadge);
+      const modeChip = document.createElement("span");
+      modeChip.className = ADMIN_UI_CLASSES.TABLE_MODE_CHIP;
+      modeChip.textContent =
+        item.viewMode === "vr" ? "WebXR VR" : "Pantalla 2D";
+      modeCell.appendChild(modeChip);
 
       // Rating (stars)
       const ratingCell = document.createElement("td");

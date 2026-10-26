@@ -22,26 +22,43 @@ export class AdminHeaderWidget {
     const header = document.createElement("header");
     header.className = ADMIN_UI_CLASSES.HEADER;
 
+    // Left brand group
     const brand = document.createElement("div");
     brand.className = ADMIN_UI_CLASSES.HEADER_BRAND;
 
-    const title = document.createElement("h1");
-    title.className = ADMIN_UI_CLASSES.TITLE;
-    title.textContent = ADMIN_UI_TEXT.HEADER_TITLE;
+    const titleGroup = document.createElement("div");
+    titleGroup.className = ADMIN_UI_CLASSES.HEADER_TITLE_GROUP;
 
-    const badge = document.createElement("span");
-    badge.className = ADMIN_UI_CLASSES.HEADER_BADGE;
-    badge.textContent = `● ${ADMIN_UI_TEXT.HEADER_STATUS_ONLINE}`;
+    const appTitle = document.createElement("h1");
+    appTitle.className = ADMIN_UI_CLASSES.HEADER_APP_TITLE;
+    appTitle.textContent = ADMIN_UI_TEXT.HEADER_TITLE;
 
-    brand.append(title, badge);
+    const appSubtitle = document.createElement("p");
+    appSubtitle.className = ADMIN_UI_CLASSES.HEADER_APP_SUBTITLE;
+    appSubtitle.textContent = ADMIN_UI_TEXT.HEADER_SUBTITLE;
 
+    titleGroup.append(appTitle, appSubtitle);
+    brand.appendChild(titleGroup);
+
+    // Right actions group
     const actions = document.createElement("div");
     actions.className = ADMIN_UI_CLASSES.HEADER_ACTIONS;
 
-    const userInfo = document.createElement("span");
-    userInfo.className = ADMIN_UI_CLASSES.HEADER_USER;
-    userInfo.textContent = `${this.options.username} (${this.options.role})`;
+    // User Avatar Chip (M3 style)
+    const userChip = document.createElement("div");
+    userChip.className = ADMIN_UI_CLASSES.HEADER_AVATAR_CHIP;
 
+    const avatarCircle = document.createElement("span");
+    avatarCircle.className = ADMIN_UI_CLASSES.HEADER_AVATAR_CIRCLE;
+    avatarCircle.textContent = (this.options.username[0] || "A").toUpperCase();
+
+    const userText = document.createElement("span");
+    userText.className = ADMIN_UI_CLASSES.HEADER_USER_TEXT;
+    userText.textContent = `${this.options.username} (${this.options.role})`;
+
+    userChip.append(avatarCircle, userText);
+
+    // Logout Button (M3 Outlined style)
     const logoutBtn = document.createElement("button");
     logoutBtn.type = "button";
     logoutBtn.className = ADMIN_UI_CLASSES.BUTTON_LOGOUT;
@@ -51,7 +68,7 @@ export class AdminHeaderWidget {
       this.options.onLogout();
     });
 
-    actions.append(userInfo, logoutBtn);
+    actions.append(userChip, logoutBtn);
     header.append(brand, actions);
 
     parent.appendChild(header);
