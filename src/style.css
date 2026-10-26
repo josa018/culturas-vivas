@@ -558,11 +558,31 @@ a-scene {
 }
 
 .cv-admin-btn-logout {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   width: auto !important;
   min-height: 38px !important;
   padding: 8px 18px !important;
   font-size: 13px !important;
-  border-radius: var(--cv-radius-pill);
+  font-weight: 600 !important;
+  border-radius: var(--cv-radius-pill) !important;
+  background-color: var(--md-sys-color-surface-container-highest) !important;
+  border: 1px solid var(--md-sys-color-outline-variant) !important;
+  color: var(--md-sys-color-on-surface) !important;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.cv-admin-btn-logout:hover {
+  background-color: rgba(255, 180, 171, 0.14) !important;
+  color: var(--md-sys-color-error) !important;
+  border-color: rgba(255, 180, 171, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+.cv-admin-btn-logout:active {
+  transform: translateY(0) scale(0.98);
 }
 
 /* Grid Layout */
@@ -661,13 +681,14 @@ a-scene {
 }
 
 .cv-admin-peak-badge {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--md-sys-color-on-surface-variant);
   background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  padding: 6px 14px;
+  border: none;
+  padding: 4px 12px;
   border-radius: var(--cv-radius-pill);
+  user-select: none;
 }
 
 .cv-admin-chart-container {
@@ -685,13 +706,14 @@ a-scene {
 
 /* Survey Data Table */
 .cv-admin-avg-badge {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--md-custom-star-gold);
   background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  padding: 6px 14px;
+  border: none;
+  padding: 4px 12px;
   border-radius: var(--cv-radius-pill);
+  user-select: none;
 }
 
 .cv-admin-table-wrapper {
@@ -745,13 +767,25 @@ a-scene {
 }
 
 .cv-admin-mode-chip {
+  display: inline-block;
   font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
+  font-weight: 700;
+  padding: 3px 8px;
   border-radius: var(--cv-radius-small);
-  background-color: var(--md-sys-color-surface-container-high);
+  border: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.cv-admin-mode-chip--vr {
+  background-color: rgba(208, 188, 255, 0.16);
+  color: var(--md-sys-color-primary);
+}
+
+.cv-admin-mode-chip--2d {
+  background-color: rgba(204, 194, 220, 0.16);
   color: var(--md-sys-color-secondary);
-  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 /* Custom Sleek Scrollbars */

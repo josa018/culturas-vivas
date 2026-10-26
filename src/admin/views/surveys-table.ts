@@ -135,7 +135,11 @@ export class SurveysTableWidget {
       const modeCell = document.createElement("td");
       modeCell.className = ADMIN_UI_CLASSES.TABLE_TD;
       const modeChip = document.createElement("span");
-      modeChip.className = ADMIN_UI_CLASSES.TABLE_MODE_CHIP;
+      const modeModifier =
+        item.viewMode === "vr"
+          ? ADMIN_UI_CLASSES.TABLE_MODE_CHIP_VR
+          : ADMIN_UI_CLASSES.TABLE_MODE_CHIP_2D;
+      modeChip.className = `${ADMIN_UI_CLASSES.TABLE_MODE_CHIP} ${modeModifier}`;
       modeChip.textContent =
         item.viewMode === "vr" ? "WebXR VR" : "Pantalla 2D";
       modeCell.appendChild(modeChip);

@@ -55,6 +55,8 @@ export const ADMIN_UI_CLASSES = {
   TABLE_TD: "cv-admin-td",
   TABLE_STARS: "cv-admin-stars",
   TABLE_MODE_CHIP: "cv-admin-mode-chip",
+  TABLE_MODE_CHIP_VR: "cv-admin-mode-chip--vr",
+  TABLE_MODE_CHIP_2D: "cv-admin-mode-chip--2d",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -71,7 +73,7 @@ export const ADMIN_UI_TEXT = {
 
   // Header
   HEADER_TITLE: "Culturas Vivas",
-  HEADER_SUBTITLE: "Panel de Recepción",
+  HEADER_SUBTITLE: "Estadísticas",
   HEADER_LOGOUT_BTN: "Cerrar Sesión",
 
   // Capacity Counter

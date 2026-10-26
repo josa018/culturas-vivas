@@ -44,7 +44,7 @@ export class AdminHeaderWidget {
     const actions = document.createElement("div");
     actions.className = ADMIN_UI_CLASSES.HEADER_ACTIONS;
 
-    // Logout Button (M3 Outlined style)
+    // Logout Button (M3 Interactive Button)
     const logoutBtn = document.createElement("button");
     logoutBtn.type = "button";
     logoutBtn.className = ADMIN_UI_CLASSES.BUTTON_LOGOUT;

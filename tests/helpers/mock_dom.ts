@@ -27,7 +27,22 @@ export class MockClassList {
 export class MockElement {
   public tagName: string;
   public className: string = "";
-  public textContent: string = "";
+  private _textContent: string | null = null;
+
+  public get textContent(): string {
+    if (this._textContent !== null) {
+      return this._textContent;
+    }
+    if (this.children.length > 0) {
+      return this.children.map((c) => c.textContent).join("");
+    }
+    return "";
+  }
+
+  public set textContent(value: string) {
+    this._textContent = value;
+  }
+
   public classList = new MockClassList();
   public children: MockElement[] = [];
   public parentElement: MockElement | null = null;
