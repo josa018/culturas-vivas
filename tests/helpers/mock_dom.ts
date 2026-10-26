@@ -96,7 +96,7 @@ export class MockElement {
   public dispatchEvent(event: string, payload?: unknown): void {
     const handlers = this.listeners.get(event) ?? [];
     for (const h of handlers) {
-      h(payload ?? { stopPropagation: () => {} });
+      h(payload ?? { stopPropagation: () => {}, preventDefault: () => {} });
     }
   }
 

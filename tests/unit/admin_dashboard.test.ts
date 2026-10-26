@@ -1,15 +1,20 @@
 import { assert } from "../helpers/assert";
 import { MockStorage } from "../helpers/mock_storage";
+import { MockElement, setupMockDocument } from "../helpers/mock_dom";
 import { AppRoute, RouteMatcher } from "../../src/navigation/route-matcher";
 import {
   ADMIN_AUTH_CONSTANTS,
   AdminAuthStore,
   ADMIN_DASHBOARD_CONSTANTS,
   AdminDashboardStore,
+  ADMIN_UI_CLASSES,
+  AdminLoginModalView,
 } from "../../src/admin/index";
 
 function runAdminDashboardUnitTests(): void {
-  console.log("--- [UNIT TEST] Admin Dashboard & Route Matcher (Slice 1) ---");
+  console.log(
+    "--- [UNIT TEST] Admin Dashboard, Auth & Login Modal (Slices 1 & 2) ---",
+  );
 
   // Test 1: RouteMatcher matching patterns
   {
@@ -163,7 +168,68 @@ function runAdminDashboardUnitTests(): void {
     );
   }
 
-  console.log("All Slice 1 unit tests passed successfully.");
+  // Test 6: AdminLoginModalView mounting, validation failure, and success transitions (Slice 2)
+  {
+    setupMockDocument();
+    const parent = new MockElement("div") as unknown as HTMLElement;
+    const authStore = new AdminAuthStore(new MockStorage());
+
+    let loginSucceeded = false;
+    const modal = new AdminLoginModalView({
+      authStore,
+      onLoginSuccess: () => {
+        loginSucceeded = true;
+      },
+    });
+
+    modal.mount(parent);
+    const modalElement = modal.getElement();
+    assert.ok(modalElement !== null);
+
+    // Initial state: inputs blank
+    const initialInputs = modal.getInputs();
+    assert.equal(initialInputs.user, "");
+    assert.equal(initialInputs.pass, "");
+
+    // Show and Hide display checks
+    modal.show();
+    assert.equal(modalElement.style.display, "flex");
+    modal.hide();
+    assert.equal(modalElement.style.display, "none");
+
+    // Failed login submission
+    modal.show();
+    modal.setCredentials("invalid_user", "bad_password");
+    const formElement = (modalElement as unknown as MockElement).children[0]
+      .children[1];
+    assert.ok(formElement !== null);
+
+    formElement.dispatchEvent("submit");
+    assert.equal(loginSucceeded, false);
+    assert.equal(authStore.getState().isAuthenticated, false);
+
+    // Successful login submission
+    modal.setCredentials(
+      ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
+      ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
+    );
+    formElement.dispatchEvent("submit");
+
+    assert.equal(loginSucceeded, true);
+    assert.equal(authStore.getState().isAuthenticated, true);
+    const clearedInputs = modal.getInputs();
+    assert.equal(clearedInputs.user, "");
+    assert.equal(clearedInputs.pass, "");
+
+    // Unmount
+    modal.unmount();
+    assert.equal(modal.getElement(), null);
+    console.log(
+      "✓ Test 6 Passed: AdminLoginModalView lifecycle and authentication flow valid",
+    );
+  }
+
+  console.log("All Slice 1 & 2 unit tests passed successfully.");
 }
 
 runAdminDashboardUnitTests();
