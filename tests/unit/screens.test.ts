@@ -1,6 +1,7 @@
-import { assert } from "./assert";
-import { NavigationAction, ScreenId } from "../src/navigation/index";
-import type { DispatchPayload } from "../src/navigation/index";
+import { assert } from "../helpers/assert";
+import { MockElement, setupMockDocument } from "../helpers/mock_dom";
+import { NavigationAction, ScreenId } from "../../src/navigation/index";
+import type { DispatchPayload } from "../../src/navigation/index";
 import {
   SplashScreenView,
   WelcomeScreenView,
@@ -8,156 +9,12 @@ import {
   ExperienceScreenView,
   ExitModalScreenView,
   SurveyScreenView,
-} from "../src/screens/index";
+} from "../../src/screens/index";
 
-class MockClassList {
-  private classes = new Set<string>();
+function runScreensUnitTests(): void {
+  console.log("--- [UNIT TEST] Screen Views & Interactions ---");
 
-  add(...tokens: string[]): void {
-    tokens.forEach((t) =>
-      t
-        .split(/\s+/)
-        .filter(Boolean)
-        .forEach((c) => this.classes.add(c)),
-    );
-  }
-  remove(...tokens: string[]): void {
-    tokens.forEach((t) =>
-      t
-        .split(/\s+/)
-        .filter(Boolean)
-        .forEach((c) => this.classes.delete(c)),
-    );
-  }
-  contains(token: string): boolean {
-    return this.classes.has(token);
-  }
-}
-
-class MockElement {
-  public tagName: string;
-  public className: string = "";
-  public textContent: string = "";
-  public classList = new MockClassList();
-  public children: MockElement[] = [];
-  public parentElement: MockElement | null = null;
-  public attributes = new Map<string, string>();
-  public listeners = new Map<string, Array<(event: unknown) => void>>();
-  public style: Record<string, string> = {};
-  public value: string = "";
-  public rows: number = 2;
-  public placeholder: string = "";
-  public id: string = "";
-  public type: string = "";
-
-  constructor(tagName: string) {
-    this.tagName = tagName.toUpperCase();
-  }
-
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
-    if (name === "id") this.id = value;
-  }
-
-  getAttribute(name: string): string | null {
-    if (name === "id") return this.id || null;
-    return this.attributes.get(name) ?? null;
-  }
-
-  appendChild(child: MockElement): MockElement {
-    child.parentElement = this;
-    this.children.push(child);
-    return child;
-  }
-
-  append(...items: (MockElement | string)[]): void {
-    for (const item of items) {
-      if (typeof item === "string") {
-        const textNode = new MockElement("span");
-        textNode.textContent = item;
-        this.appendChild(textNode);
-      } else if (item instanceof MockElement) {
-        this.appendChild(item);
-      }
-    }
-  }
-
-  remove(): void {
-    if (this.parentElement) {
-      const idx = this.parentElement.children.indexOf(this);
-      if (idx !== -1) {
-        this.parentElement.children.splice(idx, 1);
-      }
-      this.parentElement = null;
-    }
-  }
-
-  addEventListener(event: string, handler: (e: unknown) => void): void {
-    const list = this.listeners.get(event) ?? [];
-    list.push(handler);
-    this.listeners.set(event, list);
-  }
-
-  dispatchEvent(event: string, payload?: unknown): void {
-    const handlers = this.listeners.get(event) ?? [];
-    for (const h of handlers) {
-      h(payload ?? { stopPropagation: () => {} });
-    }
-  }
-
-  querySelector<T = MockElement>(selector: string): T | null {
-    const match = (el: MockElement): MockElement | null => {
-      if (selector.startsWith('[data-action="')) {
-        const action = selector.slice(14, -2);
-        if (el.getAttribute("data-action") === action) return el;
-      }
-      if (selector.startsWith('[data-rating="')) {
-        const rating = selector.slice(14, -2);
-        if (el.getAttribute("data-rating") === rating) return el;
-      }
-      if (
-        selector.startsWith("#") &&
-        (el.id === selector.slice(1) ||
-          el.getAttribute("id") === selector.slice(1))
-      ) {
-        return el;
-      }
-      if (selector === "a-scene" && el.tagName === "A-SCENE") {
-        return el;
-      }
-      for (const child of el.children) {
-        const res = match(child);
-        if (res) return res;
-      }
-      return null;
-    };
-    return match(this) as T | null;
-  }
-
-  querySelectorAll<T = MockElement>(selector: string): T[] {
-    const results: MockElement[] = [];
-    const walk = (el: MockElement): void => {
-      if (selector === "[data-rating]" && el.getAttribute("data-rating")) {
-        results.push(el);
-      }
-      for (const child of el.children) {
-        walk(child);
-      }
-    };
-    walk(this);
-    return results as T[];
-  }
-}
-
-// Global mock document
-(globalThis as unknown as { document: unknown }).document = {
-  createElement: (tag: string) => new MockElement(tag),
-  querySelector: () => null,
-};
-
-function runScreensVerification(): void {
-  console.log("--- [TEST SUITE] Screen Views & Interactions Verification ---");
-
+  setupMockDocument();
   const root = new MockElement("div") as unknown as HTMLElement;
   const dispatched: Array<{
     action: NavigationAction;
@@ -167,7 +24,7 @@ function runScreensVerification(): void {
     dispatched.push({ action, payload });
   };
 
-  // Test Screen 1: Splash
+  // Screen 1: Splash
   {
     const splash = new SplashScreenView(dispatch);
     assert.equal(splash.id, ScreenId.SPLASH);
@@ -183,7 +40,7 @@ function runScreensVerification(): void {
     console.log("✓ Screen 1 (Splash) mounted and dispatched FINISH_LOADING");
   }
 
-  // Test Screen 2: Welcome
+  // Screen 2: Welcome
   {
     const welcome = new WelcomeScreenView(dispatch);
     assert.equal(welcome.id, ScreenId.WELCOME);
@@ -210,7 +67,7 @@ function runScreensVerification(): void {
     );
   }
 
-  // Test Screen 3: Tutorial
+  // Screen 3: Tutorial
   {
     const tutorial = new TutorialScreenView(dispatch);
     assert.equal(tutorial.id, ScreenId.TUTORIAL);
@@ -231,7 +88,7 @@ function runScreensVerification(): void {
     );
   }
 
-  // Test Screen 4: Experience HUD
+  // Screen 4: Experience HUD
   {
     const experience = new ExperienceScreenView(dispatch);
     assert.equal(experience.id, ScreenId.EXPERIENCE_3D);
@@ -252,7 +109,7 @@ function runScreensVerification(): void {
     );
   }
 
-  // Test Screen 5: Exit Modal
+  // Screen 5: Exit Modal
   {
     const modal = new ExitModalScreenView(dispatch);
     assert.equal(modal.id, ScreenId.EXIT_MODAL);
@@ -283,7 +140,7 @@ function runScreensVerification(): void {
     );
   }
 
-  // Test Screen 6: Survey
+  // Screen 6: Survey
   {
     const survey = new SurveyScreenView(dispatch);
     assert.equal(survey.id, ScreenId.SURVEY);
@@ -313,7 +170,7 @@ function runScreensVerification(): void {
     );
   }
 
-  console.log("\nAll 6 screens verified successfully.");
+  console.log("All screen view tests passed.\n");
 }
 
-runScreensVerification();
+runScreensUnitTests();

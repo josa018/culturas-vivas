@@ -1,29 +1,15 @@
-import { assert } from './assert';
+import { assert } from "../helpers/assert";
+import { MockStorage } from "../helpers/mock_storage";
 import {
   NavigationAction,
   NavigationStateMachine,
   ScreenId,
   SessionStore,
   ViewMode,
-} from '../src/navigation/index';
-import type { StorageAdapter } from '../src/navigation/index';
+} from "../../src/navigation/index";
 
-class MockStorage implements StorageAdapter {
-  private readonly store = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.store.get(key) ?? null;
-  }
-  setItem(key: string, value: string): void {
-    this.store.set(key, value);
-  }
-  removeItem(key: string): void {
-    this.store.delete(key);
-  }
-}
-
-function runVerificationSuite(): void {
-  console.log('--- [TEST SUITE] Navigation & FSM Router Verification ---');
+function runRouterUnitTests(): void {
+  console.log("--- [UNIT TEST] Navigation & State Machine ---");
 
   // Test 1: SessionStore CRUD
   {
@@ -39,13 +25,13 @@ function runVerificationSuite(): void {
     const updated = store.getSession();
     assert.equal(updated?.viewMode, ViewMode.VR);
 
-    store.setSurveyAnswers({ rating: 5, feedback: 'Excelente experiencia' });
+    store.setSurveyAnswers({ rating: 5, feedback: "Excelente experiencia" });
     const withSurvey = store.getSession();
     assert.equal(withSurvey?.surveyAnswers?.rating, 5);
 
     store.clear();
     assert.equal(store.getSession(), null);
-    console.log('✓ Test 1 Passed: SessionStore operates correctly');
+    console.log("✓ Test 1 Passed: SessionStore operates correctly");
   }
 
   // Test 2: Standard VR Linear Traversal
@@ -73,12 +59,14 @@ function runVerificationSuite(): void {
     assert.equal(fsm.getCurrentScreen(), ScreenId.SURVEY);
 
     fsm.dispatch(NavigationAction.COMPLETE_SURVEY, {
-      surveyAnswers: { rating: 4, feedback: 'Todo bien' },
+      surveyAnswers: { rating: 4, feedback: "Todo bien" },
     });
     assert.equal(fsm.getCurrentScreen(), ScreenId.WELCOME);
     assert.equal(fsm.getSession().surveyAnswers?.rating, 4);
 
-    console.log('✓ Test 2 Passed: Full VR traversal (Screens 1 -> 6 -> Welcome) valid');
+    console.log(
+      "✓ Test 2 Passed: Full VR traversal (Screens 1 -> 6 -> Welcome) valid",
+    );
   }
 
   // Test 3: 2D Alternative Path
@@ -94,7 +82,9 @@ function runVerificationSuite(): void {
     assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
     assert.equal(fsm.getSession().viewMode, ViewMode.TOUCH_2D);
 
-    console.log('✓ Test 3 Passed: Alternative 2D path bypassing tutorial valid');
+    console.log(
+      "✓ Test 3 Passed: Alternative 2D path bypassing tutorial valid",
+    );
   }
 
   // Test 4: Modal Resume Flow
@@ -113,7 +103,9 @@ function runVerificationSuite(): void {
     fsm.dispatch(NavigationAction.RESUME_TOUR);
     assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
 
-    console.log('✓ Test 4 Passed: Exit modal resumption back to 3D scene valid');
+    console.log(
+      "✓ Test 4 Passed: Exit modal resumption back to 3D scene valid",
+    );
   }
 
   // Test 5: Illegal Transition Guard
@@ -129,7 +121,7 @@ function runVerificationSuite(): void {
     assert.equal(resultingState, ScreenId.SPLASH);
     assert.equal(fsm.getCurrentScreen(), ScreenId.SPLASH);
 
-    console.log('✓ Test 5 Passed: Illegal transitions safely rejected');
+    console.log("✓ Test 5 Passed: Illegal transitions safely rejected");
   }
 
   // Test 6: Listener Subscriptions
@@ -156,10 +148,10 @@ function runVerificationSuite(): void {
       ScreenId.TUTORIAL,
     ]);
 
-    console.log('✓ Test 6 Passed: Subscription lifecycle verified');
+    console.log("✓ Test 6 Passed: Subscription lifecycle verified");
   }
 
-  console.log('\nAll 6 tests passed successfully.');
+  console.log("All router unit tests passed.\n");
 }
 
-runVerificationSuite();
+runRouterUnitTests();
