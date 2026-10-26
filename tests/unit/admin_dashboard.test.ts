@@ -8,12 +8,20 @@ import {
   ADMIN_DASHBOARD_CONSTANTS,
   AdminDashboardStore,
   ADMIN_UI_CLASSES,
+  ADMIN_UI_TEXT,
+  ADMIN_THRESHOLDS,
   AdminLoginModalView,
+  AdminHeaderWidget,
+  CapacityCounterCardWidget,
+  SurveysTableWidget,
+  AttendanceChartWidget,
+  AdminDashboardView,
+  AdminController,
 } from "../../src/admin/index";
 
 function runAdminDashboardUnitTests(): void {
   console.log(
-    "--- [UNIT TEST] Admin Dashboard, Auth & Login Modal (Slices 1 & 2) ---",
+    "--- [UNIT TEST] Admin Dashboard Full Vertical Slice (1, 2 & 3) ---",
   );
 
   // Test 1: RouteMatcher matching patterns
@@ -168,7 +176,7 @@ function runAdminDashboardUnitTests(): void {
     );
   }
 
-  // Test 6: AdminLoginModalView mounting, validation failure, and success transitions (Slice 2)
+  // Test 6: AdminLoginModalView lifecycle and authentication flow
   {
     setupMockDocument();
     const parent = new MockElement("div") as unknown as HTMLElement;
@@ -229,7 +237,177 @@ function runAdminDashboardUnitTests(): void {
     );
   }
 
-  console.log("All Slice 1 & 2 unit tests passed successfully.");
+  // Test 7: AdminHeaderWidget presentation and logout trigger
+  {
+    setupMockDocument();
+    const parent = new MockElement("div") as unknown as HTMLElement;
+    let loggedOut = false;
+
+    const header = new AdminHeaderWidget({
+      username: "alfredo",
+      role: "librarian",
+      onLogout: () => {
+        loggedOut = true;
+      },
+    });
+
+    header.mount(parent);
+    const el = header.getElement() as unknown as MockElement;
+    assert.ok(el !== null);
+
+    const logoutBtn = el.children[1].children[1];
+    logoutBtn.dispatchEvent("click");
+    assert.equal(loggedOut, true);
+
+    header.unmount();
+    assert.equal(header.getElement(), null);
+    console.log(
+      "✓ Test 7 Passed: AdminHeaderWidget mounts and triggers logout",
+    );
+  }
+
+  // Test 8: CapacityCounterCardWidget increment, decrement, and threshold badges
+  {
+    setupMockDocument();
+    const parent = new MockElement("div") as unknown as HTMLElement;
+    const store = new AdminDashboardStore(5);
+
+    const counter = new CapacityCounterCardWidget(store);
+    counter.mount(parent);
+
+    const el = counter.getElement() as unknown as MockElement;
+    assert.ok(el !== null);
+
+    const cardHeader = el.children[0];
+    const statusBadge = cardHeader.children[1];
+    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_OPTIMAL);
+
+    const cardBody = el.children[1];
+    const controls = cardBody.children[1];
+    const incBtn = controls.children[0];
+    const decBtn = controls.children[1];
+
+    // Increment
+    incBtn.dispatchEvent("click");
+    assert.equal(store.getState().activeVisitorsCount, 6);
+
+    // Decrement
+    decBtn.dispatchEvent("click");
+    assert.equal(store.getState().activeVisitorsCount, 5);
+
+    // Moderate Threshold check
+    store.setVisitorCount(ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX + 2);
+    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_MODERATE);
+
+    // High Threshold check
+    store.setVisitorCount(ADMIN_THRESHOLDS.CAPACITY_MODERATE_MAX + 5);
+    assert.equal(statusBadge.textContent, ADMIN_UI_TEXT.STATUS_HIGH);
+
+    counter.unmount();
+    assert.equal(counter.getElement(), null);
+    console.log(
+      "✓ Test 8 Passed: CapacityCounterCardWidget dynamic threshold reactivity valid",
+    );
+  }
+
+  // Test 9: SurveysTableWidget row rendering and average badge
+  {
+    setupMockDocument();
+    const parent = new MockElement("div") as unknown as HTMLElement;
+    const store = new AdminDashboardStore(5);
+
+    const tableWidget = new SurveysTableWidget(store);
+    tableWidget.mount(parent);
+
+    const el = tableWidget.getElement() as unknown as MockElement;
+    assert.ok(el !== null);
+
+    const avgBadge = el.children[0].children[1];
+    assert.ok(avgBadge.textContent.includes("★"));
+
+    const tbody = el.children[1].children[0].children[1];
+    assert.ok(tbody.children.length > 0);
+
+    // Adding a survey dynamically triggers table re-render
+    const initialRowsCount = tbody.children.length;
+    store.addSurvey({
+      id: "srv-dynamic-99",
+      timestamp: Date.now(),
+      rating: 5,
+      feedback: "Dynamic test review",
+      viewMode: "vr",
+    });
+    assert.equal(tbody.children.length, initialRowsCount + 1);
+
+    tableWidget.unmount();
+    assert.equal(tableWidget.getElement(), null);
+    console.log(
+      "✓ Test 9 Passed: SurveysTableWidget reactive table updates valid",
+    );
+  }
+
+  // Test 10: AttendanceChartWidget lifecycle and safe unmount
+  {
+    setupMockDocument();
+    const parent = new MockElement("div") as unknown as HTMLElement;
+    const store = new AdminDashboardStore(5);
+
+    const chartWidget = new AttendanceChartWidget(store);
+    chartWidget.mount(parent);
+
+    const el = chartWidget.getElement() as unknown as MockElement;
+    assert.ok(el !== null);
+
+    const canvas = el.children[1].children[0];
+    assert.equal(canvas.getAttribute("role"), "img");
+    assert.equal(canvas.getAttribute("aria-label"), ADMIN_UI_TEXT.CHART_TITLE);
+
+    chartWidget.unmount();
+    assert.equal(chartWidget.getElement(), null);
+    console.log(
+      "✓ Test 10 Passed: AttendanceChartWidget canvas mounting and unmount valid",
+    );
+  }
+
+  // Test 11: AdminController state orchestration & 3D canvas suppression
+  {
+    const sceneMock = new MockElement("a-scene");
+    const rootMock = new MockElement("div");
+    setupMockDocument(rootMock, sceneMock);
+
+    const authStore = new AdminAuthStore(new MockStorage());
+    const dashboardStore = new AdminDashboardStore(7);
+
+    const controller = new AdminController(
+      rootMock as unknown as HTMLElement,
+      authStore,
+      dashboardStore,
+    );
+
+    // IA-02: 3D scene must be suppressed
+    assert.equal(sceneMock.style.display, "none");
+
+    // Initially unauthenticated -> login modal mounted
+    assert.equal(authStore.getState().isAuthenticated, false);
+
+    // Login transition
+    authStore.login({
+      username: ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
+      password: ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
+    });
+    assert.equal(authStore.getState().isAuthenticated, true);
+
+    // Logout transition
+    authStore.logout();
+    assert.equal(authStore.getState().isAuthenticated, false);
+
+    controller.destroy();
+    console.log(
+      "✓ Test 11 Passed: AdminController canvas suppression and auth orchestration valid",
+    );
+  }
+
+  console.log("All Slice 1, 2 & 3 unit tests passed successfully.");
 }
 
 runAdminDashboardUnitTests();
