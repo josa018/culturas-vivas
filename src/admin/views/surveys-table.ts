@@ -128,12 +128,12 @@ export class SurveysTableWidget {
 
       // Time
       const timeCell = document.createElement("td");
-      timeCell.className = ADMIN_UI_CLASSES.TABLE_TD;
+      timeCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_TD_TIME}`;
       timeCell.textContent = this.formatTime(item.timestamp);
 
       // Mode
       const modeCell = document.createElement("td");
-      modeCell.className = ADMIN_UI_CLASSES.TABLE_TD;
+      modeCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_TD_MODE}`;
       const modeChip = document.createElement("span");
       const modeModifier =
         item.viewMode === "vr"
@@ -146,13 +146,13 @@ export class SurveysTableWidget {
 
       // Rating (stars)
       const ratingCell = document.createElement("td");
-      ratingCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_STARS}`;
+      ratingCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_STARS} ${ADMIN_UI_CLASSES.TABLE_TD_RATING}`;
       ratingCell.textContent =
         "★".repeat(item.rating) + "☆".repeat(5 - item.rating);
 
       // Feedback
       const feedbackCell = document.createElement("td");
-      feedbackCell.className = ADMIN_UI_CLASSES.TABLE_TD;
+      feedbackCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_TD_FEEDBACK}`;
       feedbackCell.textContent = item.feedback || "—";
 
       row.append(timeCell, modeCell, ratingCell, feedbackCell);

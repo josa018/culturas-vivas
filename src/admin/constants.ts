@@ -53,6 +53,10 @@ export const ADMIN_UI_CLASSES = {
   SURVEY_AVG_BADGE: "cv-admin-avg-badge",
   TABLE_TH: "cv-admin-th",
   TABLE_TD: "cv-admin-td",
+  TABLE_TD_TIME: "cv-admin-td--time",
+  TABLE_TD_MODE: "cv-admin-td--mode",
+  TABLE_TD_RATING: "cv-admin-td--rating",
+  TABLE_TD_FEEDBACK: "cv-admin-td--feedback",
   TABLE_STARS: "cv-admin-stars",
   TABLE_MODE_CHIP: "cv-admin-mode-chip",
   TABLE_MODE_CHIP_VR: "cv-admin-mode-chip--vr",
@@ -62,11 +66,8 @@ export const ADMIN_UI_CLASSES = {
 export const ADMIN_UI_TEXT = {
   // Modal
   LOGIN_TITLE: "Acceso Administrativo",
-  LOGIN_SUBTITLE: "Panel de Recepción y Control de Aforo",
-  LOGIN_USER_LABEL: "Usuario Administrativo",
-  LOGIN_USER_PLACEHOLDER: "Ingresa tu usuario",
+  LOGIN_USER_LABEL: "Usuario",
   LOGIN_PASSWORD_LABEL: "Contraseña",
-  LOGIN_PASSWORD_PLACEHOLDER: "••••••••",
   LOGIN_SUBMIT_LABEL: "Iniciar Sesión",
   LOGIN_ERROR_MESSAGE:
     "Credenciales incorrectas. Verifica usuario y contraseña.",

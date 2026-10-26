@@ -41,11 +41,7 @@ export class AdminLoginModalView {
     title.className = ADMIN_UI_CLASSES.TITLE;
     title.textContent = ADMIN_UI_TEXT.LOGIN_TITLE;
 
-    const subtitle = document.createElement("p");
-    subtitle.className = ADMIN_UI_CLASSES.SUBTITLE;
-    subtitle.textContent = ADMIN_UI_TEXT.LOGIN_SUBTITLE;
-
-    header.append(title, subtitle);
+    header.appendChild(title);
 
     const form = document.createElement("form");
     form.className = ADMIN_UI_CLASSES.FORM;
@@ -76,7 +72,6 @@ export class AdminLoginModalView {
     userInput.id = "cv-admin-username";
     userInput.type = "text";
     userInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    userInput.placeholder = ADMIN_UI_TEXT.LOGIN_USER_PLACEHOLDER;
     userInput.setAttribute("required", "true");
     this.userInput = userInput;
 
@@ -95,7 +90,6 @@ export class AdminLoginModalView {
     passwordInput.id = "cv-admin-password";
     passwordInput.type = "password";
     passwordInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    passwordInput.placeholder = ADMIN_UI_TEXT.LOGIN_PASSWORD_PLACEHOLDER;
     passwordInput.setAttribute("required", "true");
     this.passwordInput = passwordInput;
 
