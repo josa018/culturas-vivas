@@ -1,6 +1,7 @@
 import "./style.css";
 import "aframe";
 import { AppRouter } from "./app";
+import { iniciarSesion } from "./sesion";
 
 function bootstrap(): void {
   const root = document.getElementById("app");
@@ -12,6 +13,8 @@ function bootstrap(): void {
 
   const router = new AppRouter(root);
   (window as unknown as { __CV_ROUTER__?: AppRouter }).__CV_ROUTER__ = router;
+
+  iniciarSesion();
 }
 
 if (document.readyState === "loading") {
