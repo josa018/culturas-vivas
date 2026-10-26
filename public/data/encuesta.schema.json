@@ -6,7 +6,7 @@
   "required": ["version", "id_sesion", "modo", "respuestas"],
   "properties": {
     "version": { "type": "string", "const": "1.0" },
-    "id_sesion": { "type": "string", "pattern": "^[a-z0-9]{6,12}$" },
+       "id_sesion": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
     "modo": { "type": "string", "enum": ["vr", "2d"] },
     "respuestas": {
       "type": "object",
