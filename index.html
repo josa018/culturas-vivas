@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Culturas Vivas</title>
+</head>
+
+<body>
+    <!-- Escena vinculada al componente de accesibilidad -->
+    <a-scene control-sensores-qa>
+        <a-sky color="#222"></a-sky>
+        <a-text value="Culturas Vivas" position="0 1.6 -2" align="center"></a-text>
+    </a-scene>
+
+    <script type="module" src="/src/main.ts"></script>
+
+    <!-- Alerta de alto contraste (Relación cromática mayor a 4.5:1) -->
+    <div id="vr-status-message" style="display: none; background: rgba(0,0,0,0.85); color: #FFFFFF; padding: 12px; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; font-family: sans-serif; border-radius: 4px;"></div>
+</body>
+
+</html>
