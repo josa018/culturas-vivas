@@ -21,3 +21,28 @@
 </body>
 
 </html>
+=======
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Culturas Vivas</title>
+</head>
+
+<body>
+    <!-- 2D SPA Application Shell -->
+    <div id="app"></div>
+
+    <!-- 3D WebXR Canvas (Controlled by ExperienceScreenView) -->
+    <a-scene embedded style="display: none;">
+        <a-sky color="#121212"></a-sky>
+        <a-text value="Culturas Vivas - Sala Virtual" position="0 1.6 -2" align="center"></a-text>
+        <a-camera>
+            <a-cursor color="#bb86fc" fuse="true" fuse-timeout="1500"></a-cursor>
+        </a-camera>
+    </a-scene>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>
