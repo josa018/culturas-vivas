@@ -19,10 +19,17 @@
 
     <!-- 3D WebXR Canvas (Controlled by ExperienceScreenView & QA sensors) -->
     <a-scene embedded control-sensores-qa style="display: none;">
-      <a-sky color="#121212"></a-sky>
-      <a-text value="Culturas Vivas - Sala Virtual" position="0 1.6 -2" align="center"></a-text>
-      <a-camera>
-        <a-cursor color="#bb86fc" fuse="true" fuse-timeout="1500"></a-cursor>
+      <a-assets timeout="10000">
+        <img id="sky-360" src="/scenes/test_scene.webp" />
+      </a-assets>
+
+      <a-sky src="#sky-360" rotation="0 -90 0"></a-sky>
+
+      <a-light type="ambient" color="#ffffff" intensity="0.85"></a-light>
+      <a-light type="directional" color="#ffffff" intensity="0.5" position="-1 4 2"></a-light>
+
+      <a-camera position="0 1.6 0">
+        <a-cursor color="#38bdf8" fuse="true" fuse-timeout="1500" raycaster="objects: .clickable"></a-cursor>
       </a-camera>
     </a-scene>
 

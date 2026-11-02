@@ -1,4 +1,6 @@
 import "aframe";
+import "./experience/components/inspectable";
+import "./experience/components/stereo-media";
 import "./style.css";
 import { AppRouter } from "./app";
 import { AppRoute, RouteMatcher } from "./navigation/route-matcher";
@@ -18,8 +20,18 @@ AFRAME.registerComponent("control-sensores-qa", {
       this.activarFallbackTactil("Tiempo de espera agotado para el sensor.");
     }, 1000);
 
-    if (typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === "function") {
-      (DeviceOrientationEvent as unknown as { requestPermission: () => Promise<string> })
+    if (
+      typeof (
+        DeviceOrientationEvent as unknown as {
+          requestPermission?: () => Promise<string>;
+        }
+      ).requestPermission === "function"
+    ) {
+      (
+        DeviceOrientationEvent as unknown as {
+          requestPermission: () => Promise<string>;
+        }
+      )
         .requestPermission()
         .then((permissionState: string) => {
           clearTimeout(fallbackTimeout);
@@ -37,7 +49,9 @@ AFRAME.registerComponent("control-sensores-qa", {
     } else {
       clearTimeout(fallbackTimeout);
       if (navigator.userAgent.indexOf("Mobile") === -1) {
-        this.activarFallbackTactil("Entorno de escritorio detectado sin hardware de movimiento.");
+        this.activarFallbackTactil(
+          "Entorno de escritorio detectado sin hardware de movimiento.",
+        );
       } else {
         console.log("[QA] Giroscopio activo directamente (Android u otros).");
       }
@@ -48,7 +62,8 @@ AFRAME.registerComponent("control-sensores-qa", {
     console.warn(`[QA Fallback Activo] Motivo: ${motivo}`);
     const statusContenedor = document.getElementById("vr-status-message");
     if (statusContenedor) {
-      statusContenedor.innerText = "Sensores no disponibles. Activando visualización táctil 2D";
+      statusContenedor.innerText =
+        "Sensores no disponibles. Activando visualización táctil 2D";
       statusContenedor.setAttribute("role", "status");
       statusContenedor.setAttribute("aria-live", "polite");
       statusContenedor.style.display = "block";
@@ -80,7 +95,9 @@ function bootstrap(): void {
 
     const sessionManager = new VisitorSessionManager();
     void sessionManager.start();
-    (window as unknown as { __CV_SESSION__?: VisitorSessionManager }).__CV_SESSION__ = sessionManager;
+    (
+      window as unknown as { __CV_SESSION__?: VisitorSessionManager }
+    ).__CV_SESSION__ = sessionManager;
   }
 }
 

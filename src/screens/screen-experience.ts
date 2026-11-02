@@ -1,6 +1,7 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
+import { ExhibitRoomBuilder } from "../experience/room-builder";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -11,9 +12,15 @@ export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
+  private viewMode: string = "vr";
 
-  constructor(dispatch: NavigationDispatcher) {
+  constructor(dispatch: NavigationDispatcher, viewMode: string = "vr") {
     this.dispatch = dispatch;
+    this.viewMode = viewMode;
+  }
+
+  public setViewMode(viewMode: string): void {
+    this.viewMode = viewMode;
   }
 
   public mount(parent: HTMLElement): void {
@@ -92,6 +99,7 @@ export class ExperienceScreenView implements ScreenView {
     if (active) {
       scene.style.display = "block";
       scene.style.visibility = "visible";
+      ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
       if (typeof scene.play === "function") {
         scene.play();
       }

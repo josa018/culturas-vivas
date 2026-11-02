@@ -75,6 +75,19 @@ function runEndToEndBenchmark(): void {
     "A-Frame scene must be visible when in 3D",
   );
 
+  const roomGroupVR = mockScene.querySelector(
+    "#cv-prototype-room-group",
+  ) as MockElement;
+  assert.ok(
+    roomGroupVR,
+    "Prototype room group must be mounted in A-Frame scene",
+  );
+  assert.equal(
+    roomGroupVR.children.length,
+    5,
+    "Prototype room must contain all 5 exhibits",
+  );
+
   const exitHudBtn = experienceEl.querySelector(
     '[data-action="request-exit"]',
   ) as MockElement;
@@ -121,6 +134,27 @@ function runEndToEndBenchmark(): void {
   assert.ok(
     welcomeEl.classList.contains("cv-screen--active"),
     "Welcome screen must be active after survey completion",
+  );
+
+  // Traversal 2: 2D Mode Path
+  const touch2dBtn = welcomeEl.querySelector(
+    '[data-action="2d"]',
+  ) as MockElement;
+  assert.ok(touch2dBtn, "2D mode selection button must exist");
+  touch2dBtn.dispatchEvent("click");
+  assert.ok(
+    experienceEl.classList.contains("cv-screen--active"),
+    "Experience HUD active in 2D",
+  );
+  assert.equal(mockScene.style.display, "block", "A-Frame scene visible in 2D");
+  const roomGroup2D = mockScene.querySelector(
+    "#cv-prototype-room-group",
+  ) as MockElement;
+  assert.ok(roomGroup2D, "Room group remains mounted in 2D mode");
+  assert.equal(
+    roomGroup2D.children.length,
+    5,
+    "All 5 exhibits present in 2D mode",
   );
 
   const elapsedMs = Date.now() - startTime;

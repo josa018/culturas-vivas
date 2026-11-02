@@ -161,7 +161,9 @@ export class MockElement {
   public querySelectorAll<T = MockElement>(selector: string): T[] {
     const results: MockElement[] = [];
     const walk = (el: MockElement): void => {
-      if (selector === "[data-rating]" && el.getAttribute("data-rating")) {
+      const isAttrQuery = selector.startsWith("[") && selector.endsWith("]");
+      const attrName = isAttrQuery ? selector.slice(1, -1) : "";
+      if (isAttrQuery && el.getAttribute(attrName) !== null) {
         results.push(el);
       }
       for (const child of el.children) {

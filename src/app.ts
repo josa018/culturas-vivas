@@ -73,9 +73,22 @@ export class AppRouter {
   }
 
   private subscribeToTransitions(): void {
-    this.unsubscribe = this.stateMachine.subscribe((activeScreenId) => {
-      this.updateScreenVisibility(activeScreenId);
-    });
+    this.unsubscribe = this.stateMachine.subscribe(
+      (activeScreenId, session) => {
+        if (session.viewMode) {
+          const experienceScreen = this.screens.get(ScreenId.EXPERIENCE_3D) as
+            | ExperienceScreenView
+            | undefined;
+          if (
+            experienceScreen &&
+            typeof experienceScreen.setViewMode === "function"
+          ) {
+            experienceScreen.setViewMode(session.viewMode);
+          }
+        }
+        this.updateScreenVisibility(activeScreenId);
+      },
+    );
   }
 
   private updateScreenVisibility(activeScreenId: ScreenId): void {
