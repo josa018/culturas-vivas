@@ -9,8 +9,16 @@
     <!-- 2D SPA Application Shell -->
     <div id="app"></div>
 
-    <!-- 3D WebXR Canvas (Controlled by ExperienceScreenView) -->
-    <a-scene embedded style="display: none;">
+    <!-- WCAG Sensor Fallback Alert Container -->
+    <div
+      id="vr-status-message"
+      role="status"
+      aria-live="polite"
+      style="display: none; background: rgba(0,0,0,0.85); color: #FFFFFF; padding: 12px; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; font-family: sans-serif; border-radius: 4px;"
+    ></div>
+
+    <!-- 3D WebXR Canvas (Controlled by ExperienceScreenView & QA sensors) -->
+    <a-scene embedded control-sensores-qa style="display: none;">
       <a-sky color="#121212"></a-sky>
       <a-text value="Culturas Vivas - Sala Virtual" position="0 1.6 -2" align="center"></a-text>
       <a-camera>

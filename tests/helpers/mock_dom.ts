@@ -27,7 +27,22 @@ export class MockClassList {
 export class MockElement {
   public tagName: string;
   public className: string = "";
-  public textContent: string = "";
+  private _textContent: string | null = null;
+
+  public get textContent(): string {
+    if (this._textContent !== null) {
+      return this._textContent;
+    }
+    if (this.children.length > 0) {
+      return this.children.map((c) => c.textContent).join("");
+    }
+    return "";
+  }
+
+  public set textContent(value: string) {
+    this._textContent = value;
+  }
+
   public classList = new MockClassList();
   public children: MockElement[] = [];
   public parentElement: MockElement | null = null;
@@ -57,6 +72,13 @@ export class MockElement {
       return this.id || null;
     }
     return this.attributes.get(name) ?? null;
+  }
+
+  public removeAttribute(name: string): void {
+    this.attributes.delete(name);
+    if (name === "id") {
+      this.id = "";
+    }
   }
 
   public appendChild(child: MockElement): MockElement {
@@ -96,7 +118,7 @@ export class MockElement {
   public dispatchEvent(event: string, payload?: unknown): void {
     const handlers = this.listeners.get(event) ?? [];
     for (const h of handlers) {
-      h(payload ?? { stopPropagation: () => {} });
+      h(payload ?? { stopPropagation: () => {}, preventDefault: () => {} });
     }
   }
 
