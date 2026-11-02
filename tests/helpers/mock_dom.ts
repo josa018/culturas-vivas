@@ -143,6 +143,9 @@ export class MockElement {
       ) {
         return el;
       }
+      if (el.tagName.toLowerCase() === selector.toLowerCase()) {
+        return el;
+      }
       if (selector === "a-scene" && el.tagName === "A-SCENE") {
         return el;
       }
