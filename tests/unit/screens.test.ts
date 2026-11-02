@@ -209,8 +209,42 @@ function runScreensUnitTests(): void {
       dispatched[dispatched.length - 1].action,
       NavigationAction.REQUEST_EXIT,
     );
+    // Test native exit-vr event in VR mode
+    experience.setViewMode("vr");
+    experience.show();
+    const initialDispatchedCount = dispatched.length;
+    mockScene.dispatchEvent("exit-vr");
+    assert.equal(
+      dispatched.length,
+      initialDispatchedCount + 1,
+      "exit-vr event must dispatch REQUEST_EXIT",
+    );
+    assert.equal(
+      dispatched[dispatched.length - 1].action,
+      NavigationAction.REQUEST_EXIT,
+    );
+
+    // Test retainBackground() decoupling
+    const enterVRCountBeforeRetain = enterVRCount;
+    experience.retainBackground();
+    assert.equal(
+      enterVRCount,
+      enterVRCountBeforeRetain,
+      "retainBackground must NEVER invoke enterVR",
+    );
+    assert.equal(
+      mockScene.style.display,
+      "block",
+      "Scene canvas must remain display block during retainBackground",
+    );
+    const hudContainer = experience.getElement() as unknown as MockElement;
+    assert.equal(
+      hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN),
+      true,
+      "HUD must be hidden during retainBackground",
+    );
     console.log(
-      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, and dispatched REQUEST_EXIT",
+      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, handled exit-vr event, retained background, and dispatched REQUEST_EXIT",
     );
   }
 
@@ -231,6 +265,16 @@ function runScreensUnitTests(): void {
       NavigationAction.RESUME_TOUR,
     );
 
+    const switchTouchBtn = el.querySelector(
+      '[data-action="switch-to-touch"]',
+    ) as MockElement;
+    assert.ok(switchTouchBtn);
+    switchTouchBtn.dispatchEvent("click");
+    assert.equal(
+      dispatched[dispatched.length - 1].action,
+      NavigationAction.SWITCH_TO_TOUCH,
+    );
+
     const exitBtn = el.querySelector(
       '[data-action="confirm-exit"]',
     ) as MockElement;
@@ -241,7 +285,7 @@ function runScreensUnitTests(): void {
       NavigationAction.CONFIRM_EXIT,
     );
     console.log(
-      "✓ Screen 5 (Exit Modal) mounted and dispatched RESUME_TOUR & CONFIRM_EXIT",
+      "✓ Screen 5 (Exit Modal) mounted and dispatched RESUME_TOUR, SWITCH_TO_TOUCH & CONFIRM_EXIT",
     );
   }
 

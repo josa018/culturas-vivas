@@ -109,6 +109,16 @@ export class MockElement {
     }
   }
 
+  public removeEventListener(
+    event: string,
+    handler: (e: unknown) => void,
+  ): void {
+    const list = this.listeners.get(event);
+    if (!list) return;
+    const idx = list.indexOf(handler);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+
   public addEventListener(event: string, handler: (e: unknown) => void): void {
     const list = this.listeners.get(event) ?? [];
     list.push(handler);

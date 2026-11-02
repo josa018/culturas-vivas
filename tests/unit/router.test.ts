@@ -108,6 +108,30 @@ function runRouterUnitTests(): void {
     );
   }
 
+  // Test 4b: Modal Switch to Touch from VR Flow
+  {
+    const storage = new MockStorage();
+    const store = new SessionStore(storage);
+    const fsm = new NavigationStateMachine(store);
+
+    fsm.dispatch(NavigationAction.FINISH_LOADING);
+    fsm.dispatch(NavigationAction.SELECT_VR);
+    fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
+    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
+    assert.equal(fsm.getSession().viewMode, ViewMode.VR);
+
+    fsm.dispatch(NavigationAction.REQUEST_EXIT);
+    assert.equal(fsm.getCurrentScreen(), ScreenId.EXIT_MODAL);
+
+    fsm.dispatch(NavigationAction.SWITCH_TO_TOUCH);
+    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
+    assert.equal(fsm.getSession().viewMode, ViewMode.TOUCH_2D);
+
+    console.log(
+      "✓ Test 4b Passed: Exit modal switch to touch mode transitions to 3D scene with 2d viewMode",
+    );
+  }
+
   // Test 5: Illegal Transition Guard
   {
     const storage = new MockStorage();

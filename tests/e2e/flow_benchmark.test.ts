@@ -162,6 +162,63 @@ function runEndToEndBenchmark(): void {
     "All 5 exhibits present in 2D mode",
   );
 
+  // Exit 2D mode to welcome for next traversal
+  const exitHudBtn2 = experienceEl.querySelector(
+    '[data-action="request-exit"]',
+  ) as MockElement;
+  assert.ok(exitHudBtn2);
+  exitHudBtn2.dispatchEvent("click");
+  const finishBtn2 = exitModalEl.querySelector(
+    '[data-action="confirm-exit"]',
+  ) as MockElement;
+  assert.ok(finishBtn2);
+  finishBtn2.dispatchEvent("click");
+  const skipSurveyBtn = surveyEl.querySelector(
+    '[data-action="skip-survey"]',
+  ) as MockElement;
+  assert.ok(skipSurveyBtn);
+  skipSurveyBtn.dispatchEvent("click");
+  assert.ok(welcomeEl.classList.contains("cv-screen--active"));
+
+  // Traversal 3: Cardboard VR native exit-vr -> Exit Modal -> Switch to Touch
+  const vrBtn2 = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
+  assert.ok(vrBtn2);
+  vrBtn2.dispatchEvent("click");
+  const startBtn2 = tutorialEl.querySelector(
+    '[data-action="confirm-insertion"]',
+  ) as MockElement;
+  assert.ok(startBtn2);
+  startBtn2.dispatchEvent("click");
+  assert.ok(experienceEl.classList.contains("cv-screen--active"));
+
+  // Native exit-vr fired (e.g. Cardboard viewer X)
+  mockScene.dispatchEvent("exit-vr");
+  assert.ok(
+    exitModalEl.classList.contains("cv-screen--active"),
+    "Native exit-vr must navigate directly to Exit Modal",
+  );
+  assert.equal(
+    mockScene.style.display,
+    "block",
+    "Scene canvas must be retained in background",
+  );
+
+  // Switch to touch mode from Exit Modal
+  const switchTouchBtn = exitModalEl.querySelector(
+    '[data-action="switch-to-touch"]',
+  ) as MockElement;
+  assert.ok(switchTouchBtn, "Switch to touch button must exist in exit modal");
+  switchTouchBtn.dispatchEvent("click");
+  assert.ok(
+    experienceEl.classList.contains("cv-screen--active"),
+    "Experience HUD active after switching to touch",
+  );
+  assert.equal(
+    router.getStateMachine().getSession().viewMode,
+    "2d",
+    "Session viewMode must be updated to 2d",
+  );
+
   const elapsedMs = Date.now() - startTime;
   console.log(
     `✓ Traversed Screens 1 -> 6 -> Welcome in ${elapsedMs} ms (DoD limit: ${MAX_ALLOWED_DURATION_MS} ms)`,

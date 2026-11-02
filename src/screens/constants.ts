@@ -43,6 +43,7 @@ export const UI_TEXT = {
   EXIT_MODAL_DESCRIPTION:
     "Puedes regresar a la sala 3D o concluir tu visita y calificar la experiencia.",
   EXIT_MODAL_BTN_RESUME: "Continuar Recorrido",
+  EXIT_MODAL_BTN_SWITCH_TOUCH: "Continuar en pantalla táctil",
   EXIT_MODAL_BTN_CONFIRM: "Finalizar Experiencia",
 
   SURVEY_TITLE: "Encuesta de Satisfacción",

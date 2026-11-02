@@ -17,6 +17,8 @@ export class ExperienceScreenView implements ScreenView {
   private container: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
+  private isProgrammaticExit: boolean = false;
+  private exitVRHandler: (() => void) | null = null;
 
   constructor(dispatch: NavigationDispatcher, viewMode: string = "vr") {
     this.dispatch = dispatch;
@@ -62,9 +64,11 @@ export class ExperienceScreenView implements ScreenView {
 
     parent.appendChild(hudOverlay);
     this.container = hudOverlay;
+    this.setupSceneListeners();
   }
 
   public unmount(): void {
+    this.teardownSceneListeners();
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -72,11 +76,37 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   public show(): void {
+    this.isProgrammaticExit = false;
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
+    this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
+  }
+
+  public retainBackground(): void {
+    if (this.container) {
+      this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
+      this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
+    }
+    if (typeof document === "undefined") {
+      return;
+    }
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    if (!scene) {
+      return;
+    }
+
+    scene.style.display = "block";
+    if (scene.classList && typeof scene.classList.add === "function") {
+      scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
+    }
+    ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+    this.safeProgrammaticExitVR(scene);
+    if (typeof scene.pause === "function") {
+      scene.pause();
+    }
   }
 
   public hide(): void {
@@ -126,40 +156,13 @@ export class ExperienceScreenView implements ScreenView {
           }
         }
       } else {
-        if (
-          typeof scene.exitVR === "function" &&
-          (typeof scene.is !== "function" || scene.is("vr-mode"))
-        ) {
-          try {
-            const result = scene.exitVR();
-            if (
-              result &&
-              typeof (result as Promise<void>).catch === "function"
-            ) {
-              (result as Promise<void>).catch(() => {});
-            }
-          } catch {
-            // Ignore exitVR errors
-          }
-        }
+        this.safeProgrammaticExitVR(scene);
       }
       if (this.viewMode === "2d") {
         this.synchronizeViewport(scene);
       }
     } else {
-      if (
-        typeof scene.exitVR === "function" &&
-        (typeof scene.is !== "function" || scene.is("vr-mode"))
-      ) {
-        try {
-          const result = scene.exitVR();
-          if (result && typeof (result as Promise<void>).catch === "function") {
-            (result as Promise<void>).catch(() => {});
-          }
-        } catch {
-          // Ignore exitVR errors
-        }
-      }
+      this.safeProgrammaticExitVR(scene);
       scene.style.display = "none";
       if (scene.classList && typeof scene.classList.remove === "function") {
         scene.classList.remove(UI_CLASSES.SCENE_ACTIVE);
@@ -167,6 +170,57 @@ export class ExperienceScreenView implements ScreenView {
       if (typeof scene.pause === "function") {
         scene.pause();
       }
+    }
+  }
+
+  private safeProgrammaticExitVR(scene: AFrameSceneElement): void {
+    if (
+      typeof scene.exitVR !== "function" ||
+      (typeof scene.is === "function" && !scene.is("vr-mode"))
+    ) {
+      return;
+    }
+    this.isProgrammaticExit = true;
+    try {
+      const result = scene.exitVR();
+      if (result && typeof (result as Promise<void>).then === "function") {
+        (result as Promise<void>).finally(() => {
+          this.isProgrammaticExit = false;
+        });
+      } else {
+        this.isProgrammaticExit = false;
+      }
+    } catch {
+      this.isProgrammaticExit = false;
+    }
+  }
+
+  private setupSceneListeners(): void {
+    if (typeof document === "undefined" || this.exitVRHandler) {
+      return;
+    }
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    if (!scene || typeof scene.addEventListener !== "function") {
+      return;
+    }
+    this.exitVRHandler = () => {
+      if (this.isProgrammaticExit) {
+        return;
+      }
+      if (this.viewMode === "vr") {
+        this.dispatch(NavigationAction.REQUEST_EXIT);
+      }
+    };
+    scene.addEventListener("exit-vr", this.exitVRHandler);
+  }
+
+  private teardownSceneListeners(): void {
+    if (this.exitVRHandler && typeof document !== "undefined") {
+      const scene = document.querySelector<AFrameSceneElement>("a-scene");
+      if (scene && typeof scene.removeEventListener === "function") {
+        scene.removeEventListener("exit-vr", this.exitVRHandler);
+      }
+      this.exitVRHandler = null;
     }
   }
 

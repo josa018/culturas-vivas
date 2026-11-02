@@ -100,7 +100,12 @@ export class AppRouter {
         activeScreenId === ScreenId.EXIT_MODAL
       ) {
         // Retain 3D scene in the background under the exit modal
-        screen.show();
+        const experienceScreen = screen as ExperienceScreenView;
+        if (typeof experienceScreen.retainBackground === "function") {
+          experienceScreen.retainBackground();
+        } else {
+          experienceScreen.show();
+        }
       } else {
         screen.hide();
       }
