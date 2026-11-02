@@ -3,6 +3,7 @@ import "./style.css";
 import { AppRouter } from "./app";
 import { AppRoute, RouteMatcher } from "./navigation/route-matcher";
 import { AdminController } from "./admin/index";
+import { VisitorSessionManager } from "./session/visitor-session-manager";
 
 // Production component for QA & Accessibility sensor fallback
 AFRAME.registerComponent("control-sensores-qa", {
@@ -76,6 +77,10 @@ function bootstrap(): void {
   } else {
     const router = new AppRouter(root);
     (window as unknown as { __CV_ROUTER__?: AppRouter }).__CV_ROUTER__ = router;
+
+    const sessionManager = new VisitorSessionManager();
+    void sessionManager.start();
+    (window as unknown as { __CV_SESSION__?: VisitorSessionManager }).__CV_SESSION__ = sessionManager;
   }
 }
 
