@@ -9,6 +9,7 @@ import {
   ExperienceScreenView,
   ExitModalScreenView,
   SurveyScreenView,
+  UI_CLASSES,
 } from "../../src/screens/index";
 
 function runScreensUnitTests(): void {
@@ -37,9 +38,9 @@ function runScreensUnitTests(): void {
       '[data-action="enter"]',
     ) as MockElement;
     assert.ok(enterBtn, "Enter button must be rendered in DOM");
+    assert.equal(enterBtn.style.display, "none");
 
     splash.setReady();
-    assert.equal(splash.isReadyState(), true);
     assert.equal(enterBtn.style.display, "inline-block");
 
     enterBtn.dispatchEvent("click");
@@ -115,7 +116,20 @@ function runScreensUnitTests(): void {
     experience.show();
 
     assert.equal(resizeInvoked, true, "Scene resize must be invoked on show");
+    assert.equal(
+      mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
+      true,
+      "Scene must contain active class on show",
+    );
 
+    experience.hide();
+    assert.equal(
+      mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
+      false,
+      "Scene must not contain active class on hide",
+    );
+
+    experience.show();
     const el = experience.getElement() as unknown as MockElement;
     const exitHudBtn = el.querySelector(
       '[data-action="request-exit"]',

@@ -2,6 +2,7 @@ export const UI_CLASSES = {
   SCREEN_CONTAINER: "cv-screen",
   SCREEN_ACTIVE: "cv-screen--active",
   SCREEN_HIDDEN: "cv-screen--hidden",
+  SCENE_ACTIVE: "cv-scene--active",
   BUTTON_PRIMARY: "cv-btn cv-btn--primary",
   BUTTON_SECONDARY: "cv-btn cv-btn--secondary",
   BUTTON_OUTLINE: "cv-btn cv-btn--outline",

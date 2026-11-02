@@ -99,7 +99,9 @@ export class ExperienceScreenView implements ScreenView {
 
     if (active) {
       scene.style.display = "block";
-      scene.style.visibility = "visible";
+      if (scene.classList && typeof scene.classList.add === "function") {
+        scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
+      }
       ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
       if (typeof scene.play === "function") {
         scene.play();
@@ -107,6 +109,9 @@ export class ExperienceScreenView implements ScreenView {
       this.synchronizeViewport(scene);
     } else {
       scene.style.display = "none";
+      if (scene.classList && typeof scene.classList.remove === "function") {
+        scene.classList.remove(UI_CLASSES.SCENE_ACTIVE);
+      }
       if (typeof scene.pause === "function") {
         scene.pause();
       }

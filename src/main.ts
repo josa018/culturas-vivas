@@ -7,6 +7,47 @@ import { AppRoute, RouteMatcher } from "./navigation/route-matcher";
 import { AdminController } from "./admin/index";
 import { VisitorSessionManager } from "./session/visitor-session-manager";
 
+// Defensive runtime guard for A-Frame look-controls on mobile devices
+if (
+  typeof AFRAME !== "undefined" &&
+  AFRAME.components &&
+  AFRAME.components["look-controls"]
+) {
+  const lookControlsProto = AFRAME.components["look-controls"].Component
+    .prototype as {
+    setupMagicWindowControls?: () => void;
+  };
+  const originalSetupMagicWindowControls =
+    lookControlsProto.setupMagicWindowControls;
+  if (typeof originalSetupMagicWindowControls === "function") {
+    lookControlsProto.setupMagicWindowControls = function (this: {
+      el?: {
+        sceneEl?: {
+          components?: Record<string, { permissionGranted?: boolean }>;
+        };
+      };
+    }) {
+      const scene = this.el?.sceneEl;
+      if (scene) {
+        scene.components = scene.components || {};
+        if (!scene.components["device-orientation-permission-ui"]) {
+          scene.components["device-orientation-permission-ui"] = {
+            permissionGranted: false,
+          };
+        }
+      }
+      try {
+        originalSetupMagicWindowControls.call(this);
+      } catch (err: unknown) {
+        console.warn(
+          "[LookControls] Handled setupMagicWindowControls error:",
+          err,
+        );
+      }
+    };
+  }
+}
+
 // Production component for QA & Accessibility sensor fallback
 AFRAME.registerComponent("control-sensores-qa", {
   init: function () {
