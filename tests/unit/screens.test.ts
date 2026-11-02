@@ -32,12 +32,24 @@ function runScreensUnitTests(): void {
     assert.ok(splash.getElement());
     splash.show();
 
-    (splash.getElement() as unknown as MockElement).dispatchEvent("click");
+    const splashEl = splash.getElement() as unknown as MockElement;
+    const enterBtn = splashEl.querySelector(
+      '[data-action="enter"]',
+    ) as MockElement;
+    assert.ok(enterBtn, "Enter button must be rendered in DOM");
+
+    splash.setReady();
+    assert.equal(splash.isReadyState(), true);
+    assert.equal(enterBtn.style.display, "inline-block");
+
+    enterBtn.dispatchEvent("click");
     assert.equal(
       dispatched[dispatched.length - 1].action,
       NavigationAction.FINISH_LOADING,
     );
-    console.log("✓ Screen 1 (Splash) mounted and dispatched FINISH_LOADING");
+    console.log(
+      "✓ Screen 1 (Splash) mounted, set ready, and dispatched FINISH_LOADING via enter button",
+    );
   }
 
   // Screen 2: Welcome

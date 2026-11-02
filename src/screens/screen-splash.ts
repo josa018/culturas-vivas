@@ -1,14 +1,35 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
+import {
+  ScenePreloadManager,
+  PRELOAD_CONSTANTS,
+} from "../experience/preload-manager";
 
 export class SplashScreenView implements ScreenView {
   public readonly id = ScreenId.SPLASH;
   private container: HTMLElement | null = null;
+  private spinner: HTMLElement | null = null;
+  private statusText: HTMLElement | null = null;
+  private enterBtn: HTMLElement | null = null;
+  private isReady = false;
   private readonly dispatch: NavigationDispatcher;
+  private readonly preloadManager: ScenePreloadManager;
 
-  constructor(dispatch: NavigationDispatcher) {
+  constructor(
+    dispatch: NavigationDispatcher,
+    preloadManager?: ScenePreloadManager,
+  ) {
     this.dispatch = dispatch;
+    this.preloadManager =
+      preloadManager ??
+      new ScenePreloadManager({
+        onProgress: (progress) => {
+          if (this.statusText && !this.isReady) {
+            this.statusText.textContent = `${UI_TEXT.SPLASH_LOADING} (${progress.percentage}%)`;
+          }
+        },
+      });
   }
 
   public mount(parent: HTMLElement): void {
@@ -40,25 +61,46 @@ export class SplashScreenView implements ScreenView {
     spinner.setAttribute("role", "progressbar");
     spinner.setAttribute("aria-label", UI_TEXT.SPLASH_LOADING);
 
-    const prompt = document.createElement("p");
-    prompt.className = "cv-caption";
-    prompt.textContent = UI_TEXT.SPLASH_TAP_PROMPT;
+    const statusText = document.createElement("p");
+    statusText.className = "cv-caption cv-splash-status";
+    statusText.textContent = UI_TEXT.SPLASH_LOADING;
 
-    content.append(logo, title, subtitle, spinner, prompt);
-    element.appendChild(content);
+    const enterBtn = document.createElement("button");
+    enterBtn.className = `${UI_CLASSES.BUTTON_PRIMARY} cv-splash-enter-btn`;
+    enterBtn.setAttribute("data-action", "enter");
+    enterBtn.textContent = UI_TEXT.SPLASH_BTN_ENTER;
+    enterBtn.style.display = "none";
 
-    element.addEventListener("click", () => {
+    enterBtn.addEventListener("click", (evt: Event) => {
+      evt.stopPropagation();
       this.dispatch(NavigationAction.FINISH_LOADING);
     });
 
+    element.addEventListener("click", () => {
+      if (this.isReady) {
+        this.dispatch(NavigationAction.FINISH_LOADING);
+      }
+    });
+
+    content.append(logo, title, subtitle, spinner, statusText, enterBtn);
+    element.appendChild(content);
+
     parent.appendChild(element);
     this.container = element;
+    this.spinner = spinner;
+    this.statusText = statusText;
+    this.enterBtn = enterBtn;
+
+    void this.startPreload();
   }
 
   public unmount(): void {
     if (this.container) {
       this.container.remove();
       this.container = null;
+      this.spinner = null;
+      this.statusText = null;
+      this.enterBtn = null;
     }
   }
 
@@ -78,5 +120,43 @@ export class SplashScreenView implements ScreenView {
 
   public getElement(): HTMLElement | null {
     return this.container;
+  }
+
+  public setReady(): void {
+    if (this.isReady) {
+      return;
+    }
+    this.isReady = true;
+
+    if (this.spinner) {
+      this.spinner.style.display = "none";
+    }
+    if (this.statusText) {
+      this.statusText.textContent = UI_TEXT.SPLASH_READY;
+    }
+    if (this.enterBtn) {
+      this.enterBtn.style.display = "inline-block";
+    }
+  }
+
+  public isReadyState(): boolean {
+    return this.isReady;
+  }
+
+  private async startPreload(): Promise<void> {
+    const sceneEl =
+      typeof document !== "undefined"
+        ? (document.querySelector("a-scene") as HTMLElement | null)
+        : null;
+
+    await this.preloadManager.preloadAll(
+      PRELOAD_CONSTANTS.DEFAULT_CRITICAL_ASSETS,
+    );
+
+    if (sceneEl) {
+      await this.preloadManager.waitForSceneLoaded(sceneEl, 3000);
+    }
+
+    this.setReady();
   }
 }

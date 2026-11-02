@@ -152,6 +152,11 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
+.cv-splash-enter-btn {
+  margin-top: 12px;
+  min-width: 180px;
+}
+
 /* Card Component (Screens 2, 3, 5, 6) */
 .cv-welcome-card,
 .cv-tutorial-card,
