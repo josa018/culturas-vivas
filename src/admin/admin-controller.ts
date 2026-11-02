@@ -33,6 +33,7 @@ export class AdminController {
   }
 
   public destroy(): void {
+    this.restore3DCanvas();
     this.dashboardStore.stopSimulation();
     if (this.unsubscribeAuth) {
       this.unsubscribeAuth();
@@ -52,10 +53,29 @@ export class AdminController {
     if (typeof document === "undefined") {
       return;
     }
-    const scene = document.querySelector("a-scene");
+    const scene = document.querySelector("a-scene") as (HTMLElement & { pause?: () => void }) | null;
     if (scene) {
       scene.style.display = "none";
       scene.setAttribute("style", "display: none !important;");
+      if (typeof scene.pause === "function") {
+        scene.pause();
+      }
+    }
+  }
+
+  private restore3DCanvas(): void {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const scene = document.querySelector("a-scene") as (HTMLElement & { play?: () => void }) | null;
+    if (scene) {
+      scene.style.display = "";
+      if (typeof scene.removeAttribute === "function") {
+        scene.removeAttribute("style");
+      }
+      if (typeof scene.play === "function") {
+        scene.play();
+      }
     }
   }
 
@@ -65,10 +85,20 @@ export class AdminController {
       onLoginSuccess: () => {
         this.renderActiveState();
       },
+      onReturnToTour: () => {
+        this.returnToTour();
+      },
     });
     this.loginModal.mount(this.rootContainer);
 
     this.renderActiveState();
+  }
+
+  private returnToTour(): void {
+    this.destroy();
+    if (typeof window !== "undefined") {
+      window.location.assign("/");
+    }
   }
 
   private subscribeToAuth(): void {
@@ -91,6 +121,9 @@ export class AdminController {
           dashboardStore: this.dashboardStore,
           onLogout: () => {
             this.authStore.logout();
+          },
+          onReturnToTour: () => {
+            this.returnToTour();
           },
         });
         this.dashboardView.mount(this.rootContainer);

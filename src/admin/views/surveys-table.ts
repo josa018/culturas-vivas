@@ -99,7 +99,7 @@ export class SurveysTableWidget {
       return;
     }
     const avg = this.store.getAverageRating();
-    this.avgBadgeElement.textContent = `${ADMIN_UI_TEXT.SURVEY_AVG_PREFIX} ${avg.toFixed(1)} / 5.0`;
+    this.avgBadgeElement.textContent = `${ADMIN_UI_TEXT.SURVEY_AVG_PREFIX} ${avg.toFixed(1)}${ADMIN_UI_TEXT.RATING_SCALE_SUFFIX}`;
   }
 
   private renderRows(surveys: readonly SurveyLogEntry[]): void {
@@ -141,19 +141,22 @@ export class SurveysTableWidget {
           : ADMIN_UI_CLASSES.TABLE_MODE_CHIP_2D;
       modeChip.className = `${ADMIN_UI_CLASSES.TABLE_MODE_CHIP} ${modeModifier}`;
       modeChip.textContent =
-        item.viewMode === "vr" ? "WebXR VR" : "Pantalla 2D";
+        item.viewMode === "vr"
+          ? ADMIN_UI_TEXT.VIEW_MODE_VR
+          : ADMIN_UI_TEXT.VIEW_MODE_2D;
       modeCell.appendChild(modeChip);
 
       // Rating (stars)
       const ratingCell = document.createElement("td");
       ratingCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_STARS} ${ADMIN_UI_CLASSES.TABLE_TD_RATING}`;
       ratingCell.textContent =
-        "★".repeat(item.rating) + "☆".repeat(5 - item.rating);
+        ADMIN_UI_TEXT.STAR_FILLED.repeat(item.rating) +
+        ADMIN_UI_TEXT.STAR_EMPTY.repeat(5 - item.rating);
 
       // Feedback
       const feedbackCell = document.createElement("td");
       feedbackCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_TD_FEEDBACK}`;
-      feedbackCell.textContent = item.feedback || "—";
+      feedbackCell.textContent = item.feedback || ADMIN_UI_TEXT.FEEDBACK_EMPTY;
 
       row.append(timeCell, modeCell, ratingCell, feedbackCell);
       this.tbodyElement.appendChild(row);

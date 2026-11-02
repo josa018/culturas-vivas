@@ -10,6 +10,7 @@ export const ADMIN_UI_CLASSES = {
   ERROR_TEXT: "cv-admin-error-text",
   ERROR_HIDDEN: "cv-admin-error-text--hidden",
   BUTTON_SUBMIT: "cv-btn cv-btn--primary cv-admin-btn-submit",
+  BUTTON_RETURN_LINK: "cv-btn cv-btn--outline cv-admin-btn-return-link",
   MODAL_HEADER: "cv-admin-modal-header",
   TITLE: "cv-title",
   SUBTITLE: "cv-description",
@@ -23,6 +24,7 @@ export const ADMIN_UI_CLASSES = {
   HEADER_APP_SUBTITLE: "cv-admin-app-subtitle",
   HEADER_ACTIONS: "cv-admin-header-actions",
   BUTTON_LOGOUT: "cv-btn cv-btn--outline cv-admin-btn-logout",
+  BUTTON_EXIT: "cv-btn cv-btn--outline cv-admin-btn-exit",
 
   // Grid Layout
   GRID_LAYOUT: "cv-admin-grid",
@@ -33,18 +35,14 @@ export const ADMIN_UI_CLASSES = {
   CARD_SUBTITLE: "cv-admin-card-subtitle",
   CARD_BODY: "cv-admin-card-body",
 
-  // Capacity Counter Widget
-  COUNTER_WIDGET: "cv-admin-counter-widget",
-  COUNTER_METRIC_CONTAINER: "cv-admin-counter-metric-container",
-  COUNTER_VALUE: "cv-admin-counter-value",
-  COUNTER_LABEL: "cv-admin-counter-label",
-
   // Attendance Chart Widget
   CHART_WIDGET: "cv-admin-chart-widget",
   CHART_CONTAINER: "cv-admin-chart-container",
   CHART_CANVAS: "cv-admin-chart-canvas",
   CHART_KPI_GROUP: "cv-admin-chart-kpi",
   CHART_PEAK_BADGE: "cv-admin-peak-badge",
+  COUNTER_VALUE: "cv-admin-counter-value",
+  COUNTER_LABEL: "cv-admin-counter-label",
 
   // Surveys Table Widget
   SURVEY_WIDGET: "cv-admin-survey-widget",
@@ -69,6 +67,7 @@ export const ADMIN_UI_TEXT = {
   LOGIN_USER_LABEL: "Usuario",
   LOGIN_PASSWORD_LABEL: "Contraseña",
   LOGIN_SUBMIT_LABEL: "Iniciar Sesión",
+  LOGIN_RETURN_LINK: "← Regresar al recorrido público",
   LOGIN_ERROR_MESSAGE:
     "Credenciales incorrectas. Verifica usuario y contraseña.",
 
@@ -76,12 +75,9 @@ export const ADMIN_UI_TEXT = {
   HEADER_TITLE: "Culturas Vivas",
   HEADER_SUBTITLE: "Estadísticas",
   HEADER_LOGOUT_BTN: "Cerrar Sesión",
+  HEADER_EXIT_BTN: "Volver al Recorrido",
 
-  // Capacity Counter
-  COUNTER_TITLE: "Usuarios en Línea",
-  COUNTER_SUBTITLE: "Sesiones concurrentes en la experiencia WebXR",
-
-  // Attendance Chart
+  // Attendance & Concurrency
   CHART_TITLE: "Concurrencia de Visitantes",
   CHART_SUBTITLE: "Distribución de sesiones activas (Hoy)",
   CHART_DATASET_LABEL: "Usuarios conectados",
@@ -89,7 +85,7 @@ export const ADMIN_UI_TEXT = {
   PEAK_LABEL_PREFIX: "Pico de hoy: ",
   PEAK_LABEL_SUFFIX: " sesiones",
 
-  // Survey Table
+  // Survey Table & Formatting Tokens
   SURVEY_TITLE: "Encuestas Recientes",
   SURVEY_AVG_PREFIX: "★",
   TABLE_COL_TIME: "Hora",
@@ -97,6 +93,12 @@ export const ADMIN_UI_TEXT = {
   TABLE_COL_RATING: "Calificación",
   TABLE_COL_FEEDBACK: "Comentario",
   NO_SURVEYS: "Sin encuestas registradas en la jornada actual.",
+  VIEW_MODE_VR: "WebXR VR",
+  VIEW_MODE_2D: "Pantalla 2D",
+  STAR_FILLED: "★",
+  STAR_EMPTY: "☆",
+  FEEDBACK_EMPTY: "—",
+  RATING_SCALE_SUFFIX: " / 5.0",
 } as const;
 
 export const ADMIN_THRESHOLDS = {

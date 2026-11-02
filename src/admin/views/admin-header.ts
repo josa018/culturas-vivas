@@ -4,6 +4,7 @@ export interface AdminHeaderOptions {
   readonly username: string;
   readonly role: string;
   readonly onLogout: () => void;
+  readonly onReturnToTour?: () => void;
 }
 
 export class AdminHeaderWidget {
@@ -44,6 +45,20 @@ export class AdminHeaderWidget {
     const actions = document.createElement("div");
     actions.className = ADMIN_UI_CLASSES.HEADER_ACTIONS;
 
+    // Return to public tour button
+    const exitBtn = document.createElement("button");
+    exitBtn.type = "button";
+    exitBtn.className = ADMIN_UI_CLASSES.BUTTON_EXIT;
+    exitBtn.textContent = ADMIN_UI_TEXT.HEADER_EXIT_BTN;
+    exitBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (this.options.onReturnToTour) {
+        this.options.onReturnToTour();
+      } else if (typeof window !== "undefined") {
+        window.location.assign("/");
+      }
+    });
+
     // Logout Button (M3 Interactive Button)
     const logoutBtn = document.createElement("button");
     logoutBtn.type = "button";
@@ -54,7 +69,7 @@ export class AdminHeaderWidget {
       this.options.onLogout();
     });
 
-    actions.appendChild(logoutBtn);
+    actions.append(exitBtn, logoutBtn);
     header.append(brand, actions);
 
     parent.appendChild(header);

@@ -9,6 +9,7 @@ export interface AdminDashboardViewOptions {
   readonly authStore: AdminAuthStore;
   readonly dashboardStore: AdminDashboardStore;
   readonly onLogout: () => void;
+  readonly onReturnToTour?: () => void;
 }
 
 export class AdminDashboardView {
@@ -19,11 +20,13 @@ export class AdminDashboardView {
   private readonly authStore: AdminAuthStore;
   private readonly dashboardStore: AdminDashboardStore;
   private readonly onLogout: () => void;
+  private readonly onReturnToTour?: () => void;
 
   constructor(options: AdminDashboardViewOptions) {
     this.authStore = options.authStore;
     this.dashboardStore = options.dashboardStore;
     this.onLogout = options.onLogout;
+    this.onReturnToTour = options.onReturnToTour;
   }
 
   public mount(parent: HTMLElement): void {
@@ -39,6 +42,7 @@ export class AdminDashboardView {
       username: user?.username ?? "admin",
       role: user?.role ?? "librarian",
       onLogout: this.onLogout,
+      onReturnToTour: this.onReturnToTour,
     });
     this.headerWidget.mount(wrapper);
 

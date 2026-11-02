@@ -4,6 +4,7 @@ import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 export interface AdminLoginModalOptions {
   readonly authStore: AdminAuthStore;
   readonly onLoginSuccess?: () => void;
+  readonly onReturnToTour?: () => void;
 }
 
 export class AdminLoginModalView {
@@ -13,10 +14,12 @@ export class AdminLoginModalView {
   private errorElement: HTMLElement | null = null;
   private readonly authStore: AdminAuthStore;
   private readonly onLoginSuccess?: () => void;
+  private readonly onReturnToTour?: () => void;
 
   constructor(options: AdminLoginModalOptions) {
     this.authStore = options.authStore;
     this.onLoginSuccess = options.onLoginSuccess;
+    this.onReturnToTour = options.onReturnToTour;
   }
 
   public mount(parent: HTMLElement): void {
@@ -101,7 +104,21 @@ export class AdminLoginModalView {
     submitBtn.className = ADMIN_UI_CLASSES.BUTTON_SUBMIT;
     submitBtn.textContent = ADMIN_UI_TEXT.LOGIN_SUBMIT_LABEL;
 
-    form.append(errorContainer, userGroup, passGroup, submitBtn);
+    // Return to public tour link
+    const returnBtn = document.createElement("button");
+    returnBtn.type = "button";
+    returnBtn.className = ADMIN_UI_CLASSES.BUTTON_RETURN_LINK;
+    returnBtn.textContent = ADMIN_UI_TEXT.LOGIN_RETURN_LINK;
+    returnBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (this.onReturnToTour) {
+        this.onReturnToTour();
+      } else if (typeof window !== "undefined") {
+        window.location.assign("/");
+      }
+    });
+
+    form.append(errorContainer, userGroup, passGroup, submitBtn, returnBtn);
 
     form.addEventListener("submit", (event: unknown) => {
       const domEvent = event as { preventDefault?: () => void };

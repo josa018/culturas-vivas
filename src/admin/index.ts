@@ -27,8 +27,6 @@ export type { AdminLoginModalOptions } from "./views/admin-login-modal";
 export { AdminHeaderWidget } from "./views/admin-header";
 export type { AdminHeaderOptions } from "./views/admin-header";
 
-export { CapacityCounterCardWidget } from "./views/capacity-counter-card";
-
 export { AttendanceChartWidget } from "./views/attendance-chart";
 
 export { SurveysTableWidget } from "./views/surveys-table";

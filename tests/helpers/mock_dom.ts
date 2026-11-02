@@ -74,6 +74,13 @@ export class MockElement {
     return this.attributes.get(name) ?? null;
   }
 
+  public removeAttribute(name: string): void {
+    this.attributes.delete(name);
+    if (name === "id") {
+      this.id = "";
+    }
+  }
+
   public appendChild(child: MockElement): MockElement {
     child.parentElement = this;
     this.children.push(child);
