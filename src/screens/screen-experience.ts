@@ -143,7 +143,9 @@ export class ExperienceScreenView implements ScreenView {
           }
         }
       }
-      this.synchronizeViewport(scene);
+      if (this.viewMode === "2d") {
+        this.synchronizeViewport(scene);
+      }
     } else {
       if (
         typeof scene.exitVR === "function" &&

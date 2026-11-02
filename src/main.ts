@@ -87,7 +87,7 @@ AFRAME.registerComponent("control-sensores-qa", {
         .then((permissionState: string) => {
           clearTimeout(fallbackTimeout);
           if (permissionState === "granted") {
-            console.log("[QA] Giroscopio autorizado con éxito en iOS.");
+            console.log("[QA] Giroscopio autorizado con éxito.");
           } else {
             this.activarFallbackTactil("Permiso denegado por el usuario.");
           }

@@ -153,7 +153,11 @@ function runScreensUnitTests(): void {
     experience.mount(root);
     experience.show();
 
-    assert.equal(resizeInvoked, true, "Scene resize must be invoked on show");
+    assert.equal(
+      resizeInvoked,
+      false,
+      "Scene resize must NOT be invoked in VR mode to prevent WebGL framebuffer mismatch",
+    );
     assert.equal(
       enterVRCount,
       1,
@@ -176,6 +180,11 @@ function runScreensUnitTests(): void {
     // Test 2D mode
     experience.setViewMode("2d");
     experience.show();
+    assert.equal(
+      resizeInvoked,
+      true,
+      "Scene resize must be invoked when entering in 2d mode",
+    );
     assert.equal(
       exitVRCount,
       2,
