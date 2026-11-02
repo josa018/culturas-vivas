@@ -7,6 +7,9 @@ interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
   pause?: () => void;
   resize?: () => void;
+  enterVR?: () => Promise<void> | void;
+  exitVR?: () => Promise<void> | void;
+  is?: (state: string) => boolean;
 }
 
 export class ExperienceScreenView implements ScreenView {
@@ -106,8 +109,55 @@ export class ExperienceScreenView implements ScreenView {
       if (typeof scene.play === "function") {
         scene.play();
       }
+      if (this.viewMode === "vr") {
+        if (typeof scene.enterVR === "function") {
+          try {
+            const result = scene.enterVR();
+            if (
+              result &&
+              typeof (result as Promise<void>).catch === "function"
+            ) {
+              (result as Promise<void>).catch((err: unknown) => {
+                console.warn("[ExperienceScreenView] enterVR rejected:", err);
+              });
+            }
+          } catch (err: unknown) {
+            console.warn("[ExperienceScreenView] enterVR error:", err);
+          }
+        }
+      } else {
+        if (
+          typeof scene.exitVR === "function" &&
+          (typeof scene.is !== "function" || scene.is("vr-mode"))
+        ) {
+          try {
+            const result = scene.exitVR();
+            if (
+              result &&
+              typeof (result as Promise<void>).catch === "function"
+            ) {
+              (result as Promise<void>).catch(() => {});
+            }
+          } catch {
+            // Ignore exitVR errors
+          }
+        }
+      }
       this.synchronizeViewport(scene);
     } else {
+      if (
+        typeof scene.exitVR === "function" &&
+        (typeof scene.is !== "function" || scene.is("vr-mode"))
+      ) {
+        try {
+          const result = scene.exitVR();
+          if (result && typeof (result as Promise<void>).catch === "function") {
+            (result as Promise<void>).catch(() => {});
+          }
+        } catch {
+          // Ignore exitVR errors
+        }
+      }
       scene.style.display = "none";
       if (scene.classList && typeof scene.classList.remove === "function") {
         scene.classList.remove(UI_CLASSES.SCENE_ACTIVE);

@@ -422,6 +422,12 @@ a-scene.cv-scene--active {
   pointer-events: auto !important;
 }
 
+/* Suppress default engine-injected VR/AR floating buttons */
+.a-enter-vr,
+.a-enter-ar {
+  display: none !important;
+}
+
 a-scene canvas.a-canvas {
   width: 100% !important;
   height: 100% !important;

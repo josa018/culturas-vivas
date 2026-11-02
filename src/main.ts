@@ -23,17 +23,23 @@ if (
     lookControlsProto.setupMagicWindowControls = function (this: {
       el?: {
         sceneEl?: {
-          components?: Record<string, { permissionGranted?: boolean }>;
+          components?: Record<
+            string,
+            { permissionGranted?: boolean; updateProperties?: () => void }
+          >;
         };
       };
     }) {
       const scene = this.el?.sceneEl;
+      let mockInjected = false;
       if (scene) {
         scene.components = scene.components || {};
         if (!scene.components["device-orientation-permission-ui"]) {
           scene.components["device-orientation-permission-ui"] = {
             permissionGranted: false,
+            updateProperties: () => {},
           };
+          mockInjected = true;
         }
       }
       try {
@@ -43,6 +49,10 @@ if (
           "[LookControls] Handled setupMagicWindowControls error:",
           err,
         );
+      } finally {
+        if (mockInjected && scene?.components) {
+          delete scene.components["device-orientation-permission-ui"];
+        }
       }
     };
   }

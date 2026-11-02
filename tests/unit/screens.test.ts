@@ -105,17 +105,60 @@ function runScreensUnitTests(): void {
   {
     const mockScene = new MockElement("a-scene");
     let resizeInvoked = false;
-    (mockScene as unknown as { resize: () => void }).resize = () => {
+    let enterVRCount = 0;
+    let exitVRCount = 0;
+    (
+      mockScene as unknown as {
+        resize: () => void;
+        enterVR: () => Promise<void>;
+        exitVR: () => Promise<void>;
+        is: (state: string) => boolean;
+      }
+    ).resize = () => {
       resizeInvoked = true;
     };
+    (
+      mockScene as unknown as {
+        resize: () => void;
+        enterVR: () => Promise<void>;
+        exitVR: () => Promise<void>;
+        is: (state: string) => boolean;
+      }
+    ).enterVR = async () => {
+      enterVRCount++;
+    };
+    (
+      mockScene as unknown as {
+        resize: () => void;
+        enterVR: () => Promise<void>;
+        exitVR: () => Promise<void>;
+        is: (state: string) => boolean;
+      }
+    ).exitVR = async () => {
+      exitVRCount++;
+    };
+    (
+      mockScene as unknown as {
+        resize: () => void;
+        enterVR: () => Promise<void>;
+        exitVR: () => Promise<void>;
+        is: (state: string) => boolean;
+      }
+    ).is = (state: string) => state === "vr-mode";
+
     setupMockDocument(root as unknown as MockElement, mockScene);
 
-    const experience = new ExperienceScreenView(dispatch);
+    const experience = new ExperienceScreenView(dispatch, "vr");
     assert.equal(experience.id, ScreenId.EXPERIENCE_3D);
     experience.mount(root);
     experience.show();
 
     assert.equal(resizeInvoked, true, "Scene resize must be invoked on show");
+    assert.equal(
+      enterVRCount,
+      1,
+      "enterVR must be called when viewMode is vr on show",
+    );
     assert.equal(
       mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
       true,
@@ -123,10 +166,27 @@ function runScreensUnitTests(): void {
     );
 
     experience.hide();
+    assert.equal(exitVRCount, 1, "exitVR must be called on hide");
     assert.equal(
       mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
       false,
       "Scene must not contain active class on hide",
+    );
+
+    // Test 2D mode
+    experience.setViewMode("2d");
+    experience.show();
+    assert.equal(
+      exitVRCount,
+      2,
+      "exitVR must be called when entering in 2d mode",
+    );
+
+    experience.hide();
+    assert.equal(
+      exitVRCount,
+      3,
+      "exitVR must be called when hiding in 2d mode",
     );
 
     experience.show();
@@ -141,7 +201,7 @@ function runScreensUnitTests(): void {
       NavigationAction.REQUEST_EXIT,
     );
     console.log(
-      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, and dispatched REQUEST_EXIT",
+      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, and dispatched REQUEST_EXIT",
     );
   }
 
