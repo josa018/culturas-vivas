@@ -17,11 +17,18 @@ export class ExhibitRoomBuilder {
       // Update viewMode attribute across all stereo components if changed
       const stereoEntities = roomGroup.querySelectorAll("[cv-stereo-media]");
       stereoEntities.forEach((el) => {
-        const currentAttr = el.getAttribute("cv-stereo-media") || "";
-        el.setAttribute(
-          "cv-stereo-media",
-          currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
-        );
+        const currentAttr = el.getAttribute("cv-stereo-media");
+        if (typeof currentAttr === "string") {
+          el.setAttribute(
+            "cv-stereo-media",
+            currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
+          );
+        } else if (currentAttr && typeof currentAttr === "object") {
+          const aframeEl = el as unknown as {
+            setAttribute: (attr: string, prop: string, val: unknown) => void;
+          };
+          aframeEl.setAttribute("cv-stereo-media", "viewMode", viewMode);
+        }
       });
       return roomGroup as HTMLElement;
     }
