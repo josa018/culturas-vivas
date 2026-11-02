@@ -100,13 +100,23 @@ function runScreensUnitTests(): void {
     );
   }
 
-  // Screen 4: Experience HUD
+  // Screen 4: Experience HUD & Viewport Synchronization
   {
+    const mockScene = new MockElement("a-scene");
+    let resizeInvoked = false;
+    (mockScene as unknown as { resize: () => void }).resize = () => {
+      resizeInvoked = true;
+    };
+    setupMockDocument(root as unknown as MockElement, mockScene);
+
     const experience = new ExperienceScreenView(dispatch);
     assert.equal(experience.id, ScreenId.EXPERIENCE_3D);
     experience.mount(root);
-    const el = experience.getElement() as unknown as MockElement;
+    experience.show();
 
+    assert.equal(resizeInvoked, true, "Scene resize must be invoked on show");
+
+    const el = experience.getElement() as unknown as MockElement;
     const exitHudBtn = el.querySelector(
       '[data-action="request-exit"]',
     ) as MockElement;
@@ -117,7 +127,7 @@ function runScreensUnitTests(): void {
       NavigationAction.REQUEST_EXIT,
     );
     console.log(
-      "✓ Screen 4 (Experience HUD) mounted and dispatched REQUEST_EXIT",
+      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, and dispatched REQUEST_EXIT",
     );
   }
 

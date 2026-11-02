@@ -6,6 +6,7 @@ import { ExhibitRoomBuilder } from "../experience/room-builder";
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
   pause?: () => void;
+  resize?: () => void;
 }
 
 export class ExperienceScreenView implements ScreenView {
@@ -103,11 +104,36 @@ export class ExperienceScreenView implements ScreenView {
       if (typeof scene.play === "function") {
         scene.play();
       }
+      this.synchronizeViewport(scene);
     } else {
       scene.style.display = "none";
       if (typeof scene.pause === "function") {
         scene.pause();
       }
+    }
+  }
+
+  private synchronizeViewport(scene: AFrameSceneElement): void {
+    const triggerResize = () => {
+      if (typeof scene.resize === "function") {
+        scene.resize();
+      }
+      if (
+        typeof window !== "undefined" &&
+        typeof window.dispatchEvent === "function"
+      ) {
+        try {
+          window.dispatchEvent(new Event("resize"));
+        } catch {
+          // Gracefully ignore in non-browser testing contexts
+        }
+      }
+    };
+
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(triggerResize);
+    } else {
+      triggerResize();
     }
   }
 }

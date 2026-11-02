@@ -25,7 +25,12 @@ function runEndToEndBenchmark(): void {
     splashEl.classList.contains("cv-screen--active"),
     "Splash screen must be active on launch",
   );
-  splashEl.dispatchEvent("click");
+
+  const enterBtn = splashEl.querySelector(
+    '[data-action="enter"]',
+  ) as MockElement;
+  assert.ok(enterBtn, "Splash enter button must exist in DOM");
+  enterBtn.dispatchEvent("click");
 
   // Screen 2: Welcome Screen
   const welcomeEl = rootElement.querySelector(
@@ -34,7 +39,7 @@ function runEndToEndBenchmark(): void {
   assert.ok(welcomeEl, "Welcome element must be mounted");
   assert.ok(
     welcomeEl.classList.contains("cv-screen--active"),
-    "Welcome screen must be active after splash tap",
+    "Welcome screen must be active after splash enter",
   );
   const vrBtn = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
   assert.ok(vrBtn, "VR mode selection button must exist");
