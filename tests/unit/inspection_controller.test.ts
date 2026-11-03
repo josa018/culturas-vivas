@@ -26,7 +26,7 @@ function runInspectionControllerUnitTests(): void {
     );
   }
 
-  // Test 2: Standard Inspection Lifecycle
+  // Test 2: Standard Inspection Lifecycle & Mutual Exclusivity Preemption
   {
     const controller = new ExhibitInspectionController();
     const canFocusUnknown = controller.canFocus("unknown-id");
@@ -37,9 +37,15 @@ function runInspectionControllerUnitTests(): void {
     assert.equal(controller.getState(), InspectionState.FOCUSING);
     assert.equal(controller.getActiveExhibit()?.id, "exhibit-statue-3d");
 
-    // Cannot focus another exhibit while busy
-    assert.equal(controller.canFocus("exhibit-painting-2d"), false);
-    assert.equal(controller.focus("exhibit-painting-2d"), false);
+    // Cannot focus the SAME exhibit while already focusing/inspecting
+    assert.equal(controller.canFocus("exhibit-statue-3d"), false);
+
+    // Can focus another exhibit, which preempts the current one
+    assert.equal(controller.canFocus("exhibit-painting-2d"), true);
+    const preemptionSuccess = controller.focus("exhibit-painting-2d");
+    assert.equal(preemptionSuccess, true);
+    assert.equal(controller.getActiveExhibit()?.id, "exhibit-painting-2d");
+    assert.equal(controller.getPreviousExhibit()?.id, "exhibit-statue-3d");
 
     // Complete focus animation
     const completeFocusResult = controller.completeFocus();
@@ -59,7 +65,7 @@ function runInspectionControllerUnitTests(): void {
     assert.equal(controller.getActiveExhibit(), null);
 
     console.log(
-      "✓ Test 2 Passed: Full lifecycle IDLE -> FOCUSING -> INSPECTING -> RETURNING -> IDLE verified",
+      "✓ Test 2 Passed: Full lifecycle with mutual exclusivity preemption verified",
     );
   }
 
@@ -117,7 +123,7 @@ function runInspectionControllerUnitTests(): void {
     );
   }
 
-  // Test 5: Target Focal Position Computation
+  // Test 5: Target Focal Position & Radial Target Mathematics
   {
     const controller = new ExhibitInspectionController();
     const focalPos = controller.calculateFocalTargetPosition({
@@ -129,7 +135,29 @@ function runInspectionControllerUnitTests(): void {
     assert.equal(focalPos.y, 1.5); // 1.6 + (-0.1)
     assert.equal(focalPos.z, -1.2); // 0 + (-1.2)
 
-    console.log("✓ Test 5 Passed: Focal target position mathematics verified");
+    // Test Radial target position
+    const cameraPivot = { x: 0, y: 1.6, z: 0 };
+    const galleryPos = { x: 0, y: 1.4, z: -2.8 };
+    const radialTarget = controller.calculateRadialTargetPosition(
+      galleryPos,
+      cameraPivot,
+      1.3,
+    );
+
+    assert.equal(radialTarget.x, 0);
+    assert.equal(radialTarget.y, 1.507);
+    assert.equal(radialTarget.z, -1.297);
+
+    // Verify distance from camera is 1.3m
+    const dx = radialTarget.x - cameraPivot.x;
+    const dy = radialTarget.y - cameraPivot.y;
+    const dz = radialTarget.z - cameraPivot.z;
+    const computedDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    assert.equal(Math.abs(computedDistance - 1.3) < 0.005, true);
+
+    console.log(
+      "✓ Test 5 Passed: Focal and radial target position mathematics verified",
+    );
   }
 
   // Test 6: Listener Subscriptions
