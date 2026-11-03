@@ -7,6 +7,22 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>Culturas Vivas</title>
+    <!-- Render-blocking design system stylesheet -->
+    <link rel="stylesheet" href="/src/style.css" />
+    <!-- Critical initial styles to prevent FOUC / canvas flash prior to script hydration -->
+    <style>
+      html,
+      body {
+        background-color: #111318;
+        margin: 0;
+        overflow: hidden;
+      }
+      a-scene:not(.cv-scene--active) {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+    </style>
   </head>
   <body>
     <!-- 2D SPA Application Shell -->

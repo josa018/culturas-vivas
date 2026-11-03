@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { assert } from "../helpers/assert";
 import { MockElement, setupMockDocument } from "../helpers/mock_dom";
 import { NavigationAction, ScreenId } from "../../src/navigation/index";
@@ -243,8 +245,140 @@ function runScreensUnitTests(): void {
       true,
       "HUD must be hidden during retainBackground",
     );
+
+    // Test 2D Touch Mode Camera Unlock & Viewport Sanitization after exiting VR
+    const mockCamera = new MockElement("a-camera");
+    let cameraMatrixUpdated = false;
+    let lookControlsAddListenersCalled = false;
+    (
+      mockCamera as unknown as {
+        object3D: {
+          matrixAutoUpdate: boolean;
+          updateMatrix: () => void;
+        };
+        components: Record<
+          string,
+          {
+            touchStarted: boolean;
+            mouseDown: boolean;
+            data: { touchEnabled: boolean; enabled: boolean };
+            addEventListeners: () => void;
+          }
+        >;
+      }
+    ).object3D = {
+      matrixAutoUpdate: false,
+      updateMatrix: () => {
+        cameraMatrixUpdated = true;
+      },
+    };
+    (
+      mockCamera as unknown as {
+        components: Record<
+          string,
+          {
+            touchStarted: boolean;
+            mouseDown: boolean;
+            data: { touchEnabled: boolean; enabled: boolean };
+            addEventListeners: () => void;
+          }
+        >;
+      }
+    ).components = {
+      "look-controls": {
+        touchStarted: true,
+        mouseDown: true,
+        data: { touchEnabled: false, enabled: false },
+        addEventListeners: () => {
+          lookControlsAddListenersCalled = true;
+        },
+      },
+    };
+    mockScene.appendChild(mockCamera);
+
+    const removedStates: string[] = [];
+    (
+      mockScene as unknown as {
+        removeState: (s: string) => void;
+        renderer: { xr: { enabled: boolean } };
+      }
+    ).removeState = (s: string) => {
+      removedStates.push(s);
+    };
+    (
+      mockScene as unknown as {
+        renderer: { xr: { enabled: boolean } };
+      }
+    ).renderer = {
+      xr: { enabled: true },
+    };
+
+    // Transition back into 2D mode
+    experience.setViewMode("2d");
+    experience.show();
+
+    const cameraObj3D = (
+      mockCamera as unknown as {
+        object3D: { matrixAutoUpdate: boolean };
+      }
+    ).object3D;
+    assert.equal(
+      cameraObj3D.matrixAutoUpdate,
+      true,
+      "Camera matrixAutoUpdate must be restored to true in 2D touch mode",
+    );
+    assert.equal(
+      cameraMatrixUpdated,
+      true,
+      "Camera updateMatrix must be invoked during 2D viewport sanitization",
+    );
+    assert.equal(
+      (
+        mockScene as unknown as {
+          renderer: { xr: { enabled: boolean } };
+        }
+      ).renderer.xr.enabled,
+      false,
+      "renderer.xr.enabled must be set to false in 2D touch mode",
+    );
+    const cameraControls = (
+      mockCamera as unknown as {
+        components: {
+          "look-controls": {
+            touchStarted: boolean;
+            mouseDown: boolean;
+            data: { touchEnabled: boolean; enabled: boolean };
+          };
+        };
+      }
+    ).components["look-controls"];
+    assert.equal(
+      cameraControls.touchStarted,
+      false,
+      "look-controls touchStarted must be reset to false in 2D mode",
+    );
+    assert.equal(
+      cameraControls.mouseDown,
+      false,
+      "look-controls mouseDown must be reset to false in 2D mode",
+    );
+    assert.equal(
+      cameraControls.data.touchEnabled,
+      true,
+      "look-controls touchEnabled must be true in 2D mode",
+    );
+    assert.equal(
+      lookControlsAddListenersCalled,
+      true,
+      "look-controls addEventListeners must be called on 2D mode entry",
+    );
+    assert.ok(
+      removedStates.includes("vr-mode"),
+      "Scene vr-mode state must be stripped when sanitizing 2D viewport",
+    );
+
     console.log(
-      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, handled exit-vr event, retained background, and dispatched REQUEST_EXIT",
+      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, handled exit-vr event, retained background, unlocked touch camera, and dispatched REQUEST_EXIT",
     );
   }
 
@@ -316,6 +450,33 @@ function runScreensUnitTests(): void {
     );
     console.log(
       "✓ Screen 6 (Survey) mounted and dispatched COMPLETE_SURVEY & SKIP_SURVEY",
+    );
+  }
+
+  // FOUC Prevention & Initial Scene Concealment Markup
+  {
+    const htmlPath = path.resolve(process.cwd(), "index.html");
+    const indexHtml = fs.readFileSync(htmlPath, "utf8");
+
+    assert.ok(
+      indexHtml.includes('<link rel="stylesheet" href="/src/style.css"'),
+      "index.html must include a render-blocking link to /src/style.css in <head>",
+    );
+    assert.ok(
+      indexHtml.includes("background-color: #111318"),
+      "index.html must declare critical initial dark background style",
+    );
+    assert.ok(
+      indexHtml.includes("a-scene:not(.cv-scene--active)"),
+      "index.html must conceal a-scene before cv-scene--active is added",
+    );
+    assert.ok(
+      indexHtml.includes("opacity: 0 !important") &&
+        indexHtml.includes("visibility: hidden !important"),
+      "index.html must force opacity 0 and visibility hidden for inactive scene",
+    );
+    console.log(
+      "✓ index.html document head verified for render-blocking stylesheet and FOUC suppression",
     );
   }
 

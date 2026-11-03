@@ -10,6 +10,18 @@ interface AFrameSceneElement extends HTMLElement {
   enterVR?: () => Promise<void> | void;
   exitVR?: () => Promise<void> | void;
   is?: (state: string) => boolean;
+  removeState?: (state: string) => void;
+  renderer?: {
+    xr?: {
+      enabled?: boolean;
+    };
+  };
+  camera?: {
+    el?: HTMLElement;
+    matrixAutoUpdate?: boolean;
+    updateMatrixWorld?: (force?: boolean) => void;
+    updateProjectionMatrix?: () => void;
+  };
 }
 
 export class ExperienceScreenView implements ScreenView {
@@ -103,10 +115,12 @@ export class ExperienceScreenView implements ScreenView {
       scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
     }
     ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
-    this.safeProgrammaticExitVR(scene);
-    if (typeof scene.pause === "function") {
-      scene.pause();
-    }
+    this.safeProgrammaticExitVR(scene, () => {
+      this.sanitize2DViewport(scene);
+      if (typeof scene.pause === "function") {
+        scene.pause();
+      }
+    });
   }
 
   public hide(): void {
@@ -156,7 +170,9 @@ export class ExperienceScreenView implements ScreenView {
           }
         }
       } else {
-        this.safeProgrammaticExitVR(scene);
+        this.safeProgrammaticExitVR(scene, () => {
+          this.sanitize2DViewport(scene);
+        });
       }
       if (this.viewMode === "2d") {
         this.synchronizeViewport(scene);
@@ -173,25 +189,44 @@ export class ExperienceScreenView implements ScreenView {
     }
   }
 
-  private safeProgrammaticExitVR(scene: AFrameSceneElement): void {
+  private safeProgrammaticExitVR(
+    scene: AFrameSceneElement,
+    onComplete?: () => void,
+  ): void {
     if (
       typeof scene.exitVR !== "function" ||
       (typeof scene.is === "function" && !scene.is("vr-mode"))
     ) {
+      if (onComplete) {
+        onComplete();
+      }
       return;
     }
     this.isProgrammaticExit = true;
     try {
       const result = scene.exitVR();
       if (result && typeof (result as Promise<void>).then === "function") {
-        (result as Promise<void>).finally(() => {
-          this.isProgrammaticExit = false;
-        });
+        (result as Promise<void>)
+          .catch((err: unknown) => {
+            console.warn("[ExperienceScreenView] exitVR rejected:", err);
+          })
+          .finally(() => {
+            this.isProgrammaticExit = false;
+            if (onComplete) {
+              onComplete();
+            }
+          });
       } else {
         this.isProgrammaticExit = false;
+        if (onComplete) {
+          onComplete();
+        }
       }
     } catch {
       this.isProgrammaticExit = false;
+      if (onComplete) {
+        onComplete();
+      }
     }
   }
 
@@ -224,7 +259,73 @@ export class ExperienceScreenView implements ScreenView {
     }
   }
 
+  private sanitize2DViewport(scene: AFrameSceneElement): void {
+    if (typeof scene.removeState === "function") {
+      if (typeof scene.is === "function" && scene.is("vr-mode")) {
+        scene.removeState("vr-mode");
+      }
+      if (typeof scene.is === "function" && scene.is("ar-mode")) {
+        scene.removeState("ar-mode");
+      }
+    }
+
+    if (scene.renderer?.xr) {
+      scene.renderer.xr.enabled = false;
+    }
+
+    const cameraEl =
+      scene.querySelector("a-camera") || scene.querySelector("[camera]");
+    if (cameraEl) {
+      const obj3D = (
+        cameraEl as unknown as {
+          object3D?: {
+            matrixAutoUpdate?: boolean;
+            updateMatrix?: () => void;
+          };
+        }
+      ).object3D;
+      if (obj3D) {
+        obj3D.matrixAutoUpdate = true;
+        if (typeof obj3D.updateMatrix === "function") {
+          obj3D.updateMatrix();
+        }
+      }
+
+      const aframeEl = cameraEl as unknown as {
+        components?: Record<
+          string,
+          {
+            touchStarted?: boolean;
+            mouseDown?: boolean;
+            data?: { touchEnabled?: boolean; enabled?: boolean };
+            addEventListeners?: () => void;
+          }
+        >;
+      };
+      const lookControls = aframeEl.components?.["look-controls"];
+      if (lookControls) {
+        lookControls.touchStarted = false;
+        lookControls.mouseDown = false;
+        if (lookControls.data) {
+          lookControls.data.touchEnabled = true;
+          lookControls.data.enabled = true;
+        }
+        if (typeof lookControls.addEventListeners === "function") {
+          lookControls.addEventListeners();
+        }
+      }
+    }
+
+    if (scene.camera) {
+      scene.camera.matrixAutoUpdate = true;
+      if (typeof scene.camera.updateProjectionMatrix === "function") {
+        scene.camera.updateProjectionMatrix();
+      }
+    }
+  }
+
   private synchronizeViewport(scene: AFrameSceneElement): void {
+    this.sanitize2DViewport(scene);
     const triggerResize = () => {
       if (typeof scene.resize === "function") {
         scene.resize();

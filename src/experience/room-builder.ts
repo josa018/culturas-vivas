@@ -64,6 +64,7 @@ export class ExhibitRoomBuilder {
         case ExhibitMediaType.MODEL_3D: {
           // Pedestal Base
           const pedestal = document.createElement("a-cylinder");
+          pedestal.setAttribute("id", `${exhibit.id}-pedestal`);
           pedestal.setAttribute(
             "radius",
             String(EXHIBIT_DIMENSIONS.PEDESTAL_RADIUS),
@@ -73,6 +74,7 @@ export class ExhibitRoomBuilder {
             String(EXHIBIT_DIMENSIONS.PEDESTAL_HEIGHT),
           );
           pedestal.setAttribute("position", "0 -0.4 0");
+
           pedestal.setAttribute("color", "#334155");
           pedestal.setAttribute("material", "shader: flat");
 
