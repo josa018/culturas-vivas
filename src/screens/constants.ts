@@ -20,30 +20,29 @@ export const UI_TEXT = {
   SPLASH_LOADING: "Cargando entorno interactivo...",
   SPLASH_TAP_PROMPT: "Toca en cualquier parte para continuar",
   SPLASH_BTN_ENTER: "Entrar",
-  SPLASH_READY: "Recursos listos para iniciar",
+  SPLASH_READY: "Todo listo",
 
-  WELCOME_TITLE: "Bienvenido a Culturas Vivas",
-  WELCOME_DESCRIPTION:
-    "Selecciona la modalidad para iniciar el recorrido cultural.",
-  WELCOME_BTN_VR: "Modo Visor VR (Cardboard)",
-  WELCOME_BTN_2D: "Modo 2D Táctil (Pantalla)",
+  WELCOME_TITLE: "Bienvenido",
+  WELCOME_DESCRIPTION: "Selecciona la modalidad",
+  WELCOME_BTN_VR: "Visor VR",
+  WELCOME_BTN_2D: "Táctil sin visor",
 
-  TUTORIAL_TITLE: "Ajuste del Visor Pasivo",
-  TUTORIAL_STEP_1: "1. Gira tu dispositivo a posición horizontal.",
+  TUTORIAL_TITLE: "Instrucciones",
+  TUTORIAL_STEP_1:
+    'Presiona el botón "Comenzar" y gira tu dispositivo a posición horizontal.',
   TUTORIAL_STEP_2:
-    "2. Alinea la línea central con el divisor óptico de tu visor.",
-  TUTORIAL_STEP_3:
-    "3. Introduce el smartphone en la bandeja frontal y ajústala.",
-  TUTORIAL_BTN_START: "Comenzar Recorrido",
+    "Introduce el smartphone al visor. Aparecerá una linea blanca que debe quedar abajo y ajustada al centro del visor.",
+  TUTORIAL_STEP_3: "Cierra la bandeja y colocate el visor.",
+  TUTORIAL_BTN_START: "Comenzar",
 
-  EXPERIENCE_EXIT_HUD: "Salir del Recorrido",
-  EXPERIENCE_SCENE_LABEL: "Sala Virtual en Progreso",
+  EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
+  EXPERIENCE_SCENE_LABEL: "Sala 1",
 
-  EXIT_MODAL_TITLE: "¿Deseas finalizar el recorrido?",
+  EXIT_MODAL_TITLE: "¿Deseas salir?",
   EXIT_MODAL_DESCRIPTION:
-    "Puedes regresar a la sala 3D o concluir tu visita y calificar la experiencia.",
-  EXIT_MODAL_BTN_RESUME: "Continuar Recorrido",
-  EXIT_MODAL_BTN_SWITCH_TOUCH: "Continuar en pantalla táctil",
+    "Puedes regresar a la sala o concluir tu visita y calificar la experiencia.",
+  EXIT_MODAL_BTN_RESUME: "Regresar a la experiencia",
+  EXIT_MODAL_BTN_SWITCH_TOUCH: "Cambiar a modo táctil",
   EXIT_MODAL_BTN_CONFIRM: "Finalizar Experiencia",
 
   SURVEY_TITLE: "Encuesta de Satisfacción",
