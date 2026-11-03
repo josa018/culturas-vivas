@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb, ensureSessionsTable } from "../_db";
+import { getDb, ensureSessionsTable } from "../_db.js";
 
 export interface ServerlessRequest {
   method?: string;

@@ -1,5 +1,5 @@
 
-import { getDb, ensureSessionsTable } from "../_db";
+import { getDb, ensureSessionsTable } from "../_db.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
