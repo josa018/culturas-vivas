@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { assert } from "../helpers/assert";
 import { MockElement, setupMockDocument } from "../helpers/mock_dom";
 import { NavigationAction, ScreenId } from "../../src/navigation/index";
@@ -448,6 +450,33 @@ function runScreensUnitTests(): void {
     );
     console.log(
       "✓ Screen 6 (Survey) mounted and dispatched COMPLETE_SURVEY & SKIP_SURVEY",
+    );
+  }
+
+  // FOUC Prevention & Initial Scene Concealment Markup
+  {
+    const htmlPath = path.resolve(process.cwd(), "index.html");
+    const indexHtml = fs.readFileSync(htmlPath, "utf8");
+
+    assert.ok(
+      indexHtml.includes('<link rel="stylesheet" href="/src/style.css"'),
+      "index.html must include a render-blocking link to /src/style.css in <head>",
+    );
+    assert.ok(
+      indexHtml.includes("background-color: #111318"),
+      "index.html must declare critical initial dark background style",
+    );
+    assert.ok(
+      indexHtml.includes("a-scene:not(.cv-scene--active)"),
+      "index.html must conceal a-scene before cv-scene--active is added",
+    );
+    assert.ok(
+      indexHtml.includes("opacity: 0 !important") &&
+        indexHtml.includes("visibility: hidden !important"),
+      "index.html must force opacity 0 and visibility hidden for inactive scene",
+    );
+    console.log(
+      "✓ index.html document head verified for render-blocking stylesheet and FOUC suppression",
     );
   }
 
