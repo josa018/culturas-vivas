@@ -2,6 +2,10 @@ import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
+import {
+  ScenePreloadManager,
+  ROOM_ASSETS,
+} from "../experience/preload-manager";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -32,6 +36,10 @@ export class ExperienceScreenView implements ScreenView {
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
 
+  // Estado Multi-Sala (Tarjeta 17)
+  private currentRoom: "sala1" | "sala2" = "sala1";
+  private isTransitioning: boolean = false;
+
   constructor(dispatch: NavigationDispatcher, viewMode: string = "vr") {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
@@ -55,7 +63,8 @@ export class ExperienceScreenView implements ScreenView {
 
     const badge = document.createElement("span");
     badge.className = "cv-badge";
-    badge.textContent = UI_TEXT.EXPERIENCE_SCENE_LABEL;
+    badge.id = "cv-current-room-badge";
+    badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 1 (Wixárika)`;
 
     const exitButton = document.createElement("button");
     exitButton.type = "button";
@@ -77,6 +86,13 @@ export class ExperienceScreenView implements ScreenView {
     parent.appendChild(hudOverlay);
     this.container = hudOverlay;
     this.setupSceneListeners();
+
+    // Precarga diferida (lazy loading) de la Sala 2 en segundo plano
+    ScenePreloadManager.lazyPreloadRoom(ROOM_ASSETS.SALA_2_NAAYERI).catch(
+      (err) => {
+        console.warn("[ExperienceScreenView] Fallo la precarga diferida de Sala 2:", err);
+      },
+    );
   }
 
   public unmount(): void {
@@ -115,6 +131,8 @@ export class ExperienceScreenView implements ScreenView {
       scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
     }
     ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+    this.setupMultiRoomPortal(scene);
+
     this.safeProgrammaticExitVR(scene, () => {
       this.sanitize2DViewport(scene);
       if (typeof scene.pause === "function") {
@@ -135,6 +153,95 @@ export class ExperienceScreenView implements ScreenView {
     return this.container;
   }
 
+  /**
+   * Configura el componente de portal interactivo 3D con gaze trigger (Tarjeta 17)
+   */
+  private setupMultiRoomPortal(scene: HTMLElement): void {
+    if (scene.querySelector("#cv-room-portal")) {
+      return;
+    }
+
+    const portal = document.createElement("a-entity");
+    portal.setAttribute("id", "cv-room-portal");
+    portal.setAttribute("class", "clickable");
+    portal.setAttribute("position", "0 1.6 3.2");
+    portal.setAttribute("rotation", "0 180 0");
+
+    // Marco exterior luminoso del portal
+    const portalFrame = document.createElement("a-ring");
+    portalFrame.setAttribute("radius-inner", "0.45");
+    portalFrame.setAttribute("radius-outer", "0.55");
+    portalFrame.setAttribute("color", "#38bdf8");
+    portalFrame.setAttribute(
+      "material",
+      "shader: flat; opacity: 0.85; side: double; transparent: true",
+    );
+    portalFrame.setAttribute(
+      "animation__spin",
+      "property: rotation; to: 0 0 360; loop: true; dur: 12000; easing: linear",
+    );
+
+    // Disco central sensible a la mirada (Gaze Target)
+    const portalCore = document.createElement("a-circle");
+    portalCore.setAttribute("radius", "0.44");
+    portalCore.setAttribute("color", "#0284c7");
+    portalCore.setAttribute(
+      "material",
+      "shader: flat; opacity: 0.65; side: double; transparent: true",
+    );
+
+    // Etiqueta indicativa 3D sobre el portal
+    const portalLabel = document.createElement("a-text");
+    portalLabel.setAttribute("id", "cv-portal-text");
+    portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
+    portalLabel.setAttribute("align", "center");
+    portalLabel.setAttribute("position", "0 0 0.05");
+    portalLabel.setAttribute("scale", "0.6 0.6 0.6");
+    portalLabel.setAttribute("color", "#ffffff");
+
+    portal.append(portalFrame, portalCore, portalLabel);
+
+    // Evento de activación por click o mirada fija (gaze trigger)
+    const handlePortalActivation = async () => {
+      if (this.isTransitioning) {
+        return;
+      }
+      this.isTransitioning = true;
+
+      const nextRoom = this.currentRoom === "sala1" ? "sala2" : "sala1";
+      const targetTexture =
+        nextRoom === "sala2"
+          ? ROOM_ASSETS.SALA_2_NAAYERI
+          : ROOM_ASSETS.SALA_1_WIXARIKA;
+
+      // Ejecutar fundido a negro (500ms fade out + 500ms fade in)
+      await ScenePreloadManager.transitionSky(scene, targetTexture, () => {
+        this.currentRoom = nextRoom;
+
+        // Actualizar textos informativos 3D y HUD
+        if (nextRoom === "sala2") {
+          portalLabel.setAttribute("value", "VOLVER A SALA 1\n(WIXARIKA)");
+          const badge = document.querySelector("#cv-current-room-badge");
+          if (badge) {
+            badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 2 (Náayeri)`;
+          }
+        } else {
+          portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
+          const badge = document.querySelector("#cv-current-room-badge");
+          if (badge) {
+            badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 1 (Wixárika)`;
+          }
+        }
+      });
+
+      this.isTransitioning = false;
+    };
+
+    portal.addEventListener("click", handlePortalActivation);
+
+    scene.appendChild(portal);
+  }
+
   private toggleSceneLifecycle(active: boolean): void {
     if (typeof document === "undefined") {
       return;
@@ -150,6 +257,8 @@ export class ExperienceScreenView implements ScreenView {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
       ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      this.setupMultiRoomPortal(scene);
+
       if (typeof scene.play === "function") {
         scene.play();
       }
