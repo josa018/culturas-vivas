@@ -35,12 +35,12 @@ export async function ensureSessionsTable(): Promise<void> {
   }
 
   const db = getDb();
-  await db.execute(`CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    last_ping INTEGER NOT NULL,
-    ping_count INTEGER NOT NULL DEFAULT 0
-  )`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS visitor_sessions (
+  id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  last_ping INTEGER NOT NULL,
+  ping_count INTEGER NOT NULL DEFAULT 0
+)`);
 
   isInitialized = true;
 }

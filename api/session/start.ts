@@ -29,7 +29,7 @@ export default async function handler(
     const db = getDb();
 
     await db.execute({
-      sql: "INSERT INTO sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 0)",
+      sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 0)",
       args: [sessionId, timestamp, timestamp],
     });
 

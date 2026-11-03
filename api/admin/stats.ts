@@ -18,7 +18,7 @@ export default async function handler(req: any, res: any) {
     const result = await db.execute({
       sql: `
         SELECT COUNT(*) AS activeSessions
-        FROM sessions
+        FROM visitor_sessions
         WHERE last_ping >= ?
       `,
       args: [thirtySecondsAgo],

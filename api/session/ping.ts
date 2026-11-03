@@ -1,6 +1,6 @@
-import { getDb } from "../_db.js";
-import type { ServerlessRequest, ServerlessResponse } from "./start.js";
 
+import type { ServerlessRequest, ServerlessResponse } from "./start.js";
+import { getDb, ensureSessionsTable } from "../_db.js";
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -39,9 +39,10 @@ export default async function handler(
   }
 
   try {
+    await ensureSessionsTable();
     const db = getDb();
     const result = await db.execute({
-      sql: "UPDATE sessions SET last_ping = ?, ping_count = ping_count + 1 WHERE id = ?",
+      sql: "UPDATE visitor_sessions SET last_ping = ?, ping_count = ping_count + 1 WHERE id = ?",
       args: [Date.now(), sessionId],
     });
 
