@@ -34,7 +34,7 @@ export class AdminController {
 
   public destroy(): void {
     this.restore3DCanvas();
-    this.dashboardStore.stopSimulation();
+    this.dashboardStore.stopPolling();
     if (this.unsubscribeAuth) {
       this.unsubscribeAuth();
       this.unsubscribeAuth = null;
@@ -129,9 +129,9 @@ export class AdminController {
         this.dashboardView.mount(this.rootContainer);
       }
       this.dashboardView.show();
-      this.dashboardStore.startSimulation();
+     this.dashboardStore.startPolling();
     } else {
-      this.dashboardStore.stopSimulation();
+      this.dashboardStore.stopPolling();
       if (this.dashboardView) {
         this.dashboardView.unmount();
         this.dashboardView = null;

@@ -25,6 +25,7 @@ const CHART_THEME_TOKENS = {
 } as const;
 
 export class AttendanceChartWidget {
+  private connectionElement: HTMLElement | null = null;
   private container: HTMLElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
   private valueElement: HTMLElement | null = null;
@@ -79,6 +80,27 @@ export class AttendanceChartWidget {
 
     kpiRow.append(valueSpan, labelSpan);
 
+const connectionStatus = document.createElement("div");
+connectionStatus.style.display = "flex";
+connectionStatus.style.alignItems = "center";
+connectionStatus.style.gap = "8px";
+connectionStatus.style.fontSize = "13px";
+connectionStatus.style.marginTop = "8px";
+
+const connectionDot = document.createElement("span");
+connectionDot.style.width = "8px";
+connectionDot.style.height = "8px";
+connectionDot.style.borderRadius = "50%";
+
+const connectionText = document.createElement("span");
+
+connectionStatus.append(connectionDot, connectionText);
+
+this.connectionElement = connectionStatus;
+
+kpiRow.appendChild(connectionStatus);
+
+
     // Body: Chart Container + Canvas
     const body = document.createElement("div");
     body.className = `${ADMIN_UI_CLASSES.CARD_BODY} ${ADMIN_UI_CLASSES.CHART_CONTAINER}`;
@@ -104,6 +126,7 @@ export class AttendanceChartWidget {
   }
 
   public unmount(): void {
+    this.connectionElement = null;
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
@@ -140,6 +163,20 @@ export class AttendanceChartWidget {
           : 0;
       this.peakElement.textContent = `${ADMIN_UI_TEXT.PEAK_LABEL_PREFIX}${peak}${ADMIN_UI_TEXT.PEAK_LABEL_SUFFIX}`;
     }
+
+if (this.connectionElement) {
+  const dot = this.connectionElement.children[0] as HTMLElement;
+  const text = this.connectionElement.children[1] as HTMLElement;
+
+  dot.style.backgroundColor = state.connected ? "#22c55e" : "#ef4444";
+  dot.style.boxShadow = state.connected
+    ? "0 0 8px #22c55e"
+    : "none";
+
+  text.textContent = state.connected ? "Conectado" : "Sin conexión";
+  text.style.color = state.connected ? "#22c55e" : "#ef4444";
+}
+
   }
 
   private renderChart(): void {

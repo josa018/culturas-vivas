@@ -1,25 +1,12 @@
+
 export const ADMIN_DASHBOARD_CONSTANTS = {
-  DEFAULT_INITIAL_VISITOR_COUNT: 7,
+  DEFAULT_INITIAL_VISITOR_COUNT: 0,
   MIN_VISITOR_COUNT: 0,
   DEFAULT_HOURLY_LABELS: [
-    "09:00",
-    "10:00",
-    "11:00",
-    "12:00",
-    "13:00",
-    "14:00",
-    "15:00",
-    "16:00",
-    "17:00",
-    "18:00",
+    "09:00", "10:00", "11:00", "12:00", "13:00",
+    "14:00", "15:00", "16:00", "17:00", "18:00",
   ],
   DEFAULT_HOURLY_ATTENDANCE: [3, 8, 14, 19, 12, 10, 16, 22, 15, 6],
-} as const;
-
-export const ADMIN_SIMULATION_CONFIG = {
-  DEFAULT_INTERVAL_MS: 4000,
-  MIN_RANDOM_VISITORS: 4,
-  MAX_RANDOM_VISITORS: 22,
 } as const;
 
 export type ViewModeKind = "vr" | "2d";
@@ -41,6 +28,7 @@ export interface DashboardState {
   readonly activeVisitorsCount: number;
   readonly surveys: readonly SurveyLogEntry[];
   readonly hourlyAttendance: HourlyAttendanceDataset;
+  readonly connected: boolean;
 }
 
 export type DashboardListener = (state: DashboardState) => void;
@@ -79,10 +67,10 @@ export const INITIAL_MOCK_SURVEYS: readonly SurveyLogEntry[] = [
 export class AdminDashboardStore {
   private state: DashboardState;
   private readonly listeners = new Set<DashboardListener>();
-  private simulationTimer: ReturnType<typeof setInterval> | null = null;
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    initialVisitorsCount: number = ADMIN_DASHBOARD_CONSTANTS.DEFAULT_INITIAL_VISITOR_COUNT,
+    initialVisitorsCount: number = 0,
     initialSurveys: readonly SurveyLogEntry[] = INITIAL_MOCK_SURVEYS,
     initialHourlyData: HourlyAttendanceDataset = {
       labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
@@ -90,15 +78,13 @@ export class AdminDashboardStore {
     },
   ) {
     this.state = {
-      activeVisitorsCount: Math.max(
-        ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT,
-        initialVisitorsCount,
-      ),
+      activeVisitorsCount: initialVisitorsCount,
       surveys: [...initialSurveys],
       hourlyAttendance: {
         labels: [...initialHourlyData.labels],
         values: [...initialHourlyData.values],
       },
+      connected: false,
     };
   }
 
@@ -106,58 +92,68 @@ export class AdminDashboardStore {
     return this.state;
   }
 
-  public isSimulating(): boolean {
-    return this.simulationTimer !== null;
+  public isPolling(): boolean {
+    return this.pollingTimer !== null;
   }
 
-  public startSimulation(intervalMs: number = ADMIN_SIMULATION_CONFIG.DEFAULT_INTERVAL_MS): void {
-    if (this.simulationTimer) {
-      return;
+  public startPolling(): void {
+    if (this.pollingTimer) return;
+
+    void this.fetchStats();
+
+    this.pollingTimer = setInterval(() => {
+      void this.fetchStats();
+    }, 10000);
+  }
+
+  public stopPolling(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
     }
-    this.simulationTimer = setInterval(() => {
-      this.fluctuateVisitors();
-    }, intervalMs);
   }
 
-  public stopSimulation(): void {
-    if (this.simulationTimer) {
-      clearInterval(this.simulationTimer);
-      this.simulationTimer = null;
+  private async fetchStats(): Promise<void> {
+    try {
+      const response = await fetch("/api/admin/stats", {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Error consultando estadísticas");
+      }
+
+      const data = await response.json();
+
+      const count = Number(data.activeSessions);
+
+      if (!Number.isFinite(count) || count < 0) {
+        throw new Error("Respuesta inválida del backend");
+      }
+
+      this.state = {
+        ...this.state,
+        activeVisitorsCount: count,
+        connected: true,
+      };
+    } catch (error) {
+      console.error("Error al sincronizar dashboard:", error);
+
+      this.state = {
+        ...this.state,
+        connected: false,
+      };
     }
-  }
 
-  public fluctuateVisitors(): void {
-    const deltas = [-2, -1, -1, 0, 1, 1, 2];
-    const delta = deltas[Math.floor(Math.random() * deltas.length)];
-    const current = this.state.activeVisitorsCount;
-    const target = Math.max(
-      ADMIN_SIMULATION_CONFIG.MIN_RANDOM_VISITORS,
-      Math.min(ADMIN_SIMULATION_CONFIG.MAX_RANDOM_VISITORS, current + delta),
-    );
-    this.setVisitorCount(target);
-  }
-
-  public incrementVisitor(): void {
-    this.setVisitorCount(this.state.activeVisitorsCount + 1);
-  }
-
-  public decrementVisitor(): void {
-    this.setVisitorCount(this.state.activeVisitorsCount - 1);
+    this.notify();
   }
 
   public setVisitorCount(count: number): void {
-    const clampedCount = Math.max(
-      ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT,
-      Math.floor(count),
-    );
-
-    if (clampedCount === this.state.activeVisitorsCount) {
-      return;
-    }
-
     this.state = {
       ...this.state,
-      activeVisitorsCount: clampedCount,
+      activeVisitorsCount: Math.max(0, Math.floor(count)),
     };
     this.notify();
   }
@@ -171,22 +167,19 @@ export class AdminDashboardStore {
   }
 
   public getAverageRating(): number {
-    if (this.state.surveys.length === 0) {
-      return 0;
-    }
+    if (this.state.surveys.length === 0) return 0;
+
     const sum = this.state.surveys.reduce(
       (accum, item) => accum + item.rating,
       0,
     );
-    const average = sum / this.state.surveys.length;
-    return Number(average.toFixed(1));
+
+    return Number((sum / this.state.surveys.length).toFixed(1));
   }
 
   public subscribe(listener: DashboardListener): () => void {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   }
 
   private notify(): void {
