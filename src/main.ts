@@ -56,6 +56,60 @@ if (
       }
     };
   }
+
+  interface LookControlsInstance {
+    el?: {
+      object3D?: {
+        matrixAutoUpdate?: boolean;
+        updateMatrix?: () => void;
+      };
+      sceneEl?: {
+        components?: Record<
+          string,
+          { permissionGranted?: boolean; updateProperties?: () => void }
+        >;
+      };
+    };
+    hasSavedPose?: boolean;
+    restoreCameraPose?: () => void;
+    previousHMDPosition?: { set: (x: number, y: number, z: number) => void };
+  }
+
+  const originalOnExitVR = (lookControlsProto as { onExitVR?: () => void })
+    .onExitVR;
+  (lookControlsProto as { onExitVR?: () => void }).onExitVR = function (
+    this: LookControlsInstance,
+  ) {
+    if (this.el?.object3D) {
+      this.el.object3D.matrixAutoUpdate = true;
+    }
+    if (typeof originalOnExitVR === "function") {
+      try {
+        originalOnExitVR.call(this);
+      } catch (err: unknown) {
+        console.warn("[LookControls] Handled onExitVR error:", err);
+      }
+    }
+    if (typeof this.restoreCameraPose === "function" && this.hasSavedPose) {
+      try {
+        this.restoreCameraPose();
+      } catch (err: unknown) {
+        console.warn("[LookControls] Handled restoreCameraPose error:", err);
+      }
+    }
+    if (
+      this.previousHMDPosition &&
+      typeof this.previousHMDPosition.set === "function"
+    ) {
+      this.previousHMDPosition.set(0, 0, 0);
+    }
+    if (this.el?.object3D) {
+      this.el.object3D.matrixAutoUpdate = true;
+      if (typeof this.el.object3D.updateMatrix === "function") {
+        this.el.object3D.updateMatrix();
+      }
+    }
+  };
 }
 
 // Production component for QA & Accessibility sensor fallback
