@@ -1,15 +1,11 @@
-import {
-  NavigationAction,
-  ScreenId,
-  ViewMode,
-} from './types';
+import { NavigationAction, ScreenId, ViewMode } from "./types";
 import type {
   NavigationListener,
   NavigationSession,
   SurveyAnswers,
   Unsubscribe,
-} from './types';
-import { SessionStore } from './session-store';
+} from "./types";
+import { SessionStore } from "./session-store";
 
 type TransitionMap = {
   readonly [K in ScreenId]: {
@@ -33,6 +29,7 @@ const TRANSITIONS: TransitionMap = {
   },
   [ScreenId.EXIT_MODAL]: {
     [NavigationAction.RESUME_TOUR]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.EXPERIENCE_3D,
     [NavigationAction.CONFIRM_EXIT]: ScreenId.SURVEY,
   },
   [ScreenId.SURVEY]: {
@@ -42,7 +39,10 @@ const TRANSITIONS: TransitionMap = {
 };
 
 type SessionUpdates = {
-  -readonly [K in keyof Omit<NavigationSession, 'sessionId' | 'startedAt'>]?: NavigationSession[K];
+  -readonly [K in keyof Omit<
+    NavigationSession,
+    "sessionId" | "startedAt"
+  >]?: NavigationSession[K];
 };
 
 export interface DispatchPayload {
@@ -82,13 +82,16 @@ export class NavigationStateMachine {
     return Boolean(screenTransitions && screenTransitions[action]);
   }
 
-  public dispatch(action: NavigationAction, payload?: DispatchPayload): ScreenId {
+  public dispatch(
+    action: NavigationAction,
+    payload?: DispatchPayload,
+  ): ScreenId {
     const screenTransitions = TRANSITIONS[this.currentScreen];
     const nextScreen = screenTransitions?.[action];
 
     if (!nextScreen) {
       console.warn(
-        `[NavigationStateMachine] Rejected invalid transition: action '${action}' is not valid from state '${this.currentScreen}'`
+        `[NavigationStateMachine] Rejected invalid transition: action '${action}' is not valid from state '${this.currentScreen}'`,
       );
       return this.currentScreen;
     }
@@ -101,7 +104,10 @@ export class NavigationStateMachine {
 
     if (action === NavigationAction.SELECT_VR) {
       updates.viewMode = ViewMode.VR;
-    } else if (action === NavigationAction.SELECT_2D) {
+    } else if (
+      action === NavigationAction.SELECT_2D ||
+      action === NavigationAction.SWITCH_TO_TOUCH
+    ) {
       updates.viewMode = ViewMode.TOUCH_2D;
     } else if (payload?.viewMode) {
       updates.viewMode = payload.viewMode;
@@ -138,7 +144,10 @@ export class NavigationStateMachine {
       try {
         listener(this.currentScreen, this.session);
       } catch (error) {
-        console.error('[NavigationStateMachine] Error in listener execution', error);
+        console.error(
+          "[NavigationStateMachine] Error in listener execution",
+          error,
+        );
       }
     }
   }

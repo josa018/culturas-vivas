@@ -50,6 +50,20 @@ export class ExitModalScreenView implements ScreenView {
       this.dispatch(NavigationAction.RESUME_TOUR);
     });
 
+    const switchTouchBtn = document.createElement("button");
+    switchTouchBtn.type = "button";
+    switchTouchBtn.className = UI_CLASSES.BUTTON_SECONDARY;
+    switchTouchBtn.setAttribute("data-action", "switch-to-touch");
+
+    const switchTouchLabel = document.createElement("span");
+    switchTouchLabel.textContent = UI_TEXT.EXIT_MODAL_BTN_SWITCH_TOUCH;
+    switchTouchBtn.appendChild(switchTouchLabel);
+
+    switchTouchBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.dispatch(NavigationAction.SWITCH_TO_TOUCH);
+    });
+
     const exitBtn = document.createElement("button");
     exitBtn.type = "button";
     exitBtn.className = UI_CLASSES.BUTTON_OUTLINE;
@@ -64,7 +78,7 @@ export class ExitModalScreenView implements ScreenView {
       this.dispatch(NavigationAction.CONFIRM_EXIT);
     });
 
-    buttonStack.append(resumeBtn, exitBtn);
+    buttonStack.append(resumeBtn, switchTouchBtn, exitBtn);
     card.append(title, description, buttonStack);
     backdrop.appendChild(card);
 

@@ -1,9 +1,62 @@
 import "aframe";
+import "./experience/components/inspectable";
+import "./experience/components/stereo-media";
 import "./style.css";
 import { AppRouter } from "./app";
 import { AppRoute, RouteMatcher } from "./navigation/route-matcher";
 import { AdminController } from "./admin/index";
 import { VisitorSessionManager } from "./session/visitor-session-manager";
+
+// Defensive runtime guard for A-Frame look-controls on mobile devices
+if (
+  typeof AFRAME !== "undefined" &&
+  AFRAME.components &&
+  AFRAME.components["look-controls"]
+) {
+  const lookControlsProto = AFRAME.components["look-controls"].Component
+    .prototype as {
+    setupMagicWindowControls?: () => void;
+  };
+  const originalSetupMagicWindowControls =
+    lookControlsProto.setupMagicWindowControls;
+  if (typeof originalSetupMagicWindowControls === "function") {
+    lookControlsProto.setupMagicWindowControls = function (this: {
+      el?: {
+        sceneEl?: {
+          components?: Record<
+            string,
+            { permissionGranted?: boolean; updateProperties?: () => void }
+          >;
+        };
+      };
+    }) {
+      const scene = this.el?.sceneEl;
+      let mockInjected = false;
+      if (scene) {
+        scene.components = scene.components || {};
+        if (!scene.components["device-orientation-permission-ui"]) {
+          scene.components["device-orientation-permission-ui"] = {
+            permissionGranted: false,
+            updateProperties: () => {},
+          };
+          mockInjected = true;
+        }
+      }
+      try {
+        originalSetupMagicWindowControls.call(this);
+      } catch (err: unknown) {
+        console.warn(
+          "[LookControls] Handled setupMagicWindowControls error:",
+          err,
+        );
+      } finally {
+        if (mockInjected && scene?.components) {
+          delete scene.components["device-orientation-permission-ui"];
+        }
+      }
+    };
+  }
+}
 
 // Production component for QA & Accessibility sensor fallback
 AFRAME.registerComponent("control-sensores-qa", {
@@ -18,13 +71,23 @@ AFRAME.registerComponent("control-sensores-qa", {
       this.activarFallbackTactil("Tiempo de espera agotado para el sensor.");
     }, 1000);
 
-    if (typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === "function") {
-      (DeviceOrientationEvent as unknown as { requestPermission: () => Promise<string> })
+    if (
+      typeof (
+        DeviceOrientationEvent as unknown as {
+          requestPermission?: () => Promise<string>;
+        }
+      ).requestPermission === "function"
+    ) {
+      (
+        DeviceOrientationEvent as unknown as {
+          requestPermission: () => Promise<string>;
+        }
+      )
         .requestPermission()
         .then((permissionState: string) => {
           clearTimeout(fallbackTimeout);
           if (permissionState === "granted") {
-            console.log("[QA] Giroscopio autorizado con éxito en iOS.");
+            console.log("[QA] Giroscopio autorizado con éxito.");
           } else {
             this.activarFallbackTactil("Permiso denegado por el usuario.");
           }
@@ -37,7 +100,9 @@ AFRAME.registerComponent("control-sensores-qa", {
     } else {
       clearTimeout(fallbackTimeout);
       if (navigator.userAgent.indexOf("Mobile") === -1) {
-        this.activarFallbackTactil("Entorno de escritorio detectado sin hardware de movimiento.");
+        this.activarFallbackTactil(
+          "Entorno de escritorio detectado sin hardware de movimiento.",
+        );
       } else {
         console.log("[QA] Giroscopio activo directamente (Android u otros).");
       }
@@ -48,7 +113,8 @@ AFRAME.registerComponent("control-sensores-qa", {
     console.warn(`[QA Fallback Activo] Motivo: ${motivo}`);
     const statusContenedor = document.getElementById("vr-status-message");
     if (statusContenedor) {
-      statusContenedor.innerText = "Sensores no disponibles. Activando visualización táctil 2D";
+      statusContenedor.innerText =
+        "Sensores no disponibles. Activando visualización táctil 2D";
       statusContenedor.setAttribute("role", "status");
       statusContenedor.setAttribute("aria-live", "polite");
       statusContenedor.style.display = "block";
@@ -80,7 +146,9 @@ function bootstrap(): void {
 
     const sessionManager = new VisitorSessionManager();
     void sessionManager.start();
-    (window as unknown as { __CV_SESSION__?: VisitorSessionManager }).__CV_SESSION__ = sessionManager;
+    (
+      window as unknown as { __CV_SESSION__?: VisitorSessionManager }
+    ).__CV_SESSION__ = sessionManager;
   }
 }
 

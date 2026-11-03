@@ -2,6 +2,7 @@ export const UI_CLASSES = {
   SCREEN_CONTAINER: "cv-screen",
   SCREEN_ACTIVE: "cv-screen--active",
   SCREEN_HIDDEN: "cv-screen--hidden",
+  SCENE_ACTIVE: "cv-scene--active",
   BUTTON_PRIMARY: "cv-btn cv-btn--primary",
   BUTTON_SECONDARY: "cv-btn cv-btn--secondary",
   BUTTON_OUTLINE: "cv-btn cv-btn--outline",
@@ -18,6 +19,8 @@ export const UI_TEXT = {
   SPLASH_SUBTITLE: "Experiencia Web Inmersiva 360°",
   SPLASH_LOADING: "Cargando entorno interactivo...",
   SPLASH_TAP_PROMPT: "Toca en cualquier parte para continuar",
+  SPLASH_BTN_ENTER: "Entrar",
+  SPLASH_READY: "Recursos listos para iniciar",
 
   WELCOME_TITLE: "Bienvenido a Culturas Vivas",
   WELCOME_DESCRIPTION:
@@ -40,6 +43,7 @@ export const UI_TEXT = {
   EXIT_MODAL_DESCRIPTION:
     "Puedes regresar a la sala 3D o concluir tu visita y calificar la experiencia.",
   EXIT_MODAL_BTN_RESUME: "Continuar Recorrido",
+  EXIT_MODAL_BTN_SWITCH_TOUCH: "Continuar en pantalla táctil",
   EXIT_MODAL_BTN_CONFIRM: "Finalizar Experiencia",
 
   SURVEY_TITLE: "Encuesta de Satisfacción",
@@ -51,3 +55,5 @@ export const UI_TEXT = {
   SURVEY_BTN_SUBMIT: "Enviar Encuesta",
   SURVEY_BTN_SKIP: "Omitir",
 } as const;
+
+export const SCREEN_TEXTS = UI_TEXT;

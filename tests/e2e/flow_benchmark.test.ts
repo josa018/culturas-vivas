@@ -25,7 +25,12 @@ function runEndToEndBenchmark(): void {
     splashEl.classList.contains("cv-screen--active"),
     "Splash screen must be active on launch",
   );
-  splashEl.dispatchEvent("click");
+
+  const enterBtn = splashEl.querySelector(
+    '[data-action="enter"]',
+  ) as MockElement;
+  assert.ok(enterBtn, "Splash enter button must exist in DOM");
+  enterBtn.dispatchEvent("click");
 
   // Screen 2: Welcome Screen
   const welcomeEl = rootElement.querySelector(
@@ -34,7 +39,7 @@ function runEndToEndBenchmark(): void {
   assert.ok(welcomeEl, "Welcome element must be mounted");
   assert.ok(
     welcomeEl.classList.contains("cv-screen--active"),
-    "Welcome screen must be active after splash tap",
+    "Welcome screen must be active after splash enter",
   );
   const vrBtn = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
   assert.ok(vrBtn, "VR mode selection button must exist");
@@ -73,6 +78,19 @@ function runEndToEndBenchmark(): void {
     mockScene.style.display,
     "block",
     "A-Frame scene must be visible when in 3D",
+  );
+
+  const roomGroupVR = mockScene.querySelector(
+    "#cv-prototype-room-group",
+  ) as MockElement;
+  assert.ok(
+    roomGroupVR,
+    "Prototype room group must be mounted in A-Frame scene",
+  );
+  assert.equal(
+    roomGroupVR.children.length,
+    5,
+    "Prototype room must contain all 5 exhibits",
   );
 
   const exitHudBtn = experienceEl.querySelector(
@@ -121,6 +139,84 @@ function runEndToEndBenchmark(): void {
   assert.ok(
     welcomeEl.classList.contains("cv-screen--active"),
     "Welcome screen must be active after survey completion",
+  );
+
+  // Traversal 2: 2D Mode Path
+  const touch2dBtn = welcomeEl.querySelector(
+    '[data-action="2d"]',
+  ) as MockElement;
+  assert.ok(touch2dBtn, "2D mode selection button must exist");
+  touch2dBtn.dispatchEvent("click");
+  assert.ok(
+    experienceEl.classList.contains("cv-screen--active"),
+    "Experience HUD active in 2D",
+  );
+  assert.equal(mockScene.style.display, "block", "A-Frame scene visible in 2D");
+  const roomGroup2D = mockScene.querySelector(
+    "#cv-prototype-room-group",
+  ) as MockElement;
+  assert.ok(roomGroup2D, "Room group remains mounted in 2D mode");
+  assert.equal(
+    roomGroup2D.children.length,
+    5,
+    "All 5 exhibits present in 2D mode",
+  );
+
+  // Exit 2D mode to welcome for next traversal
+  const exitHudBtn2 = experienceEl.querySelector(
+    '[data-action="request-exit"]',
+  ) as MockElement;
+  assert.ok(exitHudBtn2);
+  exitHudBtn2.dispatchEvent("click");
+  const finishBtn2 = exitModalEl.querySelector(
+    '[data-action="confirm-exit"]',
+  ) as MockElement;
+  assert.ok(finishBtn2);
+  finishBtn2.dispatchEvent("click");
+  const skipSurveyBtn = surveyEl.querySelector(
+    '[data-action="skip-survey"]',
+  ) as MockElement;
+  assert.ok(skipSurveyBtn);
+  skipSurveyBtn.dispatchEvent("click");
+  assert.ok(welcomeEl.classList.contains("cv-screen--active"));
+
+  // Traversal 3: Cardboard VR native exit-vr -> Exit Modal -> Switch to Touch
+  const vrBtn2 = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
+  assert.ok(vrBtn2);
+  vrBtn2.dispatchEvent("click");
+  const startBtn2 = tutorialEl.querySelector(
+    '[data-action="confirm-insertion"]',
+  ) as MockElement;
+  assert.ok(startBtn2);
+  startBtn2.dispatchEvent("click");
+  assert.ok(experienceEl.classList.contains("cv-screen--active"));
+
+  // Native exit-vr fired (e.g. Cardboard viewer X)
+  mockScene.dispatchEvent("exit-vr");
+  assert.ok(
+    exitModalEl.classList.contains("cv-screen--active"),
+    "Native exit-vr must navigate directly to Exit Modal",
+  );
+  assert.equal(
+    mockScene.style.display,
+    "block",
+    "Scene canvas must be retained in background",
+  );
+
+  // Switch to touch mode from Exit Modal
+  const switchTouchBtn = exitModalEl.querySelector(
+    '[data-action="switch-to-touch"]',
+  ) as MockElement;
+  assert.ok(switchTouchBtn, "Switch to touch button must exist in exit modal");
+  switchTouchBtn.dispatchEvent("click");
+  assert.ok(
+    experienceEl.classList.contains("cv-screen--active"),
+    "Experience HUD active after switching to touch",
+  );
+  assert.equal(
+    router.getStateMachine().getSession().viewMode,
+    "2d",
+    "Session viewMode must be updated to 2d",
   );
 
   const elapsedMs = Date.now() - startTime;

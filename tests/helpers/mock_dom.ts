@@ -109,6 +109,16 @@ export class MockElement {
     }
   }
 
+  public removeEventListener(
+    event: string,
+    handler: (e: unknown) => void,
+  ): void {
+    const list = this.listeners.get(event);
+    if (!list) return;
+    const idx = list.indexOf(handler);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+
   public addEventListener(event: string, handler: (e: unknown) => void): void {
     const list = this.listeners.get(event) ?? [];
     list.push(handler);
@@ -143,6 +153,9 @@ export class MockElement {
       ) {
         return el;
       }
+      if (el.tagName.toLowerCase() === selector.toLowerCase()) {
+        return el;
+      }
       if (selector === "a-scene" && el.tagName === "A-SCENE") {
         return el;
       }
@@ -158,7 +171,9 @@ export class MockElement {
   public querySelectorAll<T = MockElement>(selector: string): T[] {
     const results: MockElement[] = [];
     const walk = (el: MockElement): void => {
-      if (selector === "[data-rating]" && el.getAttribute("data-rating")) {
+      const isAttrQuery = selector.startsWith("[") && selector.endsWith("]");
+      const attrName = isAttrQuery ? selector.slice(1, -1) : "";
+      if (isAttrQuery && el.getAttribute(attrName) !== null) {
         results.push(el);
       }
       for (const child of el.children) {
