@@ -4,15 +4,16 @@ import {
   ScreenId,
 } from "./navigation/index";
 import type { DispatchPayload } from "./navigation/index";
-import {
-  ExperienceScreenView,
-  ExitModalScreenView,
-  SplashScreenView,
-  SurveyScreenView,
-  TutorialScreenView,
-  WelcomeScreenView,
-} from "./screens/index";
-import type { ScreenView } from "./screens/index";
+
+import type { ScreenView } from "./screens/base-screen";
+import { SplashScreenView } from "./screens/screen-splash";
+import { WelcomeScreenView } from "./screens/screen-welcome";
+import { CultureSelectScreenView } from "./screens/screen-culture-select";
+import { Museum2DScreenView } from "./screens/screen-museum-2d";
+import { TutorialScreenView } from "./screens/screen-tutorial";
+import { ExperienceScreenView } from "./screens/screen-experience";
+import { ExitModalScreenView } from "./screens/screen-exit";
+import { SurveyScreenView } from "./screens/screen-survey";
 
 export class AppRouter {
   private readonly rootContainer: HTMLElement;
@@ -51,9 +52,12 @@ export class AppRouter {
       this.stateMachine.dispatch(action, payload);
     };
 
+    // 8 Pantallas registradas
     const views: ScreenView[] = [
       new SplashScreenView(dispatch),
       new WelcomeScreenView(dispatch),
+      new CultureSelectScreenView(dispatch),
+      new Museum2DScreenView(dispatch),
       new TutorialScreenView(dispatch),
       new ExperienceScreenView(dispatch),
       new ExitModalScreenView(dispatch),
@@ -75,6 +79,7 @@ export class AppRouter {
   private subscribeToTransitions(): void {
     this.unsubscribe = this.stateMachine.subscribe(
       (activeScreenId, session) => {
+        // Sincronizar modo de visualización en la escena 3D
         if (session.viewMode) {
           const experienceScreen = this.screens.get(ScreenId.EXPERIENCE_3D) as
             | ExperienceScreenView
@@ -86,6 +91,20 @@ export class AppRouter {
             experienceScreen.setViewMode(session.viewMode);
           }
         }
+
+        // Sincronizar cultura elegida en la sala Museo 2D
+        if (session.selectedCulture) {
+          const museum2DScreen = this.screens.get(ScreenId.MUSEUM_2D) as
+            | Museum2DScreenView
+            | undefined;
+          if (
+            museum2DScreen &&
+            typeof museum2DScreen.setCulture === "function"
+          ) {
+            museum2DScreen.setCulture(session.selectedCulture);
+          }
+        }
+
         this.updateScreenVisibility(activeScreenId);
       },
     );
@@ -99,7 +118,6 @@ export class AppRouter {
         id === ScreenId.EXPERIENCE_3D &&
         activeScreenId === ScreenId.EXIT_MODAL
       ) {
-        // Retain 3D scene in the background under the exit modal
         const experienceScreen = screen as ExperienceScreenView;
         if (typeof experienceScreen.retainBackground === "function") {
           experienceScreen.retainBackground();

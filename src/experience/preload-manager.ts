@@ -5,10 +5,9 @@
  */
 
 export const ROOM_ASSETS = {
-  SALA_1_WIXARIKA: "/scenes/test_scene.webp",
-  SALA_2_NAAYERI: "/scenes/test_scene.webp", // Utiliza fallback provisional si la textura final aún no se monta
-} as const;
-
+  SALA_1_WIXARIKA: "/assets/sala1.jpg", // o el nombre que tenga tu imagen 360 actual
+  SALA_2_NAAYERI: "/assets/sala2.jpg",   // verifica que este archivo esté en public/assets/
+};
 export const PRELOAD_CONSTANTS = {
   DEFAULT_TIMEOUT_MS: 8000,
   DEFAULT_CRITICAL_ASSETS: [ROOM_ASSETS.SALA_1_WIXARIKA],

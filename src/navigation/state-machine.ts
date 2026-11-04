@@ -1,4 +1,4 @@
-import { NavigationAction, ScreenId, ViewMode } from "./types";
+import { NavigationAction, ScreenId, ViewMode, CultureId } from "./types";
 import type {
   NavigationListener,
   NavigationSession,
@@ -18,23 +18,39 @@ const TRANSITIONS: TransitionMap = {
     [NavigationAction.FINISH_LOADING]: ScreenId.WELCOME,
   },
   [ScreenId.WELCOME]: {
-    [NavigationAction.SELECT_VR]: ScreenId.TUTORIAL,
+    [NavigationAction.SELECT_VR]: ScreenId.TUTORIAL, // o directo a EXPERIENCE_3D si te saltas el tutorial
     [NavigationAction.SELECT_2D]: ScreenId.EXPERIENCE_3D,
   },
   [ScreenId.TUTORIAL]: {
+    [NavigationAction.START_EXPERIENCE]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.BACK_TO_WELCOME]: ScreenId.WELCOME,
+  },
+  [ScreenId.CULTURE_SELECT]: {
+    [NavigationAction.CHOOSE_CULTURE]: ScreenId.MUSEUM_2D,
+    [NavigationAction.BACK_TO_WELCOME]: ScreenId.WELCOME,
+  },
+  [ScreenId.MUSEUM_2D]: {
+    [NavigationAction.BACK_TO_SELECT]: ScreenId.CULTURE_SELECT,
+    [NavigationAction.REQUEST_EXIT]: ScreenId.SURVEY,
     [NavigationAction.CONFIRM_INSERTION]: ScreenId.EXPERIENCE_3D,
+  },
+  [ScreenId.TUTORIAL]: {
+    [NavigationAction.CONFIRM_INSERTION]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.WELCOME,
   },
   [ScreenId.EXPERIENCE_3D]: {
     [NavigationAction.REQUEST_EXIT]: ScreenId.EXIT_MODAL,
   },
   [ScreenId.EXIT_MODAL]: {
     [NavigationAction.RESUME_TOUR]: ScreenId.EXPERIENCE_3D,
-    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.MUSEUM_2D,
     [NavigationAction.CONFIRM_EXIT]: ScreenId.SURVEY,
   },
   [ScreenId.SURVEY]: {
     [NavigationAction.COMPLETE_SURVEY]: ScreenId.WELCOME,
     [NavigationAction.SKIP_SURVEY]: ScreenId.WELCOME,
+    [NavigationAction.SELECT_VR]: ScreenId.CULTURE_SELECT,
+    [NavigationAction.SELECT_2D]: ScreenId.CULTURE_SELECT,
   },
 };
 
@@ -47,6 +63,7 @@ type SessionUpdates = {
 
 export interface DispatchPayload {
   readonly viewMode?: ViewMode;
+  readonly selectedCulture?: CultureId;
   readonly surveyAnswers?: SurveyAnswers;
 }
 
@@ -113,6 +130,10 @@ export class NavigationStateMachine {
       updates.viewMode = payload.viewMode;
     }
 
+    if (payload?.selectedCulture) {
+      updates.selectedCulture = payload.selectedCulture;
+    }
+
     if (payload?.surveyAnswers) {
       updates.surveyAnswers = payload.surveyAnswers;
     }
@@ -125,7 +146,6 @@ export class NavigationStateMachine {
 
   public subscribe(listener: NavigationListener): Unsubscribe {
     this.listeners.add(listener);
-    // Emit immediate current state upon subscription
     listener(this.currentScreen, this.session);
 
     return () => {

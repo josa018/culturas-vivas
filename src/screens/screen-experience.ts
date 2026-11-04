@@ -19,6 +19,7 @@ interface AFrameSceneElement extends HTMLElement {
     xr?: {
       enabled?: boolean;
     };
+    setSize?: (width: number, height: number) => void;
   };
   camera?: {
     el?: HTMLElement;
@@ -28,6 +29,46 @@ interface AFrameSceneElement extends HTMLElement {
   };
 }
 
+interface ExhibitHotspotData {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  whyText: string;
+  position: string;
+  color: string;
+}
+
+const EXHIBIT_HOTSPOTS: ExhibitHotspotData[] = [
+  {
+    id: "vestimenta",
+    category: "Vestimenta Sagrada",
+    title: "Kutuni y Xikuri",
+    description: "Traje tradicional de manta blanca bordado en punto de cruz.",
+    whyText: "¿Por qué visten así? Los bordados de venados y peyote son rezos visuales que comunican y protegen ante las deidades de la naturaleza.",
+    position: "-2.6 1.4 -3.2",
+    color: "#e11d48",
+  },
+  {
+    id: "alimentacion",
+    category: "Alimentación Ancestral",
+    title: "Maíz Sagrado de la Sierra",
+    description: "Gorditas de maíz de cinco colores, atole blanco y quelites.",
+    whyText: "¿Por qué comen así? El maíz es considerado su hermano espiritual; nutre la vida cotidiana y renueva el lazo sagrado comunitario.",
+    position: "2.6 1.3 -3.0",
+    color: "#059669",
+  },
+  {
+    id: "tradiciones",
+    category: "Tradición y Ceremonia",
+    title: "Peregrinación a Wirikuta",
+    description: "Cantos del Marakame, sonajas y ofrendas en el patio ceremonial.",
+    whyText: "¿Por qué lo celebran? Para agradecer las lluvias, regenerar las fuerzas del cosmos y mantener vivos los acuerdos con sus antepasados.",
+    position: "0 1.2 -3.8",
+    color: "#d97706",
+  },
+];
+
 export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
@@ -36,7 +77,7 @@ export class ExperienceScreenView implements ScreenView {
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
 
-  // Estado Multi-Sala (Tarjeta 17)
+  // Estado Multi-Sala
   private currentRoom: "sala1" | "sala2" = "sala1";
   private isTransitioning: boolean = false;
 
@@ -47,6 +88,10 @@ export class ExperienceScreenView implements ScreenView {
 
   public setViewMode(viewMode: string): void {
     this.viewMode = viewMode;
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    if (scene) {
+      this.configureGazerForMode(scene);
+    }
   }
 
   public mount(parent: HTMLElement): void {
@@ -64,7 +109,7 @@ export class ExperienceScreenView implements ScreenView {
     const badge = document.createElement("span");
     badge.className = "cv-badge";
     badge.id = "cv-current-room-badge";
-    badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 1 (Wixárika)`;
+    badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL}Sala 1 (Wixárika)`;
 
     const exitButton = document.createElement("button");
     exitButton.type = "button";
@@ -76,6 +121,7 @@ export class ExperienceScreenView implements ScreenView {
     exitButton.appendChild(exitLabel);
 
     exitButton.addEventListener("click", (event) => {
+      event.preventDefault();
       event.stopPropagation();
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
@@ -87,10 +133,10 @@ export class ExperienceScreenView implements ScreenView {
     this.container = hudOverlay;
     this.setupSceneListeners();
 
-    // Precarga diferida (lazy loading) de la Sala 2 en segundo plano
+    // Precarga diferida de Sala 2
     ScenePreloadManager.lazyPreloadRoom(ROOM_ASSETS.SALA_2_NAAYERI).catch(
       (err) => {
-        console.warn("[ExperienceScreenView] Fallo la precarga diferida de Sala 2:", err);
+        console.warn("[ExperienceScreenView] Falló la precarga de Sala 2:", err);
       },
     );
   }
@@ -108,6 +154,8 @@ export class ExperienceScreenView implements ScreenView {
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
+      this.container.style.removeProperty("display");
+      this.container.style.display = "flex";
     }
     this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
@@ -132,6 +180,7 @@ export class ExperienceScreenView implements ScreenView {
     }
     ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
     this.setupMultiRoomPortal(scene);
+    this.setupInteractiveExhibits(scene);
 
     this.safeProgrammaticExitVR(scene, () => {
       this.sanitize2DViewport(scene);
@@ -145,6 +194,7 @@ export class ExperienceScreenView implements ScreenView {
     if (this.container) {
       this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
+      this.container.style.display = "none";
     }
     this.toggleSceneLifecycle(false);
   }
@@ -154,43 +204,230 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   /**
-   * Configura el componente de portal interactivo 3D con gaze trigger (Tarjeta 17)
+   * Configura el Gazer (cursor de mirada) según el modo:
+   * - En VR: fuse automático para visores cardboard (apuntas y se acciona).
+   * - En Táctil (2D): touch/clic habilitado para explorar con dedos o mouse.
    */
-  private setupMultiRoomPortal(scene: HTMLElement): void {
+  private configureGazerForMode(scene: AFrameSceneElement): void {
+    const cursor = scene.querySelector("[cursor]");
+    if (!cursor) return;
+
+    if (this.viewMode === "vr") {
+      cursor.setAttribute("cursor", "fuse: true; fuseTimeout: 1200");
+      cursor.setAttribute("visible", "true");
+    } else {
+      // En táctil permitimos tocar directamente en pantalla o mirar
+      cursor.setAttribute("cursor", "fuse: false; rayOrigin: mouse");
+    }
+  }
+
+  /**
+   * Genera los puntos de interés 3D (Vestuario, Comida, Tradición)
+   * y el Lienzo 2D flotante interactivo.
+   */
+  private setupInteractiveExhibits(scene: HTMLElement): void {
+    if (scene.querySelector("#cv-exhibits-group")) {
+      return;
+    }
+
+    const exhibitsGroup = document.createElement("a-entity");
+    exhibitsGroup.setAttribute("id", "cv-exhibits-group");
+
+    // 1. Lienzo 2D flotante en el espacio 3D
+    const infoPanel = document.createElement("a-entity");
+    infoPanel.setAttribute("id", "cv-floating-canvas-2d");
+    infoPanel.setAttribute("position", "0 1.6 -2.4");
+    infoPanel.setAttribute("visible", "false");
+
+    // Fondo del lienzo
+    const panelBg = document.createElement("a-plane");
+    panelBg.setAttribute("width", "2.1");
+    panelBg.setAttribute("height", "1.4");
+    panelBg.setAttribute(
+      "material",
+      "color: #0b0f17; opacity: 0.94; shader: flat; transparent: true",
+    );
+
+    // Marco exterior con greca/color
+    const panelBorder = document.createElement("a-ring");
+    panelBorder.setAttribute("radius-inner", "1.05");
+    panelBorder.setAttribute("radius-outer", "1.08");
+    panelBorder.setAttribute("material", "color: #f59e0b; shader: flat");
+
+    // Encabezado Categoría
+    const catLabel = document.createElement("a-text");
+    catLabel.setAttribute("id", "cv-canvas-category");
+    catLabel.setAttribute("value", "VESTIMENTA SAGRADA");
+    catLabel.setAttribute("color", "#f59e0b");
+    catLabel.setAttribute("align", "center");
+    catLabel.setAttribute("position", "0 0.5 0.02");
+    catLabel.setAttribute("scale", "0.55 0.55 0.55");
+
+    // Título del elemento
+    const titleLabel = document.createElement("a-text");
+    titleLabel.setAttribute("id", "cv-canvas-title");
+    titleLabel.setAttribute("value", "Kutuni y Xikuri");
+    titleLabel.setAttribute("color", "#ffffff");
+    titleLabel.setAttribute("align", "center");
+    titleLabel.setAttribute("position", "0 0.3 0.02");
+    titleLabel.setAttribute("scale", "0.75 0.75 0.75");
+
+    // Breve descripción
+    const descLabel = document.createElement("a-text");
+    descLabel.setAttribute("id", "cv-canvas-desc");
+    descLabel.setAttribute(
+      "value",
+      "Traje tradicional de manta blanca bordado en punto de cruz.",
+    );
+    descLabel.setAttribute("color", "#cbd5e1");
+    descLabel.setAttribute("align", "center");
+    descLabel.setAttribute("position", "0 0.05 0.02");
+    descLabel.setAttribute("width", "1.9");
+    descLabel.setAttribute("wrap-count", "32");
+    descLabel.setAttribute("scale", "0.5 0.5 0.5");
+
+    // Explicación de "Por qué visten/comen así"
+    const whyBox = document.createElement("a-plane");
+    whyBox.setAttribute("width", "1.85");
+    whyBox.setAttribute("height", "0.4");
+    whyBox.setAttribute("position", "0 -0.32 0.01");
+    whyBox.setAttribute(
+      "material",
+      "color: #1e293b; opacity: 0.9; shader: flat",
+    );
+
+    const whyLabel = document.createElement("a-text");
+    whyLabel.setAttribute("id", "cv-canvas-why");
+    whyLabel.setAttribute(
+      "value",
+      "¿Por qué visten así? Los bordados no son adorno; son rezos y visiones protectoras que comunican con las deidades.",
+    );
+    whyLabel.setAttribute("color", "#fde047");
+    whyLabel.setAttribute("align", "center");
+    whyLabel.setAttribute("position", "0 0 0.02");
+    whyLabel.setAttribute("width", "1.75");
+    whyLabel.setAttribute("wrap-count", "34");
+    whyLabel.setAttribute("scale", "0.42 0.42 0.42");
+
+    whyBox.appendChild(whyLabel);
+
+    // Botón de cierre en el lienzo
+    const closeBtn = document.createElement("a-circle");
+    closeBtn.setAttribute("id", "cv-canvas-close-btn");
+    closeBtn.setAttribute("class", "clickable");
+    closeBtn.setAttribute("radius", "0.1");
+    closeBtn.setAttribute("position", "0.9 0.55 0.02");
+    closeBtn.setAttribute("material", "color: #e11d48; shader: flat");
+
+    const closeText = document.createElement("a-text");
+    closeText.setAttribute("value", "✕");
+    closeText.setAttribute("align", "center");
+    closeText.setAttribute("position", "0 0 0.01");
+    closeText.setAttribute("scale", "0.6 0.6 0.6");
+    closeText.setAttribute("color", "#ffffff");
+    closeBtn.appendChild(closeText);
+
+    closeBtn.addEventListener("click", () => {
+      infoPanel.setAttribute("visible", "false");
+    });
+
+    infoPanel.append(panelBg, panelBorder, catLabel, titleLabel, descLabel, whyBox, closeBtn);
+    exhibitsGroup.appendChild(infoPanel);
+
+    // 2. Crear los Stands/Hotspots en la sala para Vestimenta, Comida y Tradición
+    EXHIBIT_HOTSPOTS.forEach((data) => {
+      const stand = document.createElement("a-entity");
+      stand.setAttribute("id", `hotspot-${data.id}`);
+      stand.setAttribute("class", "clickable");
+      stand.setAttribute("position", data.position);
+
+      // Pedestal / Base
+      const base = document.createElement("a-cylinder");
+      base.setAttribute("radius", "0.42");
+      base.setAttribute("height", "0.18");
+      base.setAttribute("position", "0 0 0");
+      base.setAttribute("material", `color: ${data.color}; opacity: 0.85; shader: flat`);
+
+      // Anillo decorativo giratorio sobre el stand
+      const ring = document.createElement("a-ring");
+      ring.setAttribute("radius-inner", "0.48");
+      ring.setAttribute("radius-outer", "0.54");
+      ring.setAttribute("position", "0 0.15 0");
+      ring.setAttribute("rotation", "-90 0 0");
+      ring.setAttribute("material", "color: #f59e0b; shader: flat");
+      ring.setAttribute(
+        "animation__spin",
+        "property: rotation; to: -90 0 360; loop: true; dur: 8000; easing: linear",
+      );
+
+      // Icono / Rótulo flotante
+      const label = document.createElement("a-text");
+      label.setAttribute("value", `${data.category}\n[MIRA AQUÍ]`);
+      label.setAttribute("align", "center");
+      label.setAttribute("position", "0 0.7 0");
+      label.setAttribute("scale", "0.55 0.55 0.55");
+      label.setAttribute("color", "#ffffff");
+
+      stand.append(base, ring, label);
+
+      // Al apuntar con el Gazer o hacer clic con el dedo/mouse:
+      const showExhibitInfo = () => {
+        catLabel.setAttribute("value", data.category.toUpperCase());
+        titleLabel.setAttribute("value", data.title);
+        descLabel.setAttribute("value", data.description);
+        whyLabel.setAttribute("value", data.whyText);
+
+        // Posicionar el panel frente a donde está el hotspot
+        const coords = data.position.split(" ");
+        infoPanel.setAttribute(
+          "position",
+          `${parseFloat(coords[0]) * 0.7} 1.6 ${parseFloat(coords[2]) * 0.7}`,
+        );
+        infoPanel.setAttribute("visible", "true");
+      };
+
+      stand.addEventListener("click", showExhibitInfo);
+      exhibitsGroup.appendChild(stand);
+    });
+
+    scene.appendChild(exhibitsGroup);
+  }
+private setupMultiRoomPortal(scene: HTMLElement): void {
     if (scene.querySelector("#cv-room-portal")) {
       return;
     }
 
     const portal = document.createElement("a-entity");
     portal.setAttribute("id", "cv-room-portal");
-    portal.setAttribute("class", "clickable");
     portal.setAttribute("position", "0 1.6 3.2");
     portal.setAttribute("rotation", "0 180 0");
 
-    // Marco exterior luminoso del portal
+    // 1. Marco exterior animado
     const portalFrame = document.createElement("a-ring");
+    portalFrame.setAttribute("class", "clickable");
     portalFrame.setAttribute("radius-inner", "0.45");
-    portalFrame.setAttribute("radius-outer", "0.55");
+    portalFrame.setAttribute("radius-outer", "0.58");
     portalFrame.setAttribute("color", "#38bdf8");
     portalFrame.setAttribute(
       "material",
-      "shader: flat; opacity: 0.85; side: double; transparent: true",
+      "shader: flat; opacity: 0.9; side: double; transparent: true",
     );
     portalFrame.setAttribute(
       "animation__spin",
-      "property: rotation; to: 0 0 360; loop: true; dur: 12000; easing: linear",
+      "property: rotation; to: 0 0 360; loop: true; dur: 10000; easing: linear",
     );
 
-    // Disco central sensible a la mirada (Gaze Target)
+    // 2. Núcleo central interactivo (este recibe el clic/gazer)
     const portalCore = document.createElement("a-circle");
-    portalCore.setAttribute("radius", "0.44");
+    portalCore.setAttribute("class", "clickable");
+    portalCore.setAttribute("radius", "0.46");
     portalCore.setAttribute("color", "#0284c7");
     portalCore.setAttribute(
       "material",
-      "shader: flat; opacity: 0.65; side: double; transparent: true",
+      "shader: flat; opacity: 0.85; side: double; transparent: true",
     );
 
-    // Etiqueta indicativa 3D sobre el portal
+    // 3. Texto del portal visible por ambos lados
     const portalLabel = document.createElement("a-text");
     portalLabel.setAttribute("id", "cv-portal-text");
     portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
@@ -198,11 +435,14 @@ export class ExperienceScreenView implements ScreenView {
     portalLabel.setAttribute("position", "0 0 0.05");
     portalLabel.setAttribute("scale", "0.6 0.6 0.6");
     portalLabel.setAttribute("color", "#ffffff");
+    portalLabel.setAttribute("side", "double");
 
     portal.append(portalFrame, portalCore, portalLabel);
 
-    // Evento de activación por click o mirada fija (gaze trigger)
-    const handlePortalActivation = async () => {
+    const handlePortalActivation = async (evt?: Event) => {
+      if (evt) {
+        evt.stopPropagation();
+      }
       if (this.isTransitioning) {
         return;
       }
@@ -214,33 +454,38 @@ export class ExperienceScreenView implements ScreenView {
           ? ROOM_ASSETS.SALA_2_NAAYERI
           : ROOM_ASSETS.SALA_1_WIXARIKA;
 
-      // Ejecutar fundido a negro (500ms fade out + 500ms fade in)
-      await ScenePreloadManager.transitionSky(scene, targetTexture, () => {
-        this.currentRoom = nextRoom;
+      try {
+        await ScenePreloadManager.transitionSky(scene, targetTexture, () => {
+          this.currentRoom = nextRoom;
 
-        // Actualizar textos informativos 3D y HUD
-        if (nextRoom === "sala2") {
-          portalLabel.setAttribute("value", "VOLVER A SALA 1\n(WIXARIKA)");
           const badge = document.querySelector("#cv-current-room-badge");
-          if (badge) {
-            badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 2 (Náayeri)`;
+          if (nextRoom === "sala2") {
+            portalLabel.setAttribute("value", "VOLVER A SALA 1\n(WIXARIKA)");
+            if (badge) {
+              badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL}Sala 2 (Náayeri)`;
+            }
+          } else {
+            portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
+            if (badge) {
+              badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL}Sala 1 (Wixárika)`;
+            }
           }
-        } else {
-          portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
-          const badge = document.querySelector("#cv-current-room-badge");
-          if (badge) {
-            badge.textContent = `${UI_TEXT.EXPERIENCE_SCENE_LABEL} • Sala 1 (Wixárika)`;
-          }
-        }
-      });
-
-      this.isTransitioning = false;
+        });
+      } catch (err) {
+        console.error("[ExperienceScreenView] Error cambiando de sala:", err);
+      } finally {
+        this.isTransitioning = false;
+      }
     };
 
+    // Escuchar el clic y gazer en el contenedor y en el disco interactivo
     portal.addEventListener("click", handlePortalActivation);
+    portalCore.addEventListener("click", handlePortalActivation);
+    portalFrame.addEventListener("click", handlePortalActivation);
 
     scene.appendChild(portal);
   }
+  
 
   private toggleSceneLifecycle(active: boolean): void {
     if (typeof document === "undefined") {
@@ -252,16 +497,20 @@ export class ExperienceScreenView implements ScreenView {
     }
 
     if (active) {
+      scene.style.removeProperty("display");
       scene.style.display = "block";
       if (scene.classList && typeof scene.classList.add === "function") {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
       ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
       this.setupMultiRoomPortal(scene);
+      this.setupInteractiveExhibits(scene);
+      this.configureGazerForMode(scene);
 
       if (typeof scene.play === "function") {
         scene.play();
       }
+
       if (this.viewMode === "vr") {
         if (typeof scene.enterVR === "function") {
           try {
@@ -283,9 +532,8 @@ export class ExperienceScreenView implements ScreenView {
           this.sanitize2DViewport(scene);
         });
       }
-      if (this.viewMode === "2d") {
-        this.synchronizeViewport(scene);
-      }
+
+      this.synchronizeViewport(scene);
     } else {
       this.safeProgrammaticExitVR(scene);
       scene.style.display = "none";
@@ -435,10 +683,24 @@ export class ExperienceScreenView implements ScreenView {
 
   private synchronizeViewport(scene: AFrameSceneElement): void {
     this.sanitize2DViewport(scene);
+
     const triggerResize = () => {
+      if (scene.renderer && typeof scene.renderer.setSize === "function") {
+        scene.renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      const canvas = scene.querySelector<HTMLCanvasElement>("canvas.a-canvas");
+      if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+      }
+
       if (typeof scene.resize === "function") {
         scene.resize();
       }
+
       if (
         typeof window !== "undefined" &&
         typeof window.dispatchEvent === "function"
@@ -446,15 +708,15 @@ export class ExperienceScreenView implements ScreenView {
         try {
           window.dispatchEvent(new Event("resize"));
         } catch {
-          // Gracefully ignore in non-browser testing contexts
+          // Ignorar fuera de entorno de navegador
         }
       }
     };
 
+    triggerResize();
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(triggerResize);
-    } else {
-      triggerResize();
+      setTimeout(triggerResize, 100);
     }
   }
 }
