@@ -108,12 +108,11 @@ function runAdminDashboardUnitTests(): void {
     const store = new AdminDashboardStore(7);
     assert.equal(store.getState().activeVisitorsCount, 7);
 
-    // Increment
-    store.incrementVisitor();
+    // Set count
+    store.setVisitorCount(8);
     assert.equal(store.getState().activeVisitorsCount, 8);
 
-    // Decrement
-    store.decrementVisitor();
+    store.setVisitorCount(7);
     assert.equal(store.getState().activeVisitorsCount, 7);
 
     // Negative clamp protection
@@ -132,12 +131,12 @@ function runAdminDashboardUnitTests(): void {
     assert.equal(notifiedCount, 15);
     unsub();
 
-    // Simulation toggle lifecycle
-    assert.equal(store.isSimulating(), false);
-    store.startSimulation(100);
-    assert.equal(store.isSimulating(), true);
-    store.stopSimulation();
-    assert.equal(store.isSimulating(), false);
+    // Polling toggle lifecycle
+    assert.equal(store.isPolling(), false);
+    store.startPolling();
+    assert.equal(store.isPolling(), true);
+    store.stopPolling();
+    assert.equal(store.isPolling(), false);
 
     console.log(
       "✓ Test 3 Passed: AdminDashboardStore counter and clamp operations valid",
@@ -331,11 +330,11 @@ function runAdminDashboardUnitTests(): void {
     assert.equal(valueSpan.textContent, "5");
 
     // Direct store fluctuation reactivity
-    store.incrementVisitor();
+    store.setVisitorCount(6);
     assert.equal(store.getState().activeVisitorsCount, 6);
     assert.equal(valueSpan.textContent, "6");
 
-    store.decrementVisitor();
+    store.setVisitorCount(5);
     assert.equal(store.getState().activeVisitorsCount, 5);
     assert.equal(valueSpan.textContent, "5");
 
@@ -415,7 +414,7 @@ function runAdminDashboardUnitTests(): void {
     assert.equal(canvas.getAttribute("aria-label"), ADMIN_UI_TEXT.CHART_TITLE);
 
     // Reactivity check on live visitor change
-    store.incrementVisitor();
+    store.setVisitorCount(6);
     assert.equal(valueSpan.textContent, "6");
 
     chartWidget.unmount();
@@ -456,12 +455,12 @@ function runAdminDashboardUnitTests(): void {
       password: ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
     });
     assert.equal(authStore.getState().isAuthenticated, true);
-    assert.equal(dashboardStore.isSimulating(), true);
+    assert.equal(dashboardStore.isPolling(), true);
 
     // Logout transition
     authStore.logout();
     assert.equal(authStore.getState().isAuthenticated, false);
-    assert.equal(dashboardStore.isSimulating(), false);
+    assert.equal(dashboardStore.isPolling(), false);
 
     // Destroy restores 3D scene display and play status
     controller.destroy();
