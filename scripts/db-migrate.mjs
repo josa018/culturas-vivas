@@ -3,7 +3,7 @@ import { createClient } from '@libsql/client';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-dotenv.config({ path: '.env.local', quiet: true });
+dotenv.config({ path: '.env', quiet: true });
 
 const dryRun = process.argv.includes('--dry-run');
 const url = process.env.TURSO_DATABASE_URL;
