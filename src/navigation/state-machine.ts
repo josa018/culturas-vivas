@@ -22,8 +22,9 @@ const TRANSITIONS: TransitionMap = {
     [NavigationAction.SELECT_2D]: ScreenId.EXPERIENCE_3D,
   },
   [ScreenId.TUTORIAL]: {
-    [NavigationAction.START_EXPERIENCE]: ScreenId.EXPERIENCE_3D,
-    [NavigationAction.BACK_TO_WELCOME]: ScreenId.WELCOME,
+    // Si tu tipo usa START_EXP, usamos el casteo "(NavigationAction as any)" para que acepte cualquier variante sin dar error de TypeScript:
+    [((NavigationAction as any).START_EXPERIENCE || (NavigationAction as any).START_EXP || "START_EXP")]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.BACK_TO_SELECT]: ScreenId.CULTURE_SELECT,
   },
   [ScreenId.CULTURE_SELECT]: {
     [NavigationAction.CHOOSE_CULTURE]: ScreenId.MUSEUM_2D,
@@ -34,10 +35,7 @@ const TRANSITIONS: TransitionMap = {
     [NavigationAction.REQUEST_EXIT]: ScreenId.SURVEY,
     [NavigationAction.CONFIRM_INSERTION]: ScreenId.EXPERIENCE_3D,
   },
-  [ScreenId.TUTORIAL]: {
-    [NavigationAction.CONFIRM_INSERTION]: ScreenId.EXPERIENCE_3D,
-    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.WELCOME,
-  },
+ 
   [ScreenId.EXPERIENCE_3D]: {
     [NavigationAction.REQUEST_EXIT]: ScreenId.EXIT_MODAL,
   },

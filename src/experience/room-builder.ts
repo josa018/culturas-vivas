@@ -1,6 +1,4 @@
 import {
-  EXHIBIT_DIMENSIONS,
-  ExhibitMediaType,
   HOTSPOT_STYLING,
   PROTOTYPE_EXHIBITS,
 } from "./constants";
@@ -96,7 +94,7 @@ export class ExhibitRoomBuilder {
 
   public static ensureRoom(
     sceneEl: HTMLElement,
-    viewMode: string = "vr",
+    _viewMode: string = "vr",
   ): HTMLElement {
     let roomGroup = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
     if (roomGroup) {
@@ -120,14 +118,14 @@ export class ExhibitRoomBuilder {
         `${exhibit.galleryRotation.x} ${exhibit.galleryRotation.y} ${exhibit.galleryRotation.z}`,
       );
 
-      // 1. Pedestal inferior
+      // Pedestal inferior
       const pedestal = document.createElement("a-cylinder");
       pedestal.setAttribute("radius", "0.55");
       pedestal.setAttribute("height", "0.12");
       pedestal.setAttribute("position", "0 -0.85 0");
       pedestal.setAttribute("material", "color: #1e293b; shader: flat; opacity: 0.85");
 
-      // 2. Figura individual (Vestido, Comida, etc.)
+      // Figura individual
       const itemFigure = document.createElement("a-plane");
       itemFigure.setAttribute("id", `${exhibit.id}-figure`);
       itemFigure.setAttribute("class", "clickable");
@@ -139,25 +137,22 @@ export class ExhibitRoomBuilder {
         `src: ${config.assetFile}; transparent: true; alphaTest: 0.1; shader: flat; side: double`,
       );
 
-      // 3. Tarjeta informativa nativa en A-Frame (Inicia oculta)
+      // Tarjeta informativa
       const card = document.createElement("a-entity");
       card.setAttribute("id", `${exhibit.id}-infocard`);
       card.setAttribute("position", "0 0.45 0.3");
       card.setAttribute("visible", "false");
 
-      // Fondo de la tarjeta
       const cardBg = document.createElement("a-plane");
       cardBg.setAttribute("width", "1.9");
       cardBg.setAttribute("height", "1.25");
       cardBg.setAttribute("material", "color: #0b0f17; opacity: 0.96; shader: flat; side: double");
 
-      // Borde dorado
       const border = document.createElement("a-ring");
       border.setAttribute("radius-inner", "0.95");
       border.setAttribute("radius-outer", "0.98");
       border.setAttribute("material", "color: #f59e0b; shader: flat; side: double");
 
-      // Etiqueta superior
       const tagText = document.createElement("a-text");
       tagText.setAttribute("value", config.tag);
       tagText.setAttribute("color", config.accentColor);
@@ -165,7 +160,6 @@ export class ExhibitRoomBuilder {
       tagText.setAttribute("position", "0 0.45 0.02");
       tagText.setAttribute("scale", "0.5 0.5 0.5");
 
-      // Título
       const titleText = document.createElement("a-text");
       titleText.setAttribute("value", config.title);
       titleText.setAttribute("color", "#ffffff");
@@ -173,7 +167,6 @@ export class ExhibitRoomBuilder {
       titleText.setAttribute("position", "0 0.28 0.02");
       titleText.setAttribute("scale", "0.65 0.65 0.65");
 
-      // Descripción
       const whatText = document.createElement("a-text");
       whatText.setAttribute("value", config.whatIs);
       whatText.setAttribute("color", "#cbd5e1");
@@ -183,7 +176,6 @@ export class ExhibitRoomBuilder {
       whatText.setAttribute("wrap-count", "28");
       whatText.setAttribute("scale", "0.45 0.45 0.45");
 
-      // Recuadro interior "¿Por qué?"
       const whyBox = document.createElement("a-plane");
       whyBox.setAttribute("width", "1.7");
       whyBox.setAttribute("height", "0.4");
@@ -202,10 +194,9 @@ export class ExhibitRoomBuilder {
       whyBox.appendChild(whyText);
       card.append(cardBg, border, tagText, titleText, whatText, whyBox);
 
-      // 4. Marcador (+)
+      // Marcador (+)
       const hotspot = this.createHotspotMarker(exhibit.id);
 
-      // 5. Interacción de apertura/cierre
       let isOpen = false;
       const toggle = () => {
         isOpen = !isOpen;
