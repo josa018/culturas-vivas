@@ -15,6 +15,7 @@ interface AFrameSceneElement extends HTMLElement {
   exitVR?: () => Promise<void> | void;
   is?: (state: string) => boolean;
   removeState?: (state: string) => void;
+  hasLoaded?: boolean;
   renderer?: {
     xr?: {
       enabled?: boolean;
@@ -178,9 +179,8 @@ export class ExperienceScreenView implements ScreenView {
     if (scene.classList && typeof scene.classList.add === "function") {
       scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
     }
-    ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
-    this.setupMultiRoomPortal(scene);
-    this.setupInteractiveExhibits(scene);
+
+    this.mountSceneElements(scene);
 
     this.safeProgrammaticExitVR(scene, () => {
       this.sanitize2DViewport(scene);
@@ -204,6 +204,24 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   /**
+   * Asegura que los elementos se creen una vez que A-Frame esté listo.
+   */
+  private mountSceneElements(scene: AFrameSceneElement): void {
+    const build = () => {
+      ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      this.setupMultiRoomPortal(scene);
+      this.setupInteractiveExhibits(scene);
+      this.configureGazerForMode(scene);
+    };
+
+    if (scene.hasLoaded) {
+      build();
+    } else {
+      scene.addEventListener("loaded", build, { once: true });
+    }
+  }
+
+  /**
    * Configura el Gazer (cursor de mirada) según el modo:
    * - En VR: fuse automático para visores cardboard (apuntas y se acciona).
    * - En Táctil (2D): touch/clic habilitado para explorar con dedos o mouse.
@@ -216,7 +234,6 @@ export class ExperienceScreenView implements ScreenView {
       cursor.setAttribute("cursor", "fuse: true; fuseTimeout: 1200");
       cursor.setAttribute("visible", "true");
     } else {
-      // En táctil permitimos tocar directamente en pantalla o mirar
       cursor.setAttribute("cursor", "fuse: false; rayOrigin: mouse");
     }
   }
@@ -377,7 +394,6 @@ export class ExperienceScreenView implements ScreenView {
         descLabel.setAttribute("value", data.description);
         whyLabel.setAttribute("value", data.whyText);
 
-        // Posicionar el panel frente a donde está el hotspot
         const coords = data.position.split(" ");
         infoPanel.setAttribute(
           "position",
@@ -392,7 +408,8 @@ export class ExperienceScreenView implements ScreenView {
 
     scene.appendChild(exhibitsGroup);
   }
-private setupMultiRoomPortal(scene: HTMLElement): void {
+
+  private setupMultiRoomPortal(scene: HTMLElement): void {
     if (scene.querySelector("#cv-room-portal")) {
       return;
     }
@@ -417,7 +434,7 @@ private setupMultiRoomPortal(scene: HTMLElement): void {
       "property: rotation; to: 0 0 360; loop: true; dur: 10000; easing: linear",
     );
 
-    // 2. Núcleo central interactivo (este recibe el clic/gazer)
+    // 2. Núcleo central interactivo
     const portalCore = document.createElement("a-circle");
     portalCore.setAttribute("class", "clickable");
     portalCore.setAttribute("radius", "0.46");
@@ -427,7 +444,7 @@ private setupMultiRoomPortal(scene: HTMLElement): void {
       "shader: flat; opacity: 0.85; side: double; transparent: true",
     );
 
-    // 3. Texto del portal visible por ambos lados
+    // 3. Texto del portal
     const portalLabel = document.createElement("a-text");
     portalLabel.setAttribute("id", "cv-portal-text");
     portalLabel.setAttribute("value", "IR A SALA 2\n(NAAYERI)");
@@ -478,14 +495,12 @@ private setupMultiRoomPortal(scene: HTMLElement): void {
       }
     };
 
-    // Escuchar el clic y gazer en el contenedor y en el disco interactivo
     portal.addEventListener("click", handlePortalActivation);
     portalCore.addEventListener("click", handlePortalActivation);
     portalFrame.addEventListener("click", handlePortalActivation);
 
     scene.appendChild(portal);
   }
-  
 
   private toggleSceneLifecycle(active: boolean): void {
     if (typeof document === "undefined") {
@@ -502,10 +517,8 @@ private setupMultiRoomPortal(scene: HTMLElement): void {
       if (scene.classList && typeof scene.classList.add === "function") {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
-      ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
-      this.setupMultiRoomPortal(scene);
-      this.setupInteractiveExhibits(scene);
-      this.configureGazerForMode(scene);
+
+      this.mountSceneElements(scene);
 
       if (typeof scene.play === "function") {
         scene.play();
