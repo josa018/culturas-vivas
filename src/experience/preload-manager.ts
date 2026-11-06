@@ -1,13 +1,19 @@
 /**
  * Scene Preload Manager
- * Coordinates preloading of critical assets and WebGL scene readiness.
+ * Coordinates preloading of critical assets, lazy-loading multi-room 360 textures,
+ * and seamless 500ms black fade transitions between rooms.
  */
 
+export const ROOM_ASSETS = {
+  SALA_1_WIXARIKA: "/assets/sala1.jpg", // o el nombre que tenga tu imagen 360 actual
+  SALA_2_NAAYERI: "/assets/sala2.jpg",   // verifica que este archivo esté en public/assets/
+};
 export const PRELOAD_CONSTANTS = {
   DEFAULT_TIMEOUT_MS: 8000,
-  DEFAULT_CRITICAL_ASSETS: ["/scenes/test_scene.webp"],
+  DEFAULT_CRITICAL_ASSETS: [ROOM_ASSETS.SALA_1_WIXARIKA],
   PERCENTAGE_COMPLETE: 100,
   PERCENTAGE_START: 0,
+  FADE_DURATION_MS: 500,
 } as const;
 
 export interface PreloadProgress {
@@ -33,10 +39,72 @@ export interface PreloadResult {
 export class ScenePreloadManager {
   private readonly timeoutMs: number;
   private readonly onProgress?: (progress: PreloadProgress) => void;
+  private static lazyLoadedRooms = new Set<string>();
 
   constructor(options: PreloadOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? PRELOAD_CONSTANTS.DEFAULT_TIMEOUT_MS;
     this.onProgress = options.onProgress;
+  }
+
+  /**
+   * Preloads an asset in the background without blocking the initial UI (Lazy Loading).
+   */
+  public static async lazyPreloadRoom(roomUrl: string): Promise<boolean> {
+    if (this.lazyLoadedRooms.has(roomUrl)) {
+      return true;
+    }
+    const manager = new ScenePreloadManager();
+    const success = await manager.preloadAsset(roomUrl);
+    if (success) {
+      this.lazyLoadedRooms.add(roomUrl);
+    }
+    return success;
+  }
+
+  /**
+   * Performs a 500ms fade-to-black and fade-in transition on a-sky to prevent motion sickness.
+   */
+  public static async transitionSky(
+    sceneEl: HTMLElement,
+    newTextureUrl: string,
+    onMiddleSwap?: () => void,
+  ): Promise<void> {
+    const skyEl = sceneEl.querySelector("a-sky") as HTMLElement | null;
+    let fadeSphere = sceneEl.querySelector("#cv-fade-overlay") as HTMLElement | null;
+
+    if (!fadeSphere) {
+      fadeSphere = document.createElement("a-sphere");
+      fadeSphere.setAttribute("id", "cv-fade-overlay");
+      fadeSphere.setAttribute("radius", "0.3");
+      fadeSphere.setAttribute("material", "color: #000000; side: double; opacity: 0; transparent: true");
+      fadeSphere.setAttribute("position", "0 1.6 0");
+      sceneEl.appendChild(fadeSphere);
+    }
+
+    return new Promise((resolve) => {
+      fadeSphere!.setAttribute(
+        "animation__fadeout",
+        `property: material.opacity; from: 0; to: 1; dur: ${PRELOAD_CONSTANTS.FADE_DURATION_MS}; easing: easeInOutQuad`,
+      );
+
+      setTimeout(() => {
+        if (skyEl) {
+          skyEl.setAttribute("src", newTextureUrl);
+        }
+        if (onMiddleSwap) {
+          onMiddleSwap();
+        }
+
+        fadeSphere!.setAttribute(
+          "animation__fadein",
+          `property: material.opacity; from: 1; to: 0; dur: ${PRELOAD_CONSTANTS.FADE_DURATION_MS}; easing: easeInOutQuad`,
+        );
+
+        setTimeout(() => {
+          resolve();
+        }, PRELOAD_CONSTANTS.FADE_DURATION_MS);
+      }, PRELOAD_CONSTANTS.FADE_DURATION_MS);
+    });
   }
 
   /**
@@ -89,7 +157,6 @@ export class ScenePreloadManager {
             .then((res) => finish(res.ok))
             .catch(() => finish(false));
         } else {
-          // In headless environment without fetch or Image, gracefully mark success
           finish(true);
         }
       } catch (err) {

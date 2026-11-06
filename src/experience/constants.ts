@@ -78,32 +78,49 @@ export const EXHIBIT_DIMENSIONS = {
   PEDESTAL_HEIGHT: 0.8,
 } as const;
 
+export const HOTSPOT_STYLING = {
+  COLOR_PRIMARY: "#f4729b",
+  COLOR_SECONDARY: "#f59e0b",
+  COLOR_RING_IDLE: "#ffffff",
+  COLOR_FOCUSED: "#38bdf8",
+  HOTSPOT_RADIUS: 0.12,
+  HOTSPOT_RING_INNER: 0.14,
+  HOTSPOT_RING_OUTER: 0.18,
+  PULSE_SCALE_PEAK: "1.25 1.25 1.25",
+  PULSE_DURATION_MS: 1200,
+} as const;
+
 export const EXHIBIT_DICTIONARY = {
   RETURN_BUTTON_LABEL: "Volver",
   INSPECT_BUTTON_LABEL: "Inspeccionar",
   CLOSE_ICON: "✕",
-  MODEL_3D_TITLE: "Modelo 3D Interactivo",
-  MODEL_3D_DESC:
-    "Objeto tridimensional con soporte para rotacion axial automatica o manual. Ideal para esculturas, vasijas e instrumentos.",
-  IMAGE_2D_TITLE: "Imagen / Fotografia 2D",
-  IMAGE_2D_DESC:
-    "Formato plano monocanal estandar. Optimizado para cuadros, pinturas, ilustraciones y fotografias historicas de alta resolucion.",
-  IMAGE_STEREO_TITLE: "Fotografia Estereoscopica Half-SBS",
-  IMAGE_STEREO_DESC:
-    "Imagen con doble canal (ojo izquierdo y derecho) que genera percepcion de relieve y profundidad real en visores VR.",
-  VIDEO_2D_TITLE: "Video 2D Estandar",
-  VIDEO_2D_DESC:
-    "Contenido audiovisual plano monocanal. Permanece pausado en reposo y activa su reproduccion al enfocarlo e inspeccionarlo.",
-  VIDEO_STEREO_TITLE: "Video Estereoscopico Half-SBS",
-  VIDEO_STEREO_DESC:
-    "Secuencia de video con doble flujo Side-By-Side. Ofrece sensacion inmersiva de presencia en VR y recorte monoscopico en 2D.",
+
+  TSIKURI_TITLE: "Tsikuri: Ojo de Dios",
+  TSIKURI_DESC:
+    "Cruz tejida con hilos concentricos. Simboliza los cinco rumbos del cosmos Wixarika y brinda proteccion espiritual y salud a la infancia.",
+
+  KAUYUMARI_TITLE: "Kauyumari: El Venado Sagrado",
+  KAUYUMARI_DESC:
+    "Guia espiritual tallado en madera con chaquira. Intermediario sagrado entre el pueblo y las deidades tutelares de la sierra.",
+
+  XUKURIKATE_TITLE: "Xukurikate: Jicara Sagrada",
+  XUKURIKATE_DESC:
+    "Cuenco ceremonial con iconografia de maiz, agua y peyote para depositar ofrendas y peticiones de abundancia y equilibrio.",
+
+  BORRADOS_TITLE: "Los Borrados de la Judea",
+  BORRADOS_DESC:
+    "Ritual de Semana Santa Cora. Cuerpos pintados con tizon y ceniza que representan fuerzas cosmicas en la lucha primordial entre luz y sombra.",
+
+  MITOTE_TITLE: "El Mitote y Arco Musical",
+  MITOTE_DESC:
+    "Ceremonia comunitaria agraria guiada por el ritmo del arco sobre jicara de resonancia, celebrando la fertilidad y la renovacion comunal.",
 } as const;
 
 export const PROTOTYPE_EXHIBITS: readonly ExhibitItemConfig[] = [
   {
-    id: "exhibit-statue-3d",
-    title: EXHIBIT_DICTIONARY.MODEL_3D_TITLE,
-    description: EXHIBIT_DICTIONARY.MODEL_3D_DESC,
+    id: "exhibit-kauyumari-3d",
+    title: EXHIBIT_DICTIONARY.KAUYUMARI_TITLE,
+    description: EXHIBIT_DICTIONARY.KAUYUMARI_DESC,
     mediaType: ExhibitMediaType.MODEL_3D,
     galleryPosition: { x: 0, y: 1.4, z: -2.8 },
     galleryRotation: { x: 0, y: 0, z: 0 },
@@ -111,9 +128,9 @@ export const PROTOTYPE_EXHIBITS: readonly ExhibitItemConfig[] = [
     rotationSpeed: INSPECTION_TIMINGS.DEFAULT_ROTATION_SPEED,
   },
   {
-    id: "exhibit-painting-2d",
-    title: EXHIBIT_DICTIONARY.IMAGE_2D_TITLE,
-    description: EXHIBIT_DICTIONARY.IMAGE_2D_DESC,
+    id: "exhibit-tsikuri-2d",
+    title: EXHIBIT_DICTIONARY.TSIKURI_TITLE,
+    description: EXHIBIT_DICTIONARY.TSIKURI_DESC,
     mediaType: ExhibitMediaType.IMAGE_2D,
     galleryPosition: { x: 2.0, y: 1.6, z: -2.0 },
     galleryRotation: { x: 0, y: -45, z: 0 },
@@ -121,9 +138,9 @@ export const PROTOTYPE_EXHIBITS: readonly ExhibitItemConfig[] = [
     rotationSpeed: 0,
   },
   {
-    id: "exhibit-photo-stereo",
-    title: EXHIBIT_DICTIONARY.IMAGE_STEREO_TITLE,
-    description: EXHIBIT_DICTIONARY.IMAGE_STEREO_DESC,
+    id: "exhibit-xukurikate-stereo",
+    title: EXHIBIT_DICTIONARY.XUKURIKATE_TITLE,
+    description: EXHIBIT_DICTIONARY.XUKURIKATE_DESC,
     mediaType: ExhibitMediaType.IMAGE_STEREO_SBS,
     galleryPosition: { x: 2.0, y: 1.6, z: 2.0 },
     galleryRotation: { x: 0, y: -135, z: 0 },
@@ -131,20 +148,20 @@ export const PROTOTYPE_EXHIBITS: readonly ExhibitItemConfig[] = [
     rotationSpeed: 0,
   },
   {
-    id: "exhibit-video-2d",
-    title: EXHIBIT_DICTIONARY.VIDEO_2D_TITLE,
-    description: EXHIBIT_DICTIONARY.VIDEO_2D_DESC,
-    mediaType: ExhibitMediaType.VIDEO_2D,
+    id: "exhibit-borrados-2d",
+    title: EXHIBIT_DICTIONARY.BORRADOS_TITLE,
+    description: EXHIBIT_DICTIONARY.BORRADOS_DESC,
+    mediaType: ExhibitMediaType.IMAGE_2D,
     galleryPosition: { x: -2.0, y: 1.6, z: 2.0 },
     galleryRotation: { x: 0, y: 135, z: 0 },
     autoRotate: false,
     rotationSpeed: 0,
   },
   {
-    id: "exhibit-video-stereo",
-    title: EXHIBIT_DICTIONARY.VIDEO_STEREO_TITLE,
-    description: EXHIBIT_DICTIONARY.VIDEO_STEREO_DESC,
-    mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+    id: "exhibit-mitote-video",
+    title: EXHIBIT_DICTIONARY.MITOTE_TITLE,
+    description: EXHIBIT_DICTIONARY.MITOTE_DESC,
+    mediaType: ExhibitMediaType.VIDEO_2D,
     galleryPosition: { x: -2.0, y: 1.6, z: -2.0 },
     galleryRotation: { x: 0, y: 45, z: 0 },
     autoRotate: false,
