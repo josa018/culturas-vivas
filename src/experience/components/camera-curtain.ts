@@ -222,13 +222,13 @@ export function ensureCameraCurtain(cameraEl: HTMLElement): HTMLElement {
     return curtainEl;
   }
 
-  curtainEl = document.createElement("a-plane");
+  curtainEl = document.createElement("a-sphere");
   curtainEl.setAttribute("id", CAMERA_CURTAIN_ID);
-  curtainEl.setAttribute("position", "0 0 -0.1");
-  curtainEl.setAttribute("scale", "0.3 0.3 0.3");
+  curtainEl.setAttribute("position", "0 0 0");
+  curtainEl.setAttribute("radius", "0.2");
   curtainEl.setAttribute(
     "material",
-    "color: #000000; shader: flat; transparent: true; opacity: 0; depthTest: false",
+    "side: back; color: #000000; shader: flat; transparent: true; opacity: 0; depthTest: false",
   );
   curtainEl.setAttribute("visible", "false");
   curtainEl.setAttribute("cv-camera-curtain", "");

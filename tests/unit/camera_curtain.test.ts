@@ -53,9 +53,12 @@ describe("CameraCurtain Component", () => {
     const cameraEl = document.createElement("a-camera");
     const curtain = ensureCameraCurtain(cameraEl);
 
+    expect(curtain.tagName.toLowerCase()).toBe("a-sphere");
     expect(curtain.getAttribute("id")).toBe(CAMERA_CURTAIN_ID);
-    expect(curtain.getAttribute("position")).toBe("0 0 -0.1");
+    expect(curtain.getAttribute("position")).toBe("0 0 0");
+    expect(curtain.getAttribute("radius")).toBe("0.2");
     expect(curtain.getAttribute("visible")).toBe("false");
+    expect(curtain.getAttribute("material")).toContain("side: back");
     expect(curtain.getAttribute("material")).toMatch(/opacity:\s*0/);
 
     // Calling ensure again returns existing element without creating duplicate
@@ -64,8 +67,8 @@ describe("CameraCurtain Component", () => {
   });
 
   it("handles opacity bounds clamping cleanly", () => {
-    const el = document.createElement("a-plane") as unknown as CameraCurtainEntity;
-    el.setAttribute("material", "shader: flat; color: #000000; opacity: 0");
+    const el = document.createElement("a-sphere") as unknown as CameraCurtainEntity;
+    el.setAttribute("material", "shader: flat; color: #000000; side: back; opacity: 0");
 
     const instance = createMockCurtainInstance(el);
     instance.init();
@@ -85,8 +88,8 @@ describe("CameraCurtain Component", () => {
   });
 
   it("executes bidirectional fade transitions with completion callbacks", () => {
-    const el = document.createElement("a-plane") as unknown as CameraCurtainEntity;
-    el.setAttribute("material", "shader: flat; opacity: 0");
+    const el = document.createElement("a-sphere") as unknown as CameraCurtainEntity;
+    el.setAttribute("material", "shader: flat; side: back; opacity: 0");
 
     const instance = createMockCurtainInstance(el);
     instance.init();
