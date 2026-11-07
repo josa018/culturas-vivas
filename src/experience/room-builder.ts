@@ -85,6 +85,48 @@ export class ExhibitRoomBuilder {
     }
   }
 
+  public static async waitForSkyboxReady(
+    skyEl: HTMLElement | null,
+    timeoutMs = 1500,
+  ): Promise<boolean> {
+    if (!skyEl) {
+      return true;
+    }
+
+    const hasAFrame =
+      typeof globalThis !== "undefined" &&
+      Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+    if (!hasAFrame || typeof skyEl.addEventListener !== "function") {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          skyEl.removeEventListener("materialtextureloaded", onTextureLoaded);
+          resolve(true);
+        }
+      }, timeoutMs);
+
+      const onTextureLoaded = (): void => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          skyEl.removeEventListener("materialtextureloaded", onTextureLoaded);
+          resolve(true);
+        }
+      };
+
+      skyEl.addEventListener("materialtextureloaded", onTextureLoaded, {
+        once: true,
+      });
+    });
+  }
+
   public static mountRoom(
     sceneEl: HTMLElement,
     roomId: RoomId = DEFAULT_ROOM_ID,

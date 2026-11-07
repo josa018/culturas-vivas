@@ -190,21 +190,35 @@ export class ExperienceScreenView implements ScreenView {
     };
     const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
 
+    const finishSwap = () => {
+      this.transitionStateMachine.notifyRoomReady();
+
+      // 5. Fade curtain back in to reveal target room
+      curtain.fadeIn(() => {
+        this.transitionStateMachine.notifyFadeInComplete();
+        if (cursor) {
+          cursor.setAttribute("raycaster", "objects: .clickable");
+        }
+      });
+    };
+
     if (curtain && typeof curtain.fadeOut === "function") {
       curtain.fadeOut(() => {
         this.transitionStateMachine.notifyFadeOutComplete();
 
         // 4. Mount target room and update skybox
         ExhibitRoomBuilder.mountRoom(scene, targetRoomId, this.viewMode);
-        this.transitionStateMachine.notifyRoomReady();
+        const skyEl = scene.querySelector("a-sky");
 
-        // 5. Fade curtain back in to reveal target room
-        curtain.fadeIn(() => {
-          this.transitionStateMachine.notifyFadeInComplete();
-          if (cursor) {
-            cursor.setAttribute("raycaster", "objects: .clickable");
-          }
-        });
+        const hasAFrame =
+          typeof globalThis !== "undefined" &&
+          Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+        if (hasAFrame && skyEl) {
+          void ExhibitRoomBuilder.waitForSkyboxReady(skyEl).then(finishSwap);
+        } else {
+          finishSwap();
+        }
       });
     } else {
       // Direct synchronous execution fallback (headless or no animation support)
@@ -236,11 +250,31 @@ export class ExperienceScreenView implements ScreenView {
       }
       ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
 
-      // Attach curtain to camera on scene activation
+      // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =
         scene.querySelector("a-camera") || scene.querySelector("[camera]");
       if (cameraEl) {
-        ensureCameraCurtain(cameraEl);
+        const curtainEl = ensureCameraCurtain(cameraEl);
+        const aframeCurtain = curtainEl as unknown as {
+          components?: Record<string, CameraCurtainComponentInstance>;
+        };
+        const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
+        if (curtain && typeof curtain.fadeIn === "function") {
+          curtain.setOpacity(1);
+          curtainEl.setAttribute("visible", "true");
+          const skyEl = scene.querySelector("a-sky");
+          const hasAFrame =
+            typeof globalThis !== "undefined" &&
+            Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+          if (hasAFrame && skyEl) {
+            void ExhibitRoomBuilder.waitForSkyboxReady(skyEl).then(() => {
+              curtain.fadeIn();
+            });
+          } else {
+            curtain.fadeIn();
+          }
+        }
       }
 
       if (typeof scene.play === "function") {

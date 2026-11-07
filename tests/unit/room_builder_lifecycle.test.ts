@@ -101,4 +101,43 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
       scene.querySelector(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
     ).toBeNull();
   });
+
+  it("waitForSkyboxReady handles null and event lifecycle cleanly", async () => {
+    // Null element
+    const nullReady = await ExhibitRoomBuilder.waitForSkyboxReady(null);
+    expect(nullReady).toBe(true);
+
+    // Mock element with event dispatch
+    let textureCallback: (() => void) | null = null;
+    const mockSky = {
+      addEventListener: (evt: string, cb: () => void) => {
+        if (evt === "materialtextureloaded") textureCallback = cb;
+      },
+      removeEventListener: () => {
+        textureCallback = null;
+      },
+    } as unknown as HTMLElement;
+
+    // Simulate AFRAME presence for test
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const promise = ExhibitRoomBuilder.waitForSkyboxReady(mockSky, 500);
+    expect(textureCallback).not.toBeNull();
+    textureCallback!();
+    const result = await promise;
+    expect(result).toBe(true);
+
+    // Timeout fallback
+    const mockTimeoutSky = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as HTMLElement;
+    const timeoutResult = await ExhibitRoomBuilder.waitForSkyboxReady(
+      mockTimeoutSky,
+      50,
+    );
+    expect(timeoutResult).toBe(true);
+
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+  });
 });

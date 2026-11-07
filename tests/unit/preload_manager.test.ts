@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ScenePreloadManager,
   PRELOAD_CONSTANTS,
+  getCriticalRoomAssets,
   type PreloadProgress,
 } from "../../src/experience/preload-manager";
 
@@ -92,5 +93,12 @@ describe("ScenePreloadManager", () => {
       100
     );
     expect(timeoutResult).toBe(false);
+  });
+
+  it("extracts unique critical room assets from ROOM_DEFINITIONS", () => {
+    const assets = getCriticalRoomAssets();
+    expect(assets.length).toBeGreaterThanOrEqual(2);
+    expect(assets).toContain("/scenes/scene1.webp");
+    expect(assets).toContain("/scenes/scene2.webp");
   });
 });
