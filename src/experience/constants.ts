@@ -220,7 +220,7 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
     id: RoomId.ARCHAEOLOGY,
     title: "Sala de Arqueologia",
     skyboxAssetId: "sky-archaeology",
-    skyboxUrl: "/scenes/test_scene.webp",
+    skyboxUrl: "/scenes/scene1.webp",
     exhibits: PROTOTYPE_EXHIBITS,
     portals: [
       {
@@ -236,7 +236,7 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
     id: RoomId.TEXTILES,
     title: "Sala de Textiles",
     skyboxAssetId: "sky-textiles",
-    skyboxUrl: "/scenes/test_scene.webp",
+    skyboxUrl: "/scenes/scene2.webp",
     exhibits: TEXTILES_EXHIBITS,
     portals: [
       {
