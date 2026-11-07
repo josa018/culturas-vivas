@@ -1,40 +1,114 @@
 import {
+  DEFAULT_ROOM_ID,
   EXHIBIT_DIMENSIONS,
   ExhibitMediaType,
-  PROTOTYPE_EXHIBITS,
+  ROOM_DEFINITIONS,
 } from "./constants";
+import type { RoomId } from "./types";
 import { PlaceholderAssetGenerator } from "./placeholders";
+import { createPortalEntity } from "./components/portal-waypoint";
+import { getSharedInspectionController } from "./components/inspectable";
 
 export class ExhibitRoomBuilder {
   public static readonly ROOM_CONTAINER_ID = "cv-prototype-room-group";
+  private static activeRoomId: RoomId = DEFAULT_ROOM_ID;
 
-  public static ensureRoom(
-    sceneEl: HTMLElement,
-    viewMode: string = "vr",
-  ): HTMLElement {
-    let roomGroup = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
-    if (roomGroup) {
-      // Update viewMode attribute across all stereo components if changed
-      const stereoEntities = roomGroup.querySelectorAll("[cv-stereo-media]");
-      stereoEntities.forEach((el) => {
-        const currentAttr = el.getAttribute("cv-stereo-media");
-        if (typeof currentAttr === "string") {
-          el.setAttribute(
-            "cv-stereo-media",
-            currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
-          );
-        } else if (currentAttr && typeof currentAttr === "object") {
-          const aframeEl = el as unknown as {
-            setAttribute: (attr: string, prop: string, val: unknown) => void;
-          };
-          aframeEl.setAttribute("cv-stereo-media", "viewMode", viewMode);
-        }
-      });
-      return roomGroup as HTMLElement;
+  public static getActiveRoomId(): RoomId {
+    return this.activeRoomId;
+  }
+
+  public static teardownRoom(sceneEl: HTMLElement): void {
+    const roomGroup = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
+    if (!roomGroup) {
+      return;
     }
 
-    roomGroup = document.createElement("a-entity");
+    // Explicit Three.js geometry, material and texture disposal
+    const disposeEntity = (el: Element) => {
+      const obj3D = (
+        el as unknown as {
+          object3D?: {
+            traverse?: (cb: (node: unknown) => void) => void;
+          };
+        }
+      ).object3D;
+
+      if (obj3D && typeof obj3D.traverse === "function") {
+        obj3D.traverse((node: unknown) => {
+          const mesh = node as {
+            geometry?: { dispose?: () => void };
+            material?:
+              | {
+                  dispose?: () => void;
+                  map?: { dispose?: () => void };
+                }
+              | Array<{
+                  dispose?: () => void;
+                  map?: { dispose?: () => void };
+                }>;
+          };
+          if (mesh.geometry && typeof mesh.geometry.dispose === "function") {
+            mesh.geometry.dispose();
+          }
+          if (Array.isArray(mesh.material)) {
+            for (const mat of mesh.material) {
+              if (mat?.map && typeof mat.map.dispose === "function") {
+                mat.map.dispose();
+              }
+              if (mat && typeof mat.dispose === "function") {
+                mat.dispose();
+              }
+            }
+          } else if (mesh.material) {
+            if (
+              mesh.material.map &&
+              typeof mesh.material.map.dispose === "function"
+            ) {
+              mesh.material.map.dispose();
+            }
+            if (typeof mesh.material.dispose === "function") {
+              mesh.material.dispose();
+            }
+          }
+        });
+      }
+    };
+
+    disposeEntity(roomGroup);
+    const children = roomGroup.querySelectorAll("*");
+    children.forEach((child) => disposeEntity(child));
+
+    if (typeof roomGroup.remove === "function") {
+      roomGroup.remove();
+    } else if (roomGroup.parentNode) {
+      roomGroup.parentNode.removeChild(roomGroup);
+    }
+  }
+
+  public static mountRoom(
+    sceneEl: HTMLElement,
+    roomId: RoomId = DEFAULT_ROOM_ID,
+    viewMode: string = "vr",
+  ): HTMLElement {
+    // Teardown previous room entities and dispose resources
+    this.teardownRoom(sceneEl);
+
+    const roomDef =
+      ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
+    this.activeRoomId = roomDef.id;
+
+    // Update shared inspection controller with current room's exhibits
+    getSharedInspectionController().setExhibits(roomDef.exhibits);
+
+    // Update a-sky background if present
+    const skyEl = sceneEl.querySelector("a-sky");
+    if (skyEl) {
+      skyEl.setAttribute("src", roomDef.skyboxUrl);
+    }
+
+    const roomGroup = document.createElement("a-entity");
     roomGroup.setAttribute("id", this.ROOM_CONTAINER_ID);
+    roomGroup.setAttribute("data-room-id", roomDef.id);
 
     const paintingTexture = PlaceholderAssetGenerator.createPaintingTexture();
     const stereoImageTexture =
@@ -44,7 +118,8 @@ export class ExhibitRoomBuilder {
     const stereoVideoThumbnail =
       PlaceholderAssetGenerator.createStereoVideoThumbnailTexture();
 
-    for (const exhibit of PROTOTYPE_EXHIBITS) {
+    // Build room exhibits
+    for (const exhibit of roomDef.exhibits) {
       const exhibitRoot = document.createElement("a-entity");
       exhibitRoot.setAttribute("id", exhibit.id);
       exhibitRoot.setAttribute(
@@ -62,7 +137,6 @@ export class ExhibitRoomBuilder {
 
       switch (exhibit.mediaType) {
         case ExhibitMediaType.MODEL_3D: {
-          // Pedestal Base
           const pedestal = document.createElement("a-cylinder");
           pedestal.setAttribute("id", `${exhibit.id}-pedestal`);
           pedestal.setAttribute(
@@ -74,11 +148,9 @@ export class ExhibitRoomBuilder {
             String(EXHIBIT_DIMENSIONS.PEDESTAL_HEIGHT),
           );
           pedestal.setAttribute("position", "0 -0.4 0");
-
           pedestal.setAttribute("color", "#334155");
           pedestal.setAttribute("material", "shader: flat");
 
-          // Sculpted Cultural Primitive Group (Interactive click target)
           const modelGroup = document.createElement("a-entity");
           modelGroup.setAttribute("class", "clickable");
           modelGroup.setAttribute("position", "0 0.1 0");
@@ -268,7 +340,41 @@ export class ExhibitRoomBuilder {
       roomGroup.appendChild(exhibitRoot);
     }
 
+    // Build in-world 3D portals
+    for (const portal of roomDef.portals) {
+      const portalEl = createPortalEntity(portal);
+      roomGroup.appendChild(portalEl);
+    }
+
     sceneEl.appendChild(roomGroup);
     return roomGroup as HTMLElement;
+  }
+
+  public static ensureRoom(
+    sceneEl: HTMLElement,
+    viewMode: string = "vr",
+  ): HTMLElement {
+    const existing = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
+    if (existing) {
+      // Update stereo components viewMode
+      const stereoEntities = existing.querySelectorAll("[cv-stereo-media]");
+      stereoEntities.forEach((el) => {
+        const currentAttr = el.getAttribute("cv-stereo-media");
+        if (typeof currentAttr === "string") {
+          el.setAttribute(
+            "cv-stereo-media",
+            currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
+          );
+        } else if (currentAttr && typeof currentAttr === "object") {
+          const aframeEl = el as unknown as {
+            setAttribute: (attr: string, prop: string, val: unknown) => void;
+          };
+          aframeEl.setAttribute("cv-stereo-media", "viewMode", viewMode);
+        }
+      });
+      return existing as HTMLElement;
+    }
+
+    return this.mountRoom(sceneEl, this.activeRoomId, viewMode);
   }
 }
