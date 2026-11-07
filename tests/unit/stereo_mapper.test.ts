@@ -1,119 +1,85 @@
-import { assert } from "../helpers/assert";
+import { describe, it, expect } from "vitest";
 import {
   StereoEye,
   StereoTextureMapper,
 } from "../../src/experience/stereo-mapper";
 import { ViewMode } from "../../src/navigation/types";
 
-function runStereoMapperUnitTests(): void {
-  console.log("--- [UNIT TEST] Stereo Texture Mapper ---");
-
-  // Test 1: Full 2D Media Bounds
-  {
+describe("StereoTextureMapper", () => {
+  it("computes full 2D non-stereo UV bounds", () => {
     const bounds = StereoTextureMapper.getUVBounds(StereoEye.MONO, false);
-    assert.equal(bounds.uMin, 0.0);
-    assert.equal(bounds.uMax, 1.0);
-    assert.equal(bounds.uOffset, 0.0);
-    assert.equal(bounds.uRepeat, 1.0);
-    assert.equal(bounds.vMin, 0.0);
-    assert.equal(bounds.vMax, 1.0);
-    console.log("✓ Test 1 Passed: 2D non-stereo full UV bounds verified");
-  }
+    expect(bounds.uMin).toBe(0.0);
+    expect(bounds.uMax).toBe(1.0);
+    expect(bounds.uOffset).toBe(0.0);
+    expect(bounds.uRepeat).toBe(1.0);
+    expect(bounds.vMin).toBe(0.0);
+    expect(bounds.vMax).toBe(1.0);
+  });
 
-  // Test 2: Half-SBS Left Eye and Right Eye Bounds
-  {
+  it("computes Half-SBS Left and Right eye UV sub-bounds", () => {
     const leftBounds = StereoTextureMapper.getUVBounds(StereoEye.LEFT, true);
-    assert.equal(leftBounds.uMin, 0.0);
-    assert.equal(leftBounds.uMax, 0.5);
-    assert.equal(leftBounds.uOffset, 0.0);
-    assert.equal(leftBounds.uRepeat, 0.5);
+    expect(leftBounds.uMin).toBe(0.0);
+    expect(leftBounds.uMax).toBe(0.5);
+    expect(leftBounds.uOffset).toBe(0.0);
+    expect(leftBounds.uRepeat).toBe(0.5);
 
     const rightBounds = StereoTextureMapper.getUVBounds(StereoEye.RIGHT, true);
-    assert.equal(rightBounds.uMin, 0.5);
-    assert.equal(rightBounds.uMax, 1.0);
-    assert.equal(rightBounds.uOffset, 0.5);
-    assert.equal(rightBounds.uRepeat, 0.5);
+    expect(rightBounds.uMin).toBe(0.5);
+    expect(rightBounds.uMax).toBe(1.0);
+    expect(rightBounds.uOffset).toBe(0.5);
+    expect(rightBounds.uRepeat).toBe(0.5);
+  });
 
-    console.log(
-      "✓ Test 2 Passed: Half-SBS Left and Right UV sub-bounds verified",
-    );
-  }
-
-  // Test 3: Layer Indices for WebXR Camera Layers
-  {
-    assert.equal(
-      StereoTextureMapper.getEyeLayer(StereoEye.LEFT),
+  it("maps Three.js camera eye layer indices", () => {
+    expect(StereoTextureMapper.getEyeLayer(StereoEye.LEFT)).toBe(
       StereoTextureMapper.THREE_LAYER_LEFT,
     );
-    assert.equal(
-      StereoTextureMapper.getEyeLayer(StereoEye.RIGHT),
+    expect(StereoTextureMapper.getEyeLayer(StereoEye.RIGHT)).toBe(
       StereoTextureMapper.THREE_LAYER_RIGHT,
     );
-    assert.equal(
-      StereoTextureMapper.getEyeLayer(StereoEye.MONO),
+    expect(StereoTextureMapper.getEyeLayer(StereoEye.MONO)).toBe(
       StereoTextureMapper.THREE_LAYER_DEFAULT,
     );
-    console.log("✓ Test 3 Passed: Three.js camera eye layer mappings verified");
-  }
+  });
 
-  // Test 4: ViewMode Effective Eye Resolution
-  {
+  it("resolves view-mode adaptive effective eye", () => {
     // In VR mode: respects left and right eyes
-    assert.equal(
+    expect(
       StereoTextureMapper.resolveEffectiveEye(ViewMode.VR, StereoEye.LEFT),
-      StereoEye.LEFT,
-    );
-    assert.equal(
+    ).toBe(StereoEye.LEFT);
+    expect(
       StereoTextureMapper.resolveEffectiveEye(ViewMode.VR, StereoEye.RIGHT),
-      StereoEye.RIGHT,
-    );
+    ).toBe(StereoEye.RIGHT);
 
     // In 2D Touch mode: forces MONO (left-crop) to avoid split-screen distortion
-    assert.equal(
+    expect(
       StereoTextureMapper.resolveEffectiveEye(
         ViewMode.TOUCH_2D,
         StereoEye.LEFT,
       ),
-      StereoEye.MONO,
-    );
-    assert.equal(
+    ).toBe(StereoEye.MONO);
+    expect(
       StereoTextureMapper.resolveEffectiveEye(
         ViewMode.TOUCH_2D,
         StereoEye.RIGHT,
       ),
-      StereoEye.MONO,
-    );
+    ).toBe(StereoEye.MONO);
+  });
 
-    console.log("✓ Test 4 Passed: View-mode adaptive eye resolution verified");
-  }
-
-  // Test 5: UV Coordinate Re-mapping
-  {
+  it("remaps numerical UV quad coordinates", () => {
     const standardQuadUVs = [0, 0, 1, 0, 0, 1, 1, 1];
     const rightBounds = StereoTextureMapper.getUVBounds(StereoEye.RIGHT, true);
     const remappedRight = StereoTextureMapper.remapUVCoordinates(
       standardQuadUVs,
       rightBounds,
     );
-
-    // Expected:
-    // [0, 0] -> [0.5 + 0 * 0.5, 0] = [0.5, 0]
-    // [1, 0] -> [0.5 + 1 * 0.5, 0] = [1.0, 0]
-    // [0, 1] -> [0.5 + 0 * 0.5, 1] = [0.5, 1]
-    // [1, 1] -> [0.5 + 1 * 0.5, 1] = [1.0, 1]
-    assert.deepEqual(remappedRight, [0.5, 0, 1.0, 0, 0.5, 1, 1.0, 1]);
+    expect(remappedRight).toEqual([0.5, 0, 1.0, 0, 0.5, 1, 1.0, 1]);
 
     const leftBounds = StereoTextureMapper.getUVBounds(StereoEye.LEFT, true);
     const remappedLeft = StereoTextureMapper.remapUVCoordinates(
       standardQuadUVs,
       leftBounds,
     );
-    assert.deepEqual(remappedLeft, [0.0, 0, 0.5, 0, 0.0, 1, 0.5, 1]);
-
-    console.log("✓ Test 5 Passed: Numerical UV quad transformation verified");
-  }
-
-  console.log("All StereoTextureMapper unit tests passed successfully.\n");
-}
-
-runStereoMapperUnitTests();
+    expect(remappedLeft).toEqual([0.0, 0, 0.5, 0, 0.0, 1, 0.5, 1]);
+  });
+});

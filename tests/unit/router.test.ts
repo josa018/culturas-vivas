@@ -1,156 +1,147 @@
-import { assert } from "../helpers/assert";
-import { MockStorage } from "../helpers/mock_storage";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   NavigationAction,
   NavigationStateMachine,
   ScreenId,
   SessionStore,
   ViewMode,
+  StorageAdapter,
 } from "../../src/navigation/index";
 
-function runRouterUnitTests(): void {
-  console.log("--- [UNIT TEST] Navigation & State Machine ---");
+class InMemoryStorage implements StorageAdapter {
+  private readonly store = new Map<string, string>();
 
-  // Test 1: SessionStore CRUD
-  {
-    const storage = new MockStorage();
+  public getItem(key: string): string | null {
+    return this.store.get(key) ?? null;
+  }
+
+  public setItem(key: string, value: string): void {
+    this.store.set(key, value);
+  }
+
+  public removeItem(key: string): void {
+    this.store.delete(key);
+  }
+
+  public clear(): void {
+    this.store.clear();
+  }
+}
+
+describe("Navigation & State Machine", () => {
+  let storage: InMemoryStorage;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+  });
+
+  it("handles SessionStore CRUD operations correctly", () => {
     const store = new SessionStore(storage);
 
     const initial = store.createInitialSession(ScreenId.SPLASH);
-    assert.equal(initial.currentScreen, ScreenId.SPLASH);
-    assert.equal(initial.viewMode, null);
-    assert.ok(initial.sessionId.length > 0);
+    expect(initial.currentScreen).toBe(ScreenId.SPLASH);
+    expect(initial.viewMode).toBeNull();
+    expect(initial.sessionId.length).toBeGreaterThan(0);
 
     store.setViewMode(ViewMode.VR);
     const updated = store.getSession();
-    assert.equal(updated?.viewMode, ViewMode.VR);
+    expect(updated?.viewMode).toBe(ViewMode.VR);
 
     store.setSurveyAnswers({ rating: 5, feedback: "Excelente experiencia" });
     const withSurvey = store.getSession();
-    assert.equal(withSurvey?.surveyAnswers?.rating, 5);
+    expect(withSurvey?.surveyAnswers?.rating).toBe(5);
 
     store.clear();
-    assert.equal(store.getSession(), null);
-    console.log("✓ Test 1 Passed: SessionStore operates correctly");
-  }
+    expect(store.getSession()).toBeNull();
+  });
 
-  // Test 2: Standard VR Linear Traversal
-  {
-    const storage = new MockStorage();
+  it("performs full VR linear traversal (Screens 1 -> 6 -> Welcome)", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
-    assert.equal(fsm.getCurrentScreen(), ScreenId.SPLASH);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.SPLASH);
 
     fsm.dispatch(NavigationAction.FINISH_LOADING);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.WELCOME);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.WELCOME);
 
     fsm.dispatch(NavigationAction.SELECT_VR);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.TUTORIAL);
-    assert.equal(fsm.getSession().viewMode, ViewMode.VR);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.TUTORIAL);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.VR);
 
     fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
 
     fsm.dispatch(NavigationAction.REQUEST_EXIT);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXIT_MODAL);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
 
     fsm.dispatch(NavigationAction.CONFIRM_EXIT);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.SURVEY);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.SURVEY);
 
     fsm.dispatch(NavigationAction.COMPLETE_SURVEY, {
       surveyAnswers: { rating: 4, feedback: "Todo bien" },
     });
-    assert.equal(fsm.getCurrentScreen(), ScreenId.WELCOME);
-    assert.equal(fsm.getSession().surveyAnswers?.rating, 4);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.WELCOME);
+    expect(fsm.getSession().surveyAnswers?.rating).toBe(4);
+  });
 
-    console.log(
-      "✓ Test 2 Passed: Full VR traversal (Screens 1 -> 6 -> Welcome) valid",
-    );
-  }
-
-  // Test 3: 2D Alternative Path
-  {
-    const storage = new MockStorage();
+  it("navigates alternative 2D path bypassing tutorial", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
     fsm.dispatch(NavigationAction.FINISH_LOADING);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.WELCOME);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.WELCOME);
 
     fsm.dispatch(NavigationAction.SELECT_2D);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
-    assert.equal(fsm.getSession().viewMode, ViewMode.TOUCH_2D);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
+  });
 
-    console.log(
-      "✓ Test 3 Passed: Alternative 2D path bypassing tutorial valid",
-    );
-  }
-
-  // Test 4: Modal Resume Flow
-  {
-    const storage = new MockStorage();
+  it("resumes tour from exit modal back to 3D scene", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
     fsm.dispatch(NavigationAction.FINISH_LOADING);
     fsm.dispatch(NavigationAction.SELECT_2D);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
 
     fsm.dispatch(NavigationAction.REQUEST_EXIT);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXIT_MODAL);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
 
     fsm.dispatch(NavigationAction.RESUME_TOUR);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+  });
 
-    console.log(
-      "✓ Test 4 Passed: Exit modal resumption back to 3D scene valid",
-    );
-  }
-
-  // Test 4b: Modal Switch to Touch from VR Flow
-  {
-    const storage = new MockStorage();
+  it("switches to touch mode from exit modal while in VR", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
     fsm.dispatch(NavigationAction.FINISH_LOADING);
     fsm.dispatch(NavigationAction.SELECT_VR);
     fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
-    assert.equal(fsm.getSession().viewMode, ViewMode.VR);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.VR);
 
     fsm.dispatch(NavigationAction.REQUEST_EXIT);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXIT_MODAL);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
 
     fsm.dispatch(NavigationAction.SWITCH_TO_TOUCH);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.EXPERIENCE_3D);
-    assert.equal(fsm.getSession().viewMode, ViewMode.TOUCH_2D);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
+  });
 
-    console.log(
-      "✓ Test 4b Passed: Exit modal switch to touch mode transitions to 3D scene with 2d viewMode",
-    );
-  }
-
-  // Test 5: Illegal Transition Guard
-  {
-    const storage = new MockStorage();
+  it("safely rejects illegal transitions", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
-    assert.equal(fsm.getCurrentScreen(), ScreenId.SPLASH);
-    assert.equal(fsm.canDispatch(NavigationAction.CONFIRM_EXIT), false);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.SPLASH);
+    expect(fsm.canDispatch(NavigationAction.CONFIRM_EXIT)).toBe(false);
 
     const resultingState = fsm.dispatch(NavigationAction.CONFIRM_EXIT);
-    assert.equal(resultingState, ScreenId.SPLASH);
-    assert.equal(fsm.getCurrentScreen(), ScreenId.SPLASH);
+    expect(resultingState).toBe(ScreenId.SPLASH);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.SPLASH);
+  });
 
-    console.log("✓ Test 5 Passed: Illegal transitions safely rejected");
-  }
-
-  // Test 6: Listener Subscriptions
-  {
-    const storage = new MockStorage();
+  it("notifies listeners on state changes and respects unsubscribe", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);
 
@@ -166,16 +157,10 @@ function runRouterUnitTests(): void {
 
     fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
 
-    assert.deepEqual(emittedScreens, [
+    expect(emittedScreens).toEqual([
       ScreenId.SPLASH,
       ScreenId.WELCOME,
       ScreenId.TUTORIAL,
     ]);
-
-    console.log("✓ Test 6 Passed: Subscription lifecycle verified");
-  }
-
-  console.log("All router unit tests passed.\n");
-}
-
-runRouterUnitTests();
+  });
+});

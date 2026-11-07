@@ -1,3 +1,5 @@
+import { RoomId, type RoomDefinition } from "./types";
+
 export const ExhibitMediaType = {
   IMAGE_2D: "IMAGE_2D",
   IMAGE_STEREO_SBS: "IMAGE_STEREO_SBS",
@@ -151,3 +153,99 @@ export const PROTOTYPE_EXHIBITS: readonly ExhibitItemConfig[] = [
     rotationSpeed: 0,
   },
 ] as const;
+
+export const TRANSITION_TIMINGS = {
+  FADE_DURATION_MS: 400,
+  FADE_EASING: "easeInOutQuad",
+  PORTAL_FUSE_TIMEOUT_MS: 1500,
+} as const;
+
+export const PORTAL_DIMENSIONS = {
+  FRAME_WIDTH: 1.2,
+  FRAME_HEIGHT: 2.0,
+  BORDER_THICKNESS: 0.05,
+  LABEL_OFFSET_Y: 1.15,
+  LABEL_WIDTH: 1.8,
+  FUSE_RING_RADIUS: 0.1,
+} as const;
+
+export const PORTAL_COLORS = {
+  FRAME: "#38bdf8",
+  HOVER_GLOW: "#0284c7",
+  PORTAL_BG: "#090d16",
+  PORTAL_INNER: "#1e293b",
+  TEXT: "#f8fafc",
+} as const;
+
+export const DEFAULT_ROOM_ID = RoomId.ARCHAEOLOGY;
+
+export const TEXTILES_EXHIBITS: readonly ExhibitItemConfig[] = [
+  {
+    id: "exhibit-textile-weaving",
+    title: "Telar Andino Tradicional",
+    description:
+      "Estructura de tejido ancestral con patrones geometricos y pigmentacion organica natural.",
+    mediaType: ExhibitMediaType.MODEL_3D,
+    galleryPosition: { x: 0, y: 1.4, z: -2.8 },
+    galleryRotation: { x: 0, y: 0, z: 0 },
+    autoRotate: true,
+    rotationSpeed: INSPECTION_TIMINGS.DEFAULT_ROTATION_SPEED,
+  },
+  {
+    id: "exhibit-mantle-painting",
+    title: "Manto Ceremonial Paracas",
+    description:
+      "Detalle textil policromo con iconografia mitologica zoomorfa bordada en fibra de alpaca.",
+    mediaType: ExhibitMediaType.IMAGE_2D,
+    galleryPosition: { x: 2.0, y: 1.6, z: -2.0 },
+    galleryRotation: { x: 0, y: -45, z: 0 },
+    autoRotate: false,
+    rotationSpeed: 0,
+  },
+  {
+    id: "exhibit-loom-technique",
+    title: "Demostracion Tecnica del Hilado",
+    description:
+      "Registro audiovisual del proceso de hilado tradicional y seleccion de tintes naturales.",
+    mediaType: ExhibitMediaType.VIDEO_2D,
+    galleryPosition: { x: -2.0, y: 1.6, z: 2.0 },
+    galleryRotation: { x: 0, y: 135, z: 0 },
+    autoRotate: false,
+    rotationSpeed: 0,
+  },
+] as const;
+
+export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
+  [RoomId.ARCHAEOLOGY]: {
+    id: RoomId.ARCHAEOLOGY,
+    title: "Sala de Arqueologia",
+    skyboxAssetId: "sky-archaeology",
+    skyboxUrl: "/scenes/test_scene.webp",
+    exhibits: PROTOTYPE_EXHIBITS,
+    portals: [
+      {
+        id: "portal-archaeology-to-textiles",
+        targetRoomId: RoomId.TEXTILES,
+        title: "Ir a Sala de Textiles",
+        position: { x: 0, y: 1.6, z: 2.8 },
+        rotation: { x: 0, y: 180, z: 0 },
+      },
+    ],
+  },
+  [RoomId.TEXTILES]: {
+    id: RoomId.TEXTILES,
+    title: "Sala de Textiles",
+    skyboxAssetId: "sky-textiles",
+    skyboxUrl: "/scenes/test_scene.webp",
+    exhibits: TEXTILES_EXHIBITS,
+    portals: [
+      {
+        id: "portal-textiles-to-archaeology",
+        targetRoomId: RoomId.ARCHAEOLOGY,
+        title: "Ir a Sala de Arqueologia",
+        position: { x: 0, y: 1.6, z: 2.8 },
+        rotation: { x: 0, y: 180, z: 0 },
+      },
+    ],
+  },
+};

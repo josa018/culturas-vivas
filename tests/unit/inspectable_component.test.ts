@@ -1,5 +1,4 @@
-import { assert } from "../helpers/assert";
-import { MockElement, setupMockDocument } from "../helpers/mock_dom";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   createInspectableComponentDefinition,
   InspectableComponentInstance,
@@ -14,27 +13,39 @@ import {
 } from "../../src/experience/constants";
 import { ExhibitInspectionController } from "../../src/experience/inspection-controller";
 
-function runInspectableComponentUnitTests(): void {
-  console.log("--- [UNIT TEST] A-Frame Inspectable Component ---");
+type MockEntity = HTMLElement & {
+  object3D: {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number };
+  };
+};
 
-  setupMockDocument();
-  setSharedInspectionController(new ExhibitInspectionController());
+function createMockEntity(
+  pos = { x: 0, y: 0, z: 0 },
+  rot = { x: 0, y: 0, z: 0 },
+): MockEntity {
+  const el = document.createElement("a-entity") as MockEntity;
+  el.object3D = {
+    position: { ...pos },
+    rotation: { ...rot },
+  };
+  el.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+  el.setAttribute("rotation", `${rot.x} ${rot.y} ${rot.z}`);
+  return el;
+}
 
-  // Test 1: Initialization & Lateral Billboard Attachment
-  {
+describe("A-Frame Inspectable Component", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    setSharedInspectionController(new ExhibitInspectionController());
+  });
+
+  it("initializes component and attaches lateral billboard hierarchy", () => {
     const def = createInspectableComponentDefinition();
-    const mockEl = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    mockEl.object3D = {
-      position: { x: 2, y: 1.6, z: -2 },
-      rotation: { x: 0, y: -45, z: 0 },
-    };
-    mockEl.setAttribute("position", "2 1.6 -2");
-    mockEl.setAttribute("rotation", "0 -45 0");
+    const mockEl = createMockEntity(
+      { x: 2, y: 1.6, z: -2 },
+      { x: 0, y: -45, z: 0 },
+    );
 
     const instance: InspectableComponentInstance = Object.create(def);
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
@@ -50,50 +61,34 @@ function runInspectableComponentUnitTests(): void {
 
     instance.init();
 
-    assert.equal(instance.state, InspectionState.IDLE);
-    assert.equal(instance.galleryPosition.x, 2);
-    assert.equal(instance.galleryPosition.y, 1.6);
-    assert.equal(instance.galleryPosition.z, -2);
+    expect(instance.state).toBe(InspectionState.IDLE);
+    expect(instance.galleryPosition.x).toBe(2);
+    expect(instance.galleryPosition.y).toBe(1.6);
+    expect(instance.galleryPosition.z).toBe(-2);
 
-    assert.ok(instance.billboardEl !== null);
-    assert.equal(instance.billboardEl?.getAttribute("visible"), "false");
-    assert.equal(instance.billboardEl?.getAttribute("position"), "0 -0.925 0");
-    assert.equal(
-      instance.billboardEl?.getAttribute("scale"),
+    expect(instance.billboardEl).not.toBeNull();
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("false");
+    expect(instance.billboardEl?.getAttribute("position")).toBe("0 -0.925 0");
+    expect(instance.billboardEl?.getAttribute("scale")).toBe(
       "0.001 0.001 0.001",
     );
 
     const titleText = instance.billboardEl?.querySelector("a-text");
-    assert.ok(titleText !== null);
-    assert.equal(
-      titleText?.getAttribute("width"),
+    expect(titleText).not.toBeNull();
+    expect(titleText?.getAttribute("width")).toBe(
       String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
     );
-    assert.equal(
-      titleText?.getAttribute("wrap-count"),
+    expect(titleText?.getAttribute("wrap-count")).toBe(
       String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WRAP_COUNT),
     );
+  });
 
-    console.log(
-      "✓ Test 1 Passed: Component initialization and sub-exhibit billboard hierarchy verified",
-    );
-  }
-
-  // Test 2: Radial Inspection Focal Animation & Return
-  {
+  it("performs radial inspection focal animation, auto-rotates, and restores on return", () => {
     const def = createInspectableComponentDefinition();
-    const mockEl = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    mockEl.object3D = {
-      position: { x: 0, y: 1.4, z: -2.8 },
-      rotation: { x: 0, y: 0, z: 0 },
-    };
-    mockEl.setAttribute("position", "0 1.4 -2.8");
-    mockEl.setAttribute("rotation", "0 0 0");
+    const mockEl = createMockEntity(
+      { x: 0, y: 1.4, z: -2.8 },
+      { x: 0, y: 0, z: 0 },
+    );
 
     const instance: InspectableComponentInstance = Object.create(def);
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
@@ -111,68 +106,63 @@ function runInspectableComponentUnitTests(): void {
 
     // Trigger inspect
     instance.inspect();
-    assert.equal(instance.state, InspectionState.INSPECTING);
-    assert.equal(instance.billboardEl?.getAttribute("visible"), "true");
-    assert.equal(instance.billboardEl?.getAttribute("scale"), "1 1 1");
+    expect(instance.state).toBe(InspectionState.INSPECTING);
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
+    expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
     const panelAnimIn = instance.billboardEl?.getAttribute(
       "animation__panel_in",
     );
-    assert.ok(panelAnimIn !== null);
-    assert.ok(panelAnimIn?.includes("to: 1 1 1"));
+    expect(panelAnimIn).not.toBeNull();
+    expect(panelAnimIn).toContain("to: 1 1 1");
 
     // Dynamic radial target computation
-    assert.equal(mockEl.getAttribute("position"), "0 1.507 -1.297");
+    expect(mockEl.getAttribute("position")).toBe("0 1.507 -1.297");
     const inspectAnim = mockEl.getAttribute("animation__inspect");
-    assert.ok(inspectAnim !== null);
-    assert.ok(
-      inspectAnim?.includes(`dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`),
+    expect(inspectAnim).not.toBeNull();
+    expect(inspectAnim).toContain(
+      `dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`,
     );
-    assert.ok(
-      inspectAnim?.includes(`easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`),
+    expect(inspectAnim).toContain(
+      `easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
     );
-    assert.ok(inspectAnim?.includes("from: 0 1.4 -2.8"));
-    assert.ok(inspectAnim?.includes("to: 0 1.507 -1.297"));
+    expect(inspectAnim).toContain("from: 0 1.4 -2.8");
+    expect(inspectAnim).toContain("to: 0 1.507 -1.297");
 
     // Tick test with autoRotate enabled
     instance.tick(0, 16);
-    assert.equal(mockEl.object3D.rotation.y, 0.02);
+    expect(mockEl.object3D.rotation.y).toBe(0.02);
 
     // Trigger return
     instance.returnToGallery();
-    assert.equal(instance.state, InspectionState.IDLE);
-    assert.equal(instance.billboardEl?.getAttribute("visible"), "false");
-    assert.equal(
-      instance.billboardEl?.getAttribute("scale"),
+    expect(instance.state).toBe(InspectionState.IDLE);
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("false");
+    expect(instance.billboardEl?.getAttribute("scale")).toBe(
       "0.001 0.001 0.001",
     );
-    assert.equal(mockEl.getAttribute("position"), "0 1.4 -2.8");
+    expect(mockEl.getAttribute("position")).toBe("0 1.4 -2.8");
 
     const returnAnim = mockEl.getAttribute("animation__return");
-    assert.ok(returnAnim !== null);
-    assert.ok(returnAnim?.includes("to: 0 1.4 -2.8"));
+    expect(returnAnim).not.toBeNull();
+    expect(returnAnim).toContain("to: 0 1.4 -2.8");
+  });
 
-    console.log(
-      "✓ Test 2 Passed: Inspect transition, lateral scale animation, and return restoration verified",
-    );
-  }
-
-  // Test 3: Video Exhibit Play / Pause Handling
-  {
+  it("handles video exhibit play on inspection and pause on return", () => {
     const def = createInspectableComponentDefinition();
-    const mockEl = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    mockEl.object3D = {
-      position: { x: -2, y: 1.6, z: 2 },
-      rotation: { x: 0, y: 135, z: 0 },
-    };
-    mockEl.setAttribute("position", "-2 1.6 2");
-    mockEl.setAttribute("rotation", "0 135 0");
+    const mockEl = createMockEntity(
+      { x: -2, y: 1.6, z: 2 },
+      { x: 0, y: 135, z: 0 },
+    );
 
-    const videoChild = new MockElement("video");
+    const videoChild = document.createElement("video") as HTMLVideoElement & {
+      isPlaying?: boolean;
+    };
+    videoChild.isPlaying = false;
+    videoChild.play = async () => {
+      videoChild.isPlaying = true;
+    };
+    videoChild.pause = () => {
+      videoChild.isPlaying = false;
+    };
     mockEl.appendChild(videoChild);
 
     const instance: InspectableComponentInstance = Object.create(def);
@@ -188,36 +178,21 @@ function runInspectableComponentUnitTests(): void {
     };
 
     instance.init();
-    assert.equal(videoChild.isPlaying, false);
+    expect(videoChild.isPlaying).toBe(false);
 
-    // When inspected -> video.play() is called
     instance.inspect();
-    assert.equal(videoChild.isPlaying, true);
+    expect(videoChild.isPlaying).toBe(true);
 
-    // When returned -> video.pause() is called
     instance.returnToGallery();
-    assert.equal(videoChild.isPlaying, false);
+    expect(videoChild.isPlaying).toBe(false);
+  });
 
-    console.log(
-      "✓ Test 3 Passed: Video play on inspection and pause on return verified",
-    );
-  }
-
-  // Test 4: Top-Right Corner Close Button Click Event
-  {
+  it("returns to gallery when top-right corner close button is clicked", () => {
     const def = createInspectableComponentDefinition();
-    const mockEl = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    mockEl.object3D = {
-      position: { x: 0, y: 1.6, z: -2 },
-      rotation: { x: 0, y: 0, z: 0 },
-    };
-    mockEl.setAttribute("position", "0 1.6 -2");
-    mockEl.setAttribute("rotation", "0 0 0");
+    const mockEl = createMockEntity(
+      { x: 0, y: 1.6, z: -2 },
+      { x: 0, y: 0, z: 0 },
+    );
 
     const instance: InspectableComponentInstance = Object.create(def);
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
@@ -233,25 +208,19 @@ function runInspectableComponentUnitTests(): void {
 
     instance.init();
     instance.inspect();
-    assert.equal(instance.state, InspectionState.INSPECTING);
+    expect(instance.state).toBe(InspectionState.INSPECTING);
 
     const returnBtn = instance.billboardEl?.querySelector(
       '[data-action="return-exhibit"]',
-    );
-    assert.ok(returnBtn !== null);
-    assert.equal(returnBtn?.getAttribute("position"), "0.68 0.18 0.03");
+    ) as HTMLElement;
+    expect(returnBtn).not.toBeNull();
+    expect(returnBtn?.getAttribute("position")).toBe("0.68 0.18 0.03");
 
-    (returnBtn as unknown as MockElement)?.dispatchEvent("click");
-    assert.equal(instance.state, InspectionState.IDLE);
+    returnBtn.dispatchEvent(new CustomEvent("click"));
+    expect(instance.state).toBe(InspectionState.IDLE);
+  });
 
-    console.log(
-      "✓ Test 4 Passed: Top-right corner close button dispatch event returns to gallery",
-    );
-  }
-
-  // Test 5: Mutual Exclusivity - Auto-return of preceding active exhibit
-  {
-    // Configure dedicated controller with both exhibits
+  it("enforces mutual exclusivity by auto-returning preceding active exhibit", () => {
     const mockExhibits = [
       {
         id: "exhibit-a",
@@ -280,19 +249,10 @@ function runInspectableComponentUnitTests(): void {
     const def = createInspectableComponentDefinition();
 
     // Setup Exhibit A
-    const elA = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    elA.object3D = {
-      position: { x: 0, y: 1.4, z: -2.8 },
-      rotation: { x: 0, y: 0, z: 0 },
-    };
-    elA.setAttribute("position", "0 1.4 -2.8");
-    elA.setAttribute("rotation", "0 0 0");
-
+    const elA = createMockEntity(
+      { x: 0, y: 1.4, z: -2.8 },
+      { x: 0, y: 0, z: 0 },
+    );
     const instA: InspectableComponentInstance = Object.create(def);
     instA.el = elA as unknown as InspectableComponentInstance["el"];
     instA.data = {
@@ -307,19 +267,10 @@ function runInspectableComponentUnitTests(): void {
     instA.init();
 
     // Setup Exhibit B
-    const elB = new MockElement("a-entity") as unknown as MockElement & {
-      object3D: {
-        position: { x: number; y: number; z: number };
-        rotation: { x: number; y: number; z: number };
-      };
-    };
-    elB.object3D = {
-      position: { x: 2, y: 1.6, z: -2 },
-      rotation: { x: 0, y: -45, z: 0 },
-    };
-    elB.setAttribute("position", "2 1.6 -2");
-    elB.setAttribute("rotation", "0 -45 0");
-
+    const elB = createMockEntity(
+      { x: 2, y: 1.6, z: -2 },
+      { x: 0, y: -45, z: 0 },
+    );
     const instB: InspectableComponentInstance = Object.create(def);
     instB.el = elB as unknown as InspectableComponentInstance["el"];
     instB.data = {
@@ -335,26 +286,18 @@ function runInspectableComponentUnitTests(): void {
 
     // 1. Inspect Exhibit A
     instA.inspect();
-    assert.equal(instA.state, InspectionState.INSPECTING);
-    assert.equal(elA.getAttribute("position"), "0 1.507 -1.297");
-    assert.equal(instB.state, InspectionState.IDLE);
+    expect(instA.state).toBe(InspectionState.INSPECTING);
+    expect(elA.getAttribute("position")).toBe("0 1.507 -1.297");
+    expect(instB.state).toBe(InspectionState.IDLE);
 
     // 2. Inspect Exhibit B while Exhibit A is inspecting
     instB.inspect();
-    assert.equal(instB.state, InspectionState.INSPECTING);
-    assert.equal(elB.getAttribute("position"), "0.919 1.6 -0.919");
+    expect(instB.state).toBe(InspectionState.INSPECTING);
+    expect(elB.getAttribute("position")).toBe("0.919 1.6 -0.919");
 
-    // Exhibit A must have automatically transitioned back to IDLE at gallery coordinates
-    assert.equal(instA.state, InspectionState.IDLE);
-    assert.equal(elA.getAttribute("position"), "0 1.4 -2.8");
-    assert.equal(instA.billboardEl?.getAttribute("visible"), "false");
-
-    console.log(
-      "✓ Test 5 Passed: Mutual exclusivity verified - focusing B returns inspecting A to gallery",
-    );
-  }
-
-  console.log("All Inspectable Component unit tests passed successfully.\n");
-}
-
-runInspectableComponentUnitTests();
+    // Exhibit A must have automatically returned to IDLE at gallery coordinates
+    expect(instA.state).toBe(InspectionState.IDLE);
+    expect(elA.getAttribute("position")).toBe("0 1.4 -2.8");
+    expect(instA.billboardEl?.getAttribute("visible")).toBe("false");
+  });
+});
