@@ -1,7 +1,23 @@
-import { assert } from "../helpers/assert";
-import { MockStorage } from "../helpers/mock_storage";
-import { MockElement, setupMockDocument } from "../helpers/mock_dom";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { AppRoute, RouteMatcher } from "../../src/navigation/route-matcher";
+
+vi.mock("chart.js", () => {
+  class MockChart {
+    static register = vi.fn();
+    data = { datasets: [{ data: [] }] };
+    update = vi.fn();
+    destroy = vi.fn();
+  }
+  return {
+    Chart: MockChart,
+    BarController: class {},
+    BarElement: class {},
+    CategoryScale: class {},
+    LinearScale: class {},
+    Tooltip: class {},
+  };
+});
+
 import {
   ADMIN_AUTH_CONSTANTS,
   AdminAuthStore,
@@ -14,54 +30,80 @@ import {
   AdminHeaderWidget,
   SurveysTableWidget,
   AttendanceChartWidget,
-  AdminDashboardView,
   AdminController,
 } from "../../src/admin/index";
+import type { StorageAdapter } from "../../src/navigation/index";
 
-function runAdminDashboardUnitTests(): void {
-  console.log(
-    "--- [UNIT TEST] Admin Dashboard Full Vertical Slice (M3 Redesign) ---",
-  );
+class InMemoryStorage implements StorageAdapter {
+  private readonly store = new Map<string, string>();
 
-  // Test 1: RouteMatcher matching patterns
-  {
-    assert.equal(RouteMatcher.match("/admin", ""), AppRoute.ADMIN);
-    assert.equal(RouteMatcher.match("/admin/", ""), AppRoute.ADMIN);
-    assert.equal(RouteMatcher.match("/", "#/admin"), AppRoute.ADMIN);
-    assert.equal(RouteMatcher.match("", "#/admin/"), AppRoute.ADMIN);
-    assert.equal(RouteMatcher.match("/ADMIN", ""), AppRoute.ADMIN);
-    assert.equal(RouteMatcher.match("/", ""), AppRoute.VISITOR);
-    assert.equal(RouteMatcher.match("/experience", ""), AppRoute.VISITOR);
-    assert.equal(RouteMatcher.match("/", "#/welcome"), AppRoute.VISITOR);
-    console.log(
-      "✓ Test 1 Passed: RouteMatcher accurately detects admin vs visitor routes",
-    );
+  public getItem(key: string): string | null {
+    return this.store.get(key) ?? null;
   }
 
-  // Test 2: AdminAuthStore lifecycle and state transitions
-  {
-    const storage = new MockStorage();
+  public setItem(key: string, value: string): void {
+    this.store.set(key, value);
+  }
+
+  public removeItem(key: string): void {
+    this.store.delete(key);
+  }
+
+  public clear(): void {
+    this.store.clear();
+  }
+}
+
+describe("Admin Dashboard Full Vertical Slice (M3 Redesign)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        activeSessions: 5,
+      }),
+    } as unknown as Response);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  it("RouteMatcher accurately detects admin vs visitor routes", () => {
+    expect(RouteMatcher.match("/admin", "")).toBe(AppRoute.ADMIN);
+    expect(RouteMatcher.match("/admin/", "")).toBe(AppRoute.ADMIN);
+    expect(RouteMatcher.match("/", "#/admin")).toBe(AppRoute.ADMIN);
+    expect(RouteMatcher.match("", "#/admin/")).toBe(AppRoute.ADMIN);
+    expect(RouteMatcher.match("/ADMIN", "")).toBe(AppRoute.ADMIN);
+    expect(RouteMatcher.match("/", "")).toBe(AppRoute.VISITOR);
+    expect(RouteMatcher.match("/experience", "")).toBe(AppRoute.VISITOR);
+    expect(RouteMatcher.match("/", "#/welcome")).toBe(AppRoute.VISITOR);
+  });
+
+  it("AdminAuthStore manages lifecycle, authentication, and persistence", () => {
+    const storage = new InMemoryStorage();
     const authStore = new AdminAuthStore(storage);
 
     // Initial state
     const initial = authStore.getState();
-    assert.equal(initial.isAuthenticated, false);
-    assert.equal(initial.token, null);
-    assert.equal(initial.user, null);
+    expect(initial.isAuthenticated).toBe(false);
+    expect(initial.token).toBeNull();
+    expect(initial.user).toBeNull();
 
     // Invalid credentials
     const failedLogin = authStore.login({
       username: "invalid_librarian",
       password: "wrong_password",
     });
-    assert.equal(failedLogin, false);
-    assert.equal(authStore.getState().isAuthenticated, false);
+    expect(failedLogin).toBe(false);
+    expect(authStore.getState().isAuthenticated).toBe(false);
 
     // Subscription listener check
     let listenerCalled = false;
     const unsubscribe = authStore.subscribe((state) => {
       listenerCalled = true;
-      assert.equal(state.isAuthenticated, true);
+      expect(state.isAuthenticated).toBe(true);
     });
 
     // Valid credentials login
@@ -69,57 +111,50 @@ function runAdminDashboardUnitTests(): void {
       username: ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
       password: ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
     });
-    assert.equal(successLogin, true);
-    assert.equal(listenerCalled, true);
+    expect(successLogin).toBe(true);
+    expect(listenerCalled).toBe(true);
 
     const activeState = authStore.getState();
-    assert.equal(activeState.isAuthenticated, true);
-    assert.ok(
-      activeState.token?.startsWith(ADMIN_AUTH_CONSTANTS.MOCK_TOKEN_PREFIX),
+    expect(activeState.isAuthenticated).toBe(true);
+    expect(
+      activeState.token?.startsWith(ADMIN_AUTH_CONSTANTS.MOCK_TOKEN_PREFIX)
+    ).toBe(true);
+    expect(activeState.user?.username).toBe(
+      ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME
     );
-    assert.equal(
-      activeState.user?.username,
-      ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
-    );
-    assert.equal(activeState.user?.role, ADMIN_AUTH_CONSTANTS.DEFAULT_ROLE);
+    expect(activeState.user?.role).toBe(ADMIN_AUTH_CONSTANTS.DEFAULT_ROLE);
 
-    // Persistence reload test (simulating page reload with existing session)
+    // Persistence reload test
     const reloadedStore = new AdminAuthStore(storage);
     const reloadedState = reloadedStore.getState();
-    assert.equal(reloadedState.isAuthenticated, true);
-    assert.equal(reloadedState.token, activeState.token);
+    expect(reloadedState.isAuthenticated).toBe(true);
+    expect(reloadedState.token).toBe(activeState.token);
 
     // Logout
     unsubscribe();
     authStore.logout();
-    assert.equal(authStore.getState().isAuthenticated, false);
-    assert.equal(authStore.getState().token, null);
-    assert.equal(authStore.getState().user, null);
+    expect(authStore.getState().isAuthenticated).toBe(false);
+    expect(authStore.getState().token).toBeNull();
+    expect(authStore.getState().user).toBeNull();
 
     // Check storage cleared
-    assert.equal(storage.getItem(ADMIN_AUTH_CONSTANTS.STORAGE_KEY), null);
-    console.log(
-      "✓ Test 2 Passed: AdminAuthStore authentication and persistence valid",
-    );
-  }
+    expect(storage.getItem(ADMIN_AUTH_CONSTANTS.STORAGE_KEY)).toBeNull();
+  });
 
-  // Test 3: AdminDashboardStore counter and bounds clamping
-  {
+  it("AdminDashboardStore handles counter and bounds clamping", () => {
     const store = new AdminDashboardStore(7);
-    assert.equal(store.getState().activeVisitorsCount, 7);
+    expect(store.getState().activeVisitorsCount).toBe(7);
 
-    // Set count
     store.setVisitorCount(8);
-    assert.equal(store.getState().activeVisitorsCount, 8);
+    expect(store.getState().activeVisitorsCount).toBe(8);
 
     store.setVisitorCount(7);
-    assert.equal(store.getState().activeVisitorsCount, 7);
+    expect(store.getState().activeVisitorsCount).toBe(7);
 
     // Negative clamp protection
     store.setVisitorCount(-5);
-    assert.equal(
-      store.getState().activeVisitorsCount,
-      ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT,
+    expect(store.getState().activeVisitorsCount).toBe(
+      ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT
     );
 
     // Subscription notification on visitor change
@@ -128,28 +163,24 @@ function runAdminDashboardUnitTests(): void {
       notifiedCount = state.activeVisitorsCount;
     });
     store.setVisitorCount(15);
-    assert.equal(notifiedCount, 15);
+    expect(notifiedCount).toBe(15);
     unsub();
 
     // Polling toggle lifecycle
-    assert.equal(store.isPolling(), false);
+    expect(store.isPolling()).toBe(false);
     store.startPolling();
-    assert.equal(store.isPolling(), true);
+    expect(store.isPolling()).toBe(true);
     store.stopPolling();
-    assert.equal(store.isPolling(), false);
+    expect(store.isPolling()).toBe(false);
+  });
 
-    console.log(
-      "✓ Test 3 Passed: AdminDashboardStore counter and clamp operations valid",
-    );
-  }
-
-  // Test 4: Survey metrics and rating calculation
-  {
+  it("computes survey metrics and average rating correctly", () => {
     const store = new AdminDashboardStore(5);
-    assert.equal(store.getState().surveys.length, 4);
+    expect(store.getState().surveys.length).toBe(4);
 
     const initialAvg = store.getAverageRating();
-    assert.ok(initialAvg >= 1 && initialAvg <= 5);
+    expect(initialAvg).toBeGreaterThanOrEqual(1);
+    expect(initialAvg).toBeLessThanOrEqual(5);
 
     // Add survey entry dynamically
     store.addSurvey({
@@ -160,46 +191,36 @@ function runAdminDashboardUnitTests(): void {
       viewMode: "vr",
     });
 
-    assert.equal(store.getState().surveys.length, 5);
-    assert.equal(store.getState().surveys[0].id, "srv-test-new");
+    expect(store.getState().surveys.length).toBe(5);
+    expect(store.getState().surveys[0].id).toBe("srv-test-new");
 
     // Empty surveys average rating fallback
     const emptyStore = new AdminDashboardStore(0, []);
-    assert.equal(emptyStore.getAverageRating(), 0);
+    expect(emptyStore.getAverageRating()).toBe(0);
+  });
 
-    console.log(
-      "✓ Test 4 Passed: Survey calculations and ordering valid",
-    );
-  }
-
-  // Test 5: Hourly attendance data conforming to chart contracts
-  {
+  it("generates hourly attendance dataset conforming to chart contract", () => {
     const store = new AdminDashboardStore();
     const dataset = store.getState().hourlyAttendance;
 
-    assert.equal(
-      dataset.labels.length,
-      ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS.length,
+    expect(dataset.labels.length).toBe(
+      ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS.length
     );
-    assert.equal(
-      dataset.values.length,
-      ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_ATTENDANCE.length,
+    expect(dataset.values.length).toBe(
+      ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_ATTENDANCE.length
     );
 
     for (const val of dataset.values) {
-      assert.ok(typeof val === "number" && val >= 0);
+      expect(typeof val).toBe("number");
+      expect(val).toBeGreaterThanOrEqual(0);
     }
+  });
 
-    console.log(
-      "✓ Test 5 Passed: Hourly attendance dataset conforms to chart contract",
-    );
-  }
+  it("validates AdminLoginModalView lifecycle and authentication flow", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
 
-  // Test 6: AdminLoginModalView lifecycle and authentication flow
-  {
-    setupMockDocument();
-    const parent = new MockElement("div") as unknown as HTMLElement;
-    const authStore = new AdminAuthStore(new MockStorage());
+    const authStore = new AdminAuthStore(new InMemoryStorage());
     let loginSucceeded = false;
     let returnedToTour = false;
 
@@ -215,60 +236,56 @@ function runAdminDashboardUnitTests(): void {
 
     modal.mount(parent);
     const modalElement = modal.getElement();
-    assert.ok(modalElement !== null);
+    expect(modalElement).not.toBeNull();
 
     // Initial state: inputs blank
     const initialInputs = modal.getInputs();
-    assert.equal(initialInputs.user, "");
-    assert.equal(initialInputs.pass, "");
+    expect(initialInputs.user).toBe("");
+    expect(initialInputs.pass).toBe("");
 
     // Show and Hide display checks
     modal.show();
-    assert.equal(modalElement.style.display, "flex");
+    expect(modalElement!.style.display).toBe("flex");
     modal.hide();
-    assert.equal(modalElement.style.display, "none");
+    expect(modalElement!.style.display).toBe("none");
 
     // Return to public tour action check
-    const formElement = (modalElement as unknown as MockElement).children[0]
-      .children[1];
-    assert.ok(formElement !== null);
-    const returnBtn = formElement.children[4];
-    assert.equal(returnBtn.textContent, ADMIN_UI_TEXT.LOGIN_RETURN_LINK);
-    returnBtn.dispatchEvent("click");
-    assert.equal(returnedToTour, true);
+    const formElement = modalElement!.children[0].children[1] as HTMLFormElement;
+    expect(formElement).not.toBeNull();
+    const returnBtn = formElement.children[4] as HTMLElement;
+    expect(returnBtn.textContent).toBe(ADMIN_UI_TEXT.LOGIN_RETURN_LINK);
+    returnBtn.click();
+    expect(returnedToTour).toBe(true);
 
     // Failed login submission
     modal.show();
     modal.setCredentials("invalid_user", "bad_password");
-    formElement.dispatchEvent("submit");
-    assert.equal(loginSucceeded, false);
-    assert.equal(authStore.getState().isAuthenticated, false);
+    formElement.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(loginSucceeded).toBe(false);
+    expect(authStore.getState().isAuthenticated).toBe(false);
 
     // Successful login submission
     modal.setCredentials(
       ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
-      ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
+      ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD
     );
-    formElement.dispatchEvent("submit");
+    formElement.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
-    assert.equal(loginSucceeded, true);
-    assert.equal(authStore.getState().isAuthenticated, true);
+    expect(loginSucceeded).toBe(true);
+    expect(authStore.getState().isAuthenticated).toBe(true);
     const clearedInputs = modal.getInputs();
-    assert.equal(clearedInputs.user, "");
-    assert.equal(clearedInputs.pass, "");
+    expect(clearedInputs.user).toBe("");
+    expect(clearedInputs.pass).toBe("");
 
     // Unmount
     modal.unmount();
-    assert.equal(modal.getElement(), null);
-    console.log(
-      "✓ Test 6 Passed: AdminLoginModalView lifecycle and authentication flow valid",
-    );
-  }
+    expect(modal.getElement()).toBeNull();
+  });
 
-  // Test 7: AdminHeaderWidget presentation, return-to-tour, and logout triggers
-  {
-    setupMockDocument();
-    const parent = new MockElement("div") as unknown as HTMLElement;
+  it("mounts AdminHeaderWidget and triggers logout & return-to-tour", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+
     let loggedOut = false;
     let returnedToTour = false;
 
@@ -284,94 +301,82 @@ function runAdminDashboardUnitTests(): void {
     });
 
     header.mount(parent);
-    const el = header.getElement() as unknown as MockElement;
-    assert.ok(el !== null);
+    const el = header.getElement()!;
+    expect(el).not.toBeNull();
 
-    // Verify brand title and subtitle
+    // Brand title
     const brand = el.children[0];
-    assert.equal(
-      brand.children[0].children[0].textContent,
-      ADMIN_UI_TEXT.HEADER_TITLE,
+    expect(brand.children[0].children[0].textContent).toBe(
+      ADMIN_UI_TEXT.HEADER_TITLE
     );
 
     // Actions: child 0 is exit button, child 1 is logout button
     const actions = el.children[1];
-    const exitBtn = actions.children[0];
-    assert.equal(exitBtn.textContent, ADMIN_UI_TEXT.HEADER_EXIT_BTN);
-    exitBtn.dispatchEvent("click");
-    assert.equal(returnedToTour, true);
+    const exitBtn = actions.children[0] as HTMLElement;
+    expect(exitBtn.textContent).toBe(ADMIN_UI_TEXT.HEADER_EXIT_BTN);
+    exitBtn.click();
+    expect(returnedToTour).toBe(true);
 
-    const logoutBtn = actions.children[1];
-    assert.equal(logoutBtn.textContent, ADMIN_UI_TEXT.HEADER_LOGOUT_BTN);
-    logoutBtn.dispatchEvent("click");
-    assert.equal(loggedOut, true);
+    const logoutBtn = actions.children[1] as HTMLElement;
+    expect(logoutBtn.textContent).toBe(ADMIN_UI_TEXT.HEADER_LOGOUT_BTN);
+    logoutBtn.click();
+    expect(loggedOut).toBe(true);
 
     header.unmount();
-    assert.equal(header.getElement(), null);
-    console.log(
-      "✓ Test 7 Passed: AdminHeaderWidget mounts clean M3 top bar and triggers logout & return",
-    );
-  }
+    expect(header.getElement()).toBeNull();
+  });
 
-  // Test 8: AttendanceChartWidget active metric display and reactive updates
-  {
-    setupMockDocument();
-    const parent = new MockElement("div") as unknown as HTMLElement;
+  it("updates AttendanceChartWidget KPI row reactively", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
     const store = new AdminDashboardStore(5);
 
     const chartWidget = new AttendanceChartWidget(store);
     chartWidget.mount(parent);
 
-    const el = chartWidget.getElement() as unknown as MockElement;
-    assert.ok(el !== null);
+    const el = chartWidget.getElement()!;
+    expect(el).not.toBeNull();
 
     const kpiRow = el.children[1];
     const valueSpan = kpiRow.children[0];
-    assert.equal(valueSpan.textContent, "5");
+    expect(valueSpan.textContent).toBe("5");
 
-    // Direct store fluctuation reactivity
     store.setVisitorCount(6);
-    assert.equal(store.getState().activeVisitorsCount, 6);
-    assert.equal(valueSpan.textContent, "6");
+    expect(store.getState().activeVisitorsCount).toBe(6);
+    expect(valueSpan.textContent).toBe("6");
 
     store.setVisitorCount(5);
-    assert.equal(store.getState().activeVisitorsCount, 5);
-    assert.equal(valueSpan.textContent, "5");
+    expect(store.getState().activeVisitorsCount).toBe(5);
+    expect(valueSpan.textContent).toBe("5");
 
     chartWidget.unmount();
-    assert.equal(chartWidget.getElement(), null);
-    console.log(
-      "✓ Test 8 Passed: AttendanceChartWidget M3 metric display and reactive updates valid",
-    );
-  }
+    expect(chartWidget.getElement()).toBeNull();
+  });
 
-  // Test 9: SurveysTableWidget row rendering and average badge
-  {
-    setupMockDocument();
-    const parent = new MockElement("div") as unknown as HTMLElement;
+  it("renders SurveysTableWidget rows and updates reactively", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
     const store = new AdminDashboardStore(5);
 
     const tableWidget = new SurveysTableWidget(store);
     tableWidget.mount(parent);
 
-    const el = tableWidget.getElement() as unknown as MockElement;
-    assert.ok(el !== null);
+    const el = tableWidget.getElement()!;
+    expect(el).not.toBeNull();
 
     const avgBadge = el.children[0].children[1];
-    assert.ok(avgBadge.textContent.includes(ADMIN_UI_TEXT.SURVEY_AVG_PREFIX));
-    assert.ok(avgBadge.textContent.includes(ADMIN_UI_TEXT.RATING_SCALE_SUFFIX));
+    expect(avgBadge.textContent).toContain(ADMIN_UI_TEXT.SURVEY_AVG_PREFIX);
+    expect(avgBadge.textContent).toContain(ADMIN_UI_TEXT.RATING_SCALE_SUFFIX);
 
     const tbody = el.children[1].children[0].children[1];
-    assert.ok(tbody.children.length > 0);
+    expect(tbody.children.length).toBeGreaterThan(0);
 
-    // Verify mode chip uses centralized token text
     const firstRowModeChip = tbody.children[0].children[1].children[0];
-    assert.ok(
+    expect(
       firstRowModeChip.textContent === ADMIN_UI_TEXT.VIEW_MODE_VR ||
-      firstRowModeChip.textContent === ADMIN_UI_TEXT.VIEW_MODE_2D,
-    );
+        firstRowModeChip.textContent === ADMIN_UI_TEXT.VIEW_MODE_2D
+    ).toBe(true);
 
-    // Adding a survey dynamically triggers table re-render
     const initialRowsCount = tbody.children.length;
     store.addSurvey({
       id: "srv-dynamic-99",
@@ -380,129 +385,112 @@ function runAdminDashboardUnitTests(): void {
       feedback: "Dynamic test review",
       viewMode: "vr",
     });
-    assert.equal(tbody.children.length, initialRowsCount + 1);
+    expect(tbody.children.length).toBe(initialRowsCount + 1);
 
     tableWidget.unmount();
-    assert.equal(tableWidget.getElement(), null);
-    console.log(
-      "✓ Test 9 Passed: SurveysTableWidget reactive table updates valid",
-    );
-  }
+    expect(tableWidget.getElement()).toBeNull();
+  });
 
-  // Test 10: AttendanceChartWidget lifecycle and safe unmount
-  {
-    setupMockDocument();
-    const parent = new MockElement("div") as unknown as HTMLElement;
+  it("handles AttendanceChartWidget canvas mounting and lifecycle", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
     const store = new AdminDashboardStore(5);
 
     const chartWidget = new AttendanceChartWidget(store);
     chartWidget.mount(parent);
 
-    const el = chartWidget.getElement() as unknown as MockElement;
-    assert.ok(el !== null);
+    const el = chartWidget.getElement()!;
+    expect(el).not.toBeNull();
 
     const header = el.children[0];
     const peakBadge = header.children[1];
-    assert.ok(peakBadge.textContent.includes(ADMIN_UI_TEXT.PEAK_LABEL_PREFIX));
+    expect(peakBadge.textContent).toContain(ADMIN_UI_TEXT.PEAK_LABEL_PREFIX);
 
     const kpiRow = el.children[1];
     const valueSpan = kpiRow.children[0];
-    assert.equal(valueSpan.textContent, "5");
+    expect(valueSpan.textContent).toBe("5");
 
     const canvas = el.children[2].children[0];
-    assert.equal(canvas.getAttribute("role"), "img");
-    assert.equal(canvas.getAttribute("aria-label"), ADMIN_UI_TEXT.CHART_TITLE);
+    expect(canvas.getAttribute("role")).toBe("img");
+    expect(canvas.getAttribute("aria-label")).toBe(ADMIN_UI_TEXT.CHART_TITLE);
 
-    // Reactivity check on live visitor change
     store.setVisitorCount(6);
-    assert.equal(valueSpan.textContent, "6");
+    expect(valueSpan.textContent).toBe("6");
 
     chartWidget.unmount();
-    assert.equal(chartWidget.getElement(), null);
-    console.log(
-      "✓ Test 10 Passed: AttendanceChartWidget canvas mounting and unmount valid",
-    );
-  }
+    expect(chartWidget.getElement()).toBeNull();
+  });
 
-  // Test 11: AdminController state orchestration & 3D canvas suppression with pause/play lifecycle
-  {
-    const sceneMock = new MockElement("a-scene");
+  it("suppresses 3D canvas and orchestrates AdminController state and restore lifecycle", () => {
+    const sceneMock = document.createElement("a-scene") as HTMLElement & {
+      isPlaying: boolean;
+      play: () => void;
+      pause: () => void;
+    };
+    sceneMock.isPlaying = false;
+    sceneMock.play = () => {
+      sceneMock.isPlaying = true;
+    };
+    sceneMock.pause = () => {
+      sceneMock.isPlaying = false;
+    };
     sceneMock.play();
-    assert.equal(sceneMock.isPlaying, true);
+    expect(sceneMock.isPlaying).toBe(true);
 
-    const rootMock = new MockElement("div");
-    setupMockDocument(rootMock, sceneMock);
+    const rootMock = document.createElement("div");
+    document.body.appendChild(sceneMock);
+    document.body.appendChild(rootMock);
 
-    const authStore = new AdminAuthStore(new MockStorage());
+    const authStore = new AdminAuthStore(new InMemoryStorage());
     const dashboardStore = new AdminDashboardStore(7);
 
     const controller = new AdminController(
-      rootMock as unknown as HTMLElement,
+      rootMock,
       authStore,
-      dashboardStore,
+      dashboardStore
     );
 
     // 3D scene must be suppressed and paused
-    assert.equal(sceneMock.style.display, "none");
-    assert.equal(sceneMock.isPlaying, false);
+    expect(sceneMock.style.display).toBe("none");
+    expect(sceneMock.isPlaying).toBe(false);
 
     // Initially unauthenticated -> login modal mounted
-    assert.equal(authStore.getState().isAuthenticated, false);
+    expect(authStore.getState().isAuthenticated).toBe(false);
 
     // Login transition
     authStore.login({
       username: ADMIN_AUTH_CONSTANTS.DEFAULT_USERNAME,
       password: ADMIN_AUTH_CONSTANTS.DEFAULT_PASSWORD,
     });
-    assert.equal(authStore.getState().isAuthenticated, true);
-    assert.equal(dashboardStore.isPolling(), true);
+    expect(authStore.getState().isAuthenticated).toBe(true);
+    expect(dashboardStore.isPolling()).toBe(true);
 
     // Logout transition
     authStore.logout();
-    assert.equal(authStore.getState().isAuthenticated, false);
-    assert.equal(dashboardStore.isPolling(), false);
+    expect(authStore.getState().isAuthenticated).toBe(false);
+    expect(dashboardStore.isPolling()).toBe(false);
 
     // Destroy restores 3D scene display and play status
     controller.destroy();
-    assert.equal(sceneMock.style.display, "");
-    assert.equal(sceneMock.isPlaying, true);
+    expect(sceneMock.style.display).toBe("");
+    expect(sceneMock.isPlaying).toBe(true);
+  });
 
-    console.log(
-      "✓ Test 11 Passed: AdminController canvas suppression and auth orchestration valid",
-    );
-  }
-
-  // Test 12: CSS class token contract consistency
-  {
+  it("strictly adheres CSS class tokens to design system namespaces", () => {
     for (const [key, className] of Object.entries(ADMIN_UI_CLASSES)) {
-      assert.ok(
-        typeof className === "string" && className.length > 0,
-        `CSS class for ${key} must not be empty`,
-      );
-      assert.ok(
-        className.includes("cv-admin") || className.includes("cv-"),
-        `Class token for ${key} must use standard design token namespace prefix ('${className}')`,
-      );
+      expect(typeof className).toBe("string");
+      expect(className.length).toBeGreaterThan(0);
+      expect(
+        className.includes("cv-admin") || className.includes("cv-")
+      ).toBe(true);
     }
-    console.log(
-      "✓ Test 12 Passed: CSS class tokens strictly adhere to design system namespaces",
-    );
-  }
+  });
 
-  // Test 13: Responsive thresholds consistency
-  {
-    assert.ok(ADMIN_THRESHOLDS.MAX_CAPACITY >= 20);
-    assert.ok(ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX > 0);
-    assert.ok(
-      ADMIN_THRESHOLDS.CAPACITY_MODERATE_MAX >
-        ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX,
+  it("maintains consistent responsive capacity threshold hierarchy", () => {
+    expect(ADMIN_THRESHOLDS.MAX_CAPACITY).toBeGreaterThanOrEqual(20);
+    expect(ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX).toBeGreaterThan(0);
+    expect(ADMIN_THRESHOLDS.CAPACITY_MODERATE_MAX).toBeGreaterThan(
+      ADMIN_THRESHOLDS.CAPACITY_OPTIMAL_MAX
     );
-    console.log(
-      "✓ Test 13 Passed: Dashboard capacity threshold hierarchy valid",
-    );
-  }
-
-  console.log("All M3 Redesign unit tests passed successfully.");
-}
-
-runAdminDashboardUnitTests();
+  });
+});

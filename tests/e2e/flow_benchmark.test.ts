@@ -1,235 +1,202 @@
-import { assert } from "../helpers/assert";
-import { MockElement, setupMockDocument } from "../helpers/mock_dom";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { AppRouter } from "../../src/app";
 
 const MAX_ALLOWED_DURATION_MS = 15000;
 
-function runEndToEndBenchmark(): void {
-  console.log("--- [E2E BENCHMARK] Full Flow Traversal (DoD < 15s) ---");
+type MockSceneElement = HTMLElement & {
+  isPlaying: boolean;
+  play: () => void;
+  pause: () => void;
+  enterVR?: () => Promise<void>;
+  exitVR?: () => Promise<void>;
+  is?: (state: string) => boolean;
+};
 
-  const rootElement = new MockElement("div");
-  rootElement.id = "app";
-  const mockScene = new MockElement("a-scene");
+describe("Full Flow Traversal Benchmark (DoD < 15s)", () => {
+  let rootElement: HTMLElement;
+  let mockScene: MockSceneElement;
 
-  setupMockDocument(rootElement, mockScene);
+  beforeEach(() => {
+    document.body.innerHTML = "";
 
-  const router = new AppRouter(rootElement as unknown as HTMLElement);
-  const startTime = Date.now();
+    mockScene = document.createElement("a-scene") as MockSceneElement;
+    mockScene.isPlaying = false;
+    mockScene.play = () => {
+      mockScene.isPlaying = true;
+    };
+    mockScene.pause = () => {
+      mockScene.isPlaying = false;
+    };
+    mockScene.enterVR = async () => {};
+    mockScene.exitVR = async () => {};
+    mockScene.is = (state: string) => state === "vr-mode";
 
-  // Screen 1: Splash Screen
-  const splashEl = rootElement.querySelector(
-    '[data-screen-id="SPLASH"]',
-  ) as MockElement;
-  assert.ok(splashEl, "Splash element must be mounted");
-  assert.ok(
-    splashEl.classList.contains("cv-screen--active"),
-    "Splash screen must be active on launch",
-  );
+    rootElement = document.createElement("div");
+    rootElement.id = "app";
 
-  const enterBtn = splashEl.querySelector(
-    '[data-action="enter"]',
-  ) as MockElement;
-  assert.ok(enterBtn, "Splash enter button must exist in DOM");
-  enterBtn.dispatchEvent("click");
+    document.body.appendChild(mockScene);
+    document.body.appendChild(rootElement);
+  });
 
-  // Screen 2: Welcome Screen
-  const welcomeEl = rootElement.querySelector(
-    '[data-screen-id="WELCOME"]',
-  ) as MockElement;
-  assert.ok(welcomeEl, "Welcome element must be mounted");
-  assert.ok(
-    welcomeEl.classList.contains("cv-screen--active"),
-    "Welcome screen must be active after splash enter",
-  );
-  const vrBtn = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
-  assert.ok(vrBtn, "VR mode selection button must exist");
-  vrBtn.dispatchEvent("click");
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
 
-  // Screen 3: Tutorial Screen
-  const tutorialEl = rootElement.querySelector(
-    '[data-screen-id="TUTORIAL"]',
-  ) as MockElement;
-  assert.ok(tutorialEl, "Tutorial element must be mounted");
-  assert.ok(
-    tutorialEl.classList.contains("cv-screen--active"),
-    "Tutorial screen must be active after VR selection",
-  );
-  const startBtn = tutorialEl.querySelector(
-    '[data-action="confirm-insertion"]',
-  ) as MockElement;
-  assert.ok(startBtn, "Start tour button must exist");
-  startBtn.dispatchEvent("click");
+  it("traverses all screens and paths within performance bounds", () => {
+    const router = new AppRouter(rootElement);
+    const startTime = Date.now();
 
-  // Screen 4: 3D Experience (WebXR Scene active)
-  const experienceEl = rootElement.querySelector(
-    '[data-screen-id="EXPERIENCE_3D"]',
-  ) as MockElement;
-  assert.ok(experienceEl, "Experience HUD element must be mounted");
-  assert.ok(
-    experienceEl.classList.contains("cv-screen--active"),
-    "Experience HUD must be active during tour",
-  );
-  assert.equal(
-    mockScene.isPlaying,
-    true,
-    "A-Frame scene must be playing when in 3D",
-  );
-  assert.equal(
-    mockScene.style.display,
-    "block",
-    "A-Frame scene must be visible when in 3D",
-  );
+    // Screen 1: Splash Screen
+    const splashEl = rootElement.querySelector(
+      '[data-screen-id="SPLASH"]'
+    ) as HTMLElement;
+    expect(splashEl).toBeTruthy();
+    expect(splashEl.classList.contains("cv-screen--active")).toBe(true);
 
-  const roomGroupVR = mockScene.querySelector(
-    "#cv-prototype-room-group",
-  ) as MockElement;
-  assert.ok(
-    roomGroupVR,
-    "Prototype room group must be mounted in A-Frame scene",
-  );
-  assert.equal(
-    roomGroupVR.children.length,
-    5,
-    "Prototype room must contain all 5 exhibits",
-  );
+    const enterBtn = splashEl.querySelector(
+      '[data-action="enter"]'
+    ) as HTMLElement;
+    expect(enterBtn).toBeTruthy();
+    enterBtn.click();
 
-  const exitHudBtn = experienceEl.querySelector(
-    '[data-action="request-exit"]',
-  ) as MockElement;
-  assert.ok(exitHudBtn, "Exit HUD button must exist");
-  exitHudBtn.dispatchEvent("click");
+    // Screen 2: Welcome Screen
+    const welcomeEl = rootElement.querySelector(
+      '[data-screen-id="WELCOME"]'
+    ) as HTMLElement;
+    expect(welcomeEl).toBeTruthy();
+    expect(welcomeEl.classList.contains("cv-screen--active")).toBe(true);
+    const vrBtn = welcomeEl.querySelector('[data-action="vr"]') as HTMLElement;
+    expect(vrBtn).toBeTruthy();
+    vrBtn.click();
 
-  // Screen 5: Exit Modal Overlay
-  const exitModalEl = rootElement.querySelector(
-    '[data-screen-id="EXIT_MODAL"]',
-  ) as MockElement;
-  assert.ok(exitModalEl, "Exit modal backdrop element must be mounted");
-  assert.ok(
-    exitModalEl.classList.contains("cv-screen--active"),
-    "Exit modal must be active",
-  );
-  const finishBtn = exitModalEl.querySelector(
-    '[data-action="confirm-exit"]',
-  ) as MockElement;
-  assert.ok(finishBtn, "Confirm exit button must exist");
-  finishBtn.dispatchEvent("click");
+    // Screen 3: Tutorial Screen
+    const tutorialEl = rootElement.querySelector(
+      '[data-screen-id="TUTORIAL"]'
+    ) as HTMLElement;
+    expect(tutorialEl).toBeTruthy();
+    expect(tutorialEl.classList.contains("cv-screen--active")).toBe(true);
+    const startBtn = tutorialEl.querySelector(
+      '[data-action="confirm-insertion"]'
+    ) as HTMLElement;
+    expect(startBtn).toBeTruthy();
+    startBtn.click();
 
-  // Screen 6: Survey Screen
-  const surveyEl = rootElement.querySelector(
-    '[data-screen-id="SURVEY"]',
-  ) as MockElement;
-  assert.ok(surveyEl, "Survey element must be mounted");
-  assert.ok(
-    surveyEl.classList.contains("cv-screen--active"),
-    "Survey screen must be active after exit confirmation",
-  );
-  assert.equal(
-    mockScene.style.display,
-    "none",
-    "A-Frame scene must be hidden when in survey",
-  );
+    // Screen 4: 3D Experience (WebXR Scene active)
+    const experienceEl = rootElement.querySelector(
+      '[data-screen-id="EXPERIENCE_3D"]'
+    ) as HTMLElement;
+    expect(experienceEl).toBeTruthy();
+    expect(experienceEl.classList.contains("cv-screen--active")).toBe(true);
+    expect(mockScene.isPlaying).toBe(true);
+    expect(mockScene.style.display).toBe("block");
 
-  const submitSurveyBtn = surveyEl.querySelector(
-    '[data-action="submit-survey"]',
-  ) as MockElement;
-  assert.ok(submitSurveyBtn, "Submit survey button must exist");
-  submitSurveyBtn.dispatchEvent("click");
+    const roomGroupVR = mockScene.querySelector(
+      "#cv-prototype-room-group"
+    ) as HTMLElement;
+    expect(roomGroupVR).toBeTruthy();
+    const exhibitsVR = Array.from(roomGroupVR.children).filter((c) =>
+      c.getAttribute("cv-inspectable")
+    );
+    expect(exhibitsVR.length).toBe(5);
 
-  // Returned to Welcome Screen
-  assert.ok(
-    welcomeEl.classList.contains("cv-screen--active"),
-    "Welcome screen must be active after survey completion",
-  );
+    const exitHudBtn = experienceEl.querySelector(
+      '[data-action="request-exit"]'
+    ) as HTMLElement;
+    expect(exitHudBtn).toBeTruthy();
+    exitHudBtn.click();
 
-  // Traversal 2: 2D Mode Path
-  const touch2dBtn = welcomeEl.querySelector(
-    '[data-action="2d"]',
-  ) as MockElement;
-  assert.ok(touch2dBtn, "2D mode selection button must exist");
-  touch2dBtn.dispatchEvent("click");
-  assert.ok(
-    experienceEl.classList.contains("cv-screen--active"),
-    "Experience HUD active in 2D",
-  );
-  assert.equal(mockScene.style.display, "block", "A-Frame scene visible in 2D");
-  const roomGroup2D = mockScene.querySelector(
-    "#cv-prototype-room-group",
-  ) as MockElement;
-  assert.ok(roomGroup2D, "Room group remains mounted in 2D mode");
-  assert.equal(
-    roomGroup2D.children.length,
-    5,
-    "All 5 exhibits present in 2D mode",
-  );
+    // Screen 5: Exit Modal Overlay
+    const exitModalEl = rootElement.querySelector(
+      '[data-screen-id="EXIT_MODAL"]'
+    ) as HTMLElement;
+    expect(exitModalEl).toBeTruthy();
+    expect(exitModalEl.classList.contains("cv-screen--active")).toBe(true);
+    const finishBtn = exitModalEl.querySelector(
+      '[data-action="confirm-exit"]'
+    ) as HTMLElement;
+    expect(finishBtn).toBeTruthy();
+    finishBtn.click();
 
-  // Exit 2D mode to welcome for next traversal
-  const exitHudBtn2 = experienceEl.querySelector(
-    '[data-action="request-exit"]',
-  ) as MockElement;
-  assert.ok(exitHudBtn2);
-  exitHudBtn2.dispatchEvent("click");
-  const finishBtn2 = exitModalEl.querySelector(
-    '[data-action="confirm-exit"]',
-  ) as MockElement;
-  assert.ok(finishBtn2);
-  finishBtn2.dispatchEvent("click");
-  const skipSurveyBtn = surveyEl.querySelector(
-    '[data-action="skip-survey"]',
-  ) as MockElement;
-  assert.ok(skipSurveyBtn);
-  skipSurveyBtn.dispatchEvent("click");
-  assert.ok(welcomeEl.classList.contains("cv-screen--active"));
+    // Screen 6: Survey Screen
+    const surveyEl = rootElement.querySelector(
+      '[data-screen-id="SURVEY"]'
+    ) as HTMLElement;
+    expect(surveyEl).toBeTruthy();
+    expect(surveyEl.classList.contains("cv-screen--active")).toBe(true);
+    expect(mockScene.style.display).toBe("none");
 
-  // Traversal 3: Cardboard VR native exit-vr -> Exit Modal -> Switch to Touch
-  const vrBtn2 = welcomeEl.querySelector('[data-action="vr"]') as MockElement;
-  assert.ok(vrBtn2);
-  vrBtn2.dispatchEvent("click");
-  const startBtn2 = tutorialEl.querySelector(
-    '[data-action="confirm-insertion"]',
-  ) as MockElement;
-  assert.ok(startBtn2);
-  startBtn2.dispatchEvent("click");
-  assert.ok(experienceEl.classList.contains("cv-screen--active"));
+    const submitSurveyBtn = surveyEl.querySelector(
+      '[data-action="submit-survey"]'
+    ) as HTMLElement;
+    expect(submitSurveyBtn).toBeTruthy();
+    submitSurveyBtn.click();
 
-  // Native exit-vr fired (e.g. Cardboard viewer X)
-  mockScene.dispatchEvent("exit-vr");
-  assert.ok(
-    exitModalEl.classList.contains("cv-screen--active"),
-    "Native exit-vr must navigate directly to Exit Modal",
-  );
-  assert.equal(
-    mockScene.style.display,
-    "block",
-    "Scene canvas must be retained in background",
-  );
+    // Returned to Welcome Screen
+    expect(welcomeEl.classList.contains("cv-screen--active")).toBe(true);
 
-  // Switch to touch mode from Exit Modal
-  const switchTouchBtn = exitModalEl.querySelector(
-    '[data-action="switch-to-touch"]',
-  ) as MockElement;
-  assert.ok(switchTouchBtn, "Switch to touch button must exist in exit modal");
-  switchTouchBtn.dispatchEvent("click");
-  assert.ok(
-    experienceEl.classList.contains("cv-screen--active"),
-    "Experience HUD active after switching to touch",
-  );
-  assert.equal(
-    router.getStateMachine().getSession().viewMode,
-    "2d",
-    "Session viewMode must be updated to 2d",
-  );
+    // Traversal 2: 2D Mode Path
+    const touch2dBtn = welcomeEl.querySelector(
+      '[data-action="2d"]'
+    ) as HTMLElement;
+    expect(touch2dBtn).toBeTruthy();
+    touch2dBtn.click();
+    expect(experienceEl.classList.contains("cv-screen--active")).toBe(true);
+    expect(mockScene.style.display).toBe("block");
+    const roomGroup2D = mockScene.querySelector(
+      "#cv-prototype-room-group"
+    ) as HTMLElement;
+    expect(roomGroup2D).toBeTruthy();
+    const exhibits2D = Array.from(roomGroup2D.children).filter((c) =>
+      c.getAttribute("cv-inspectable")
+    );
+    expect(exhibits2D.length).toBe(5);
 
-  const elapsedMs = Date.now() - startTime;
-  console.log(
-    `✓ Traversed Screens 1 -> 6 -> Welcome in ${elapsedMs} ms (DoD limit: ${MAX_ALLOWED_DURATION_MS} ms)`,
-  );
-  assert.ok(
-    elapsedMs < MAX_ALLOWED_DURATION_MS,
-    `Traversal duration exceeded DoD limit: ${elapsedMs} ms`,
-  );
+    // Exit 2D mode to welcome for next traversal
+    const exitHudBtn2 = experienceEl.querySelector(
+      '[data-action="request-exit"]'
+    ) as HTMLElement;
+    expect(exitHudBtn2).toBeTruthy();
+    exitHudBtn2.click();
+    const finishBtn2 = exitModalEl.querySelector(
+      '[data-action="confirm-exit"]'
+    ) as HTMLElement;
+    expect(finishBtn2).toBeTruthy();
+    finishBtn2.click();
+    const skipSurveyBtn = surveyEl.querySelector(
+      '[data-action="skip-survey"]'
+    ) as HTMLElement;
+    expect(skipSurveyBtn).toBeTruthy();
+    skipSurveyBtn.click();
+    expect(welcomeEl.classList.contains("cv-screen--active")).toBe(true);
 
-  router.destroy();
-  console.log("✓ AppRouter destroyed and cleaned up without leaks.\n");
-}
+    // Traversal 3: Cardboard VR native exit-vr -> Exit Modal -> Switch to Touch
+    const vrBtn2 = welcomeEl.querySelector('[data-action="vr"]') as HTMLElement;
+    expect(vrBtn2).toBeTruthy();
+    vrBtn2.click();
+    const startBtn2 = tutorialEl.querySelector(
+      '[data-action="confirm-insertion"]'
+    ) as HTMLElement;
+    expect(startBtn2).toBeTruthy();
+    startBtn2.click();
+    expect(experienceEl.classList.contains("cv-screen--active")).toBe(true);
 
-runEndToEndBenchmark();
+    // Native exit-vr fired (e.g. Cardboard viewer X)
+    mockScene.dispatchEvent(new CustomEvent("exit-vr"));
+    expect(exitModalEl.classList.contains("cv-screen--active")).toBe(true);
+    expect(mockScene.style.display).toBe("block");
+
+    // Switch to touch mode from Exit Modal
+    const switchTouchBtn = exitModalEl.querySelector(
+      '[data-action="switch-to-touch"]'
+    ) as HTMLElement;
+    expect(switchTouchBtn).toBeTruthy();
+    switchTouchBtn.click();
+    expect(experienceEl.classList.contains("cv-screen--active")).toBe(true);
+    expect(router.getStateMachine().getSession().viewMode).toBe("2d");
+
+    const elapsedMs = Date.now() - startTime;
+    expect(elapsedMs).toBeLessThan(MAX_ALLOWED_DURATION_MS);
+
+    router.destroy();
+  });
+});
