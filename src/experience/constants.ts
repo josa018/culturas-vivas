@@ -80,6 +80,13 @@ export const EXHIBIT_DIMENSIONS = {
   PEDESTAL_HEIGHT: 0.8,
 } as const;
 
+export const EXHIBIT_ASSET_IDS = {
+  PAINTING_2D: "asset-painting-2d",
+  PHOTO_STEREO: "asset-photo-stereo",
+  VIDEO_2D: "asset-video-2d",
+  VIDEO_STEREO_SBS: "asset-video-stereo-sbs",
+} as const;
+
 export const EXHIBIT_DICTIONARY = {
   RETURN_BUTTON_LABEL: "Volver",
   INSPECT_BUTTON_LABEL: "Inspeccionar",

@@ -207,15 +207,21 @@ export class ExperienceScreenView implements ScreenView {
         this.transitionStateMachine.notifyFadeOutComplete();
 
         // 4. Mount target room and update skybox
-        ExhibitRoomBuilder.mountRoom(scene, targetRoomId, this.viewMode);
+        const roomGroup = ExhibitRoomBuilder.mountRoom(
+          scene,
+          targetRoomId,
+          this.viewMode,
+        );
         const skyEl = scene.querySelector("a-sky");
 
         const hasAFrame =
           typeof globalThis !== "undefined" &&
           Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
 
-        if (hasAFrame && skyEl) {
-          void ExhibitRoomBuilder.waitForSkyboxReady(skyEl).then(finishSwap);
+        if (hasAFrame) {
+          void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
+            finishSwap,
+          );
         } else {
           finishSwap();
         }
@@ -248,7 +254,7 @@ export class ExperienceScreenView implements ScreenView {
       if (scene.classList && typeof scene.classList.add === "function") {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
-      ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      const roomGroup = ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
 
       // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =
@@ -267,10 +273,12 @@ export class ExperienceScreenView implements ScreenView {
             typeof globalThis !== "undefined" &&
             Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
 
-          if (hasAFrame && skyEl) {
-            void ExhibitRoomBuilder.waitForSkyboxReady(skyEl).then(() => {
-              curtain.fadeIn();
-            });
+          if (hasAFrame) {
+            void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
+              () => {
+                curtain.fadeIn();
+              },
+            );
           } else {
             curtain.fadeIn();
           }

@@ -1,5 +1,6 @@
 import {
   DEFAULT_ROOM_ID,
+  EXHIBIT_ASSET_IDS,
   EXHIBIT_DIMENSIONS,
   ExhibitMediaType,
   ROOM_DEFINITIONS,
@@ -127,6 +128,111 @@ export class ExhibitRoomBuilder {
     });
   }
 
+  public static ensureMediaAssets(sceneEl: HTMLElement): void {
+    let assetsEl = sceneEl.querySelector("a-assets");
+    if (!assetsEl) {
+      assetsEl = document.createElement("a-assets");
+      sceneEl.prepend(assetsEl);
+    }
+
+    const requiredAssets: Array<{ id: string; texture: () => string }> = [
+      {
+        id: EXHIBIT_ASSET_IDS.PAINTING_2D,
+        texture: () => PlaceholderAssetGenerator.createPaintingTexture(),
+      },
+      {
+        id: EXHIBIT_ASSET_IDS.PHOTO_STEREO,
+        texture: () => PlaceholderAssetGenerator.createStereoImageTexture(),
+      },
+      {
+        id: EXHIBIT_ASSET_IDS.VIDEO_2D,
+        texture: () => PlaceholderAssetGenerator.createVideoThumbnailTexture(),
+      },
+      {
+        id: EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS,
+        texture: () =>
+          PlaceholderAssetGenerator.createStereoVideoThumbnailTexture(),
+      },
+    ];
+
+    for (const item of requiredAssets) {
+      if (!assetsEl.querySelector(`#${item.id}`)) {
+        const img = document.createElement("img");
+        img.setAttribute("id", item.id);
+        img.setAttribute("src", item.texture());
+        assetsEl.appendChild(img);
+      }
+    }
+  }
+
+  public static async waitForRoomReady(
+    roomGroup: HTMLElement | null,
+    skyEl: HTMLElement | null,
+    timeoutMs = 1500,
+  ): Promise<boolean> {
+    const hasAFrame =
+      typeof globalThis !== "undefined" &&
+      Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+    if (!hasAFrame) {
+      return true;
+    }
+
+    const skyboxPromise = this.waitForSkyboxReady(skyEl, timeoutMs);
+
+    const roomGroupPromise = new Promise<boolean>((resolve) => {
+      if (!roomGroup) {
+        resolve(true);
+        return;
+      }
+
+      const aframeGroup = roomGroup as unknown as { hasLoaded?: boolean };
+      if (aframeGroup.hasLoaded) {
+        resolve(true);
+        return;
+      }
+
+      if (typeof roomGroup.addEventListener !== "function") {
+        resolve(true);
+        return;
+      }
+
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          roomGroup.removeEventListener("loaded", onLoaded);
+          resolve(true);
+        }
+      }, timeoutMs);
+
+      const onLoaded = (): void => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          roomGroup.removeEventListener("loaded", onLoaded);
+          resolve(true);
+        }
+      };
+
+      roomGroup.addEventListener("loaded", onLoaded, { once: true });
+    });
+
+    await Promise.all([skyboxPromise, roomGroupPromise]);
+
+    if (typeof requestAnimationFrame === "function") {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      });
+    }
+
+    return true;
+  }
+
   public static mountRoom(
     sceneEl: HTMLElement,
     roomId: RoomId = DEFAULT_ROOM_ID,
@@ -152,13 +258,8 @@ export class ExhibitRoomBuilder {
     roomGroup.setAttribute("id", this.ROOM_CONTAINER_ID);
     roomGroup.setAttribute("data-room-id", roomDef.id);
 
-    const paintingTexture = PlaceholderAssetGenerator.createPaintingTexture();
-    const stereoImageTexture =
-      PlaceholderAssetGenerator.createStereoImageTexture();
-    const videoThumbnail =
-      PlaceholderAssetGenerator.createVideoThumbnailTexture();
-    const stereoVideoThumbnail =
-      PlaceholderAssetGenerator.createStereoVideoThumbnailTexture();
+    // Ensure preloaded media asset IDs are registered in <a-assets>
+    this.ensureMediaAssets(sceneEl);
 
     // Build room exhibits
     for (const exhibit of roomDef.exhibits) {
@@ -229,7 +330,10 @@ export class ExhibitRoomBuilder {
           plane.setAttribute("class", "clickable");
           plane.setAttribute("width", String(EXHIBIT_DIMENSIONS.PLANE_WIDTH));
           plane.setAttribute("height", String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT));
-          plane.setAttribute("src", paintingTexture);
+          plane.setAttribute(
+            "src",
+            exhibit.mediaUrl || `#${EXHIBIT_ASSET_IDS.PAINTING_2D}`,
+          );
           plane.setAttribute("material", "shader: flat");
 
           const frame = document.createElement("a-plane");
@@ -250,6 +354,8 @@ export class ExhibitRoomBuilder {
         }
 
         case ExhibitMediaType.IMAGE_STEREO_SBS: {
+          const mediaSrc =
+            exhibit.mediaUrl || `#${EXHIBIT_ASSET_IDS.PHOTO_STEREO}`;
           const leftPlane = document.createElement("a-plane");
           leftPlane.setAttribute("class", "clickable");
           leftPlane.setAttribute(
@@ -260,7 +366,7 @@ export class ExhibitRoomBuilder {
             "height",
             String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT),
           );
-          leftPlane.setAttribute("src", stereoImageTexture);
+          leftPlane.setAttribute("src", mediaSrc);
           leftPlane.setAttribute(
             "cv-stereo-media",
             `eye: LEFT; isHalfSBS: true; viewMode: ${viewMode}`,
@@ -277,7 +383,7 @@ export class ExhibitRoomBuilder {
             "height",
             String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT),
           );
-          rightPlane.setAttribute("src", stereoImageTexture);
+          rightPlane.setAttribute("src", mediaSrc);
           rightPlane.setAttribute(
             "cv-stereo-media",
             `eye: RIGHT; isHalfSBS: true; viewMode: ${viewMode}`,
@@ -306,7 +412,10 @@ export class ExhibitRoomBuilder {
           plane.setAttribute("class", "clickable");
           plane.setAttribute("width", String(EXHIBIT_DIMENSIONS.PLANE_WIDTH));
           plane.setAttribute("height", String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT));
-          plane.setAttribute("src", videoThumbnail);
+          plane.setAttribute(
+            "src",
+            exhibit.mediaUrl || `#${EXHIBIT_ASSET_IDS.VIDEO_2D}`,
+          );
           plane.setAttribute("material", "shader: flat");
 
           const frame = document.createElement("a-plane");
@@ -327,6 +436,8 @@ export class ExhibitRoomBuilder {
         }
 
         case ExhibitMediaType.VIDEO_STEREO_SBS: {
+          const mediaSrc =
+            exhibit.mediaUrl || `#${EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS}`;
           const leftPlane = document.createElement("a-plane");
           leftPlane.setAttribute("class", "clickable");
           leftPlane.setAttribute(
@@ -337,7 +448,7 @@ export class ExhibitRoomBuilder {
             "height",
             String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT),
           );
-          leftPlane.setAttribute("src", stereoVideoThumbnail);
+          leftPlane.setAttribute("src", mediaSrc);
           leftPlane.setAttribute(
             "cv-stereo-media",
             `eye: LEFT; isHalfSBS: true; viewMode: ${viewMode}`,
@@ -354,7 +465,7 @@ export class ExhibitRoomBuilder {
             "height",
             String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT),
           );
-          rightPlane.setAttribute("src", stereoVideoThumbnail);
+          rightPlane.setAttribute("src", mediaSrc);
           rightPlane.setAttribute(
             "cv-stereo-media",
             `eye: RIGHT; isHalfSBS: true; viewMode: ${viewMode}`,

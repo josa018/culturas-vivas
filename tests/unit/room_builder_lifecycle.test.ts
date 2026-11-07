@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
-import { ROOM_DEFINITIONS } from "../../src/experience/constants";
+import {
+  EXHIBIT_ASSET_IDS,
+  ROOM_DEFINITIONS,
+} from "../../src/experience/constants";
 import { getSharedInspectionController } from "../../src/experience/components/inspectable";
 
 class MockObject3D {
@@ -55,6 +58,30 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     const controller = getSharedInspectionController();
     expect(controller.getAllExhibits()).toHaveLength(
       ROOM_DEFINITIONS[RoomId.ARCHAEOLOGY].exhibits.length,
+    );
+
+    // Verify standardized media assets were injected into <a-assets>
+    const assetsEl = scene.querySelector("a-assets");
+    expect(assetsEl).not.toBeNull();
+    expect(
+      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.PAINTING_2D}`),
+    ).not.toBeNull();
+    expect(
+      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.PHOTO_STEREO}`),
+    ).not.toBeNull();
+    expect(
+      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_2D}`),
+    ).not.toBeNull();
+    expect(
+      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS}`),
+    ).not.toBeNull();
+
+    // Verify planes link to asset IDs
+    const paintingPlane = roomEl.querySelector(
+      "#exhibit-painting-2d a-plane.clickable",
+    );
+    expect(paintingPlane?.getAttribute("src")).toBe(
+      `#${EXHIBIT_ASSET_IDS.PAINTING_2D}`,
     );
   });
 
@@ -137,6 +164,56 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
       50,
     );
     expect(timeoutResult).toBe(true);
+
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+  });
+
+  it("waitForRoomReady coordinates skybox, roomGroup loaded lifecycle, and double rAF", async () => {
+    // Null element handling
+    const nullResult = await ExhibitRoomBuilder.waitForRoomReady(null, null);
+    expect(nullResult).toBe(true);
+
+    // Mock elements
+    let roomLoadedCallback: (() => void) | null = null;
+    let skyTextureCallback: (() => void) | null = null;
+
+    const mockRoomGroup = {
+      hasLoaded: false,
+      addEventListener: (evt: string, cb: () => void) => {
+        if (evt === "loaded") roomLoadedCallback = cb;
+      },
+      removeEventListener: () => {
+        roomLoadedCallback = null;
+      },
+    } as unknown as HTMLElement;
+
+    const mockSky = {
+      addEventListener: (evt: string, cb: () => void) => {
+        if (evt === "materialtextureloaded") skyTextureCallback = cb;
+      },
+      removeEventListener: () => {
+        skyTextureCallback = null;
+      },
+    } as unknown as HTMLElement;
+
+    // Simulate AFRAME presence
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const promise = ExhibitRoomBuilder.waitForRoomReady(
+      mockRoomGroup,
+      mockSky,
+      500,
+    );
+
+    expect(roomLoadedCallback).not.toBeNull();
+    expect(skyTextureCallback).not.toBeNull();
+
+    // Trigger both readiness events
+    roomLoadedCallback!();
+    skyTextureCallback!();
+
+    const result = await promise;
+    expect(result).toBe(true);
 
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
