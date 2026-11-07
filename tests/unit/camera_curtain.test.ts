@@ -6,7 +6,10 @@ import {
   type CameraCurtainComponentInstance,
   type CameraCurtainEntity,
 } from "../../src/experience/components/camera-curtain";
-import { TRANSITION_TIMINGS } from "../../src/experience/constants";
+import {
+  CURTAIN_RENDER_ORDER,
+  TRANSITION_TIMINGS,
+} from "../../src/experience/constants";
 
 function createMockCurtainInstance(
   mockEl: CameraCurtainEntity,
@@ -67,8 +70,13 @@ describe("CameraCurtain Component", () => {
   });
 
   it("handles opacity bounds clamping cleanly", () => {
-    const el = document.createElement("a-sphere") as unknown as CameraCurtainEntity;
-    el.setAttribute("material", "shader: flat; color: #000000; side: back; opacity: 0");
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
+    el.setAttribute(
+      "material",
+      "shader: flat; color: #000000; side: back; opacity: 0",
+    );
 
     const instance = createMockCurtainInstance(el);
     instance.init();
@@ -88,7 +96,9 @@ describe("CameraCurtain Component", () => {
   });
 
   it("executes bidirectional fade transitions with completion callbacks", () => {
-    const el = document.createElement("a-sphere") as unknown as CameraCurtainEntity;
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
     el.setAttribute("material", "shader: flat; side: back; opacity: 0");
 
     const instance = createMockCurtainInstance(el);
@@ -111,5 +121,45 @@ describe("CameraCurtain Component", () => {
     expect(fadeInCalled).toBe(true);
     expect(instance.getOpacity()).toBe(0);
     expect(el.getAttribute("visible")).toBe("false");
+  });
+
+  it("enforces CURTAIN_RENDER_ORDER on object3D and child nodes across lifecycle and object3dset", () => {
+    expect(CURTAIN_RENDER_ORDER).toBe(99999);
+
+    const childMesh = { renderOrder: 0 };
+    const mockObject3D = {
+      visible: false,
+      renderOrder: 0,
+      traverse: (cb: (node: unknown) => void) => {
+        cb(mockObject3D);
+        cb(childMesh);
+      },
+    };
+
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
+    el.object3D = mockObject3D;
+
+    const instance = createMockCurtainInstance(el);
+    instance.init();
+
+    // After init, renderOrder must be set to 99999
+    expect(mockObject3D.renderOrder).toBe(CURTAIN_RENDER_ORDER);
+    expect(childMesh.renderOrder).toBe(CURTAIN_RENDER_ORDER);
+
+    // Simulate dynamically attached mesh via object3dset event
+    const newChildMesh = { renderOrder: 0 };
+    mockObject3D.traverse = (cb: (node: unknown) => void) => {
+      cb(mockObject3D);
+      cb(newChildMesh);
+    };
+
+    el.dispatchEvent(new Event("object3dset"));
+    expect(newChildMesh.renderOrder).toBe(CURTAIN_RENDER_ORDER);
+
+    // Fade out must preserve renderOrder
+    instance.fadeOut();
+    expect(mockObject3D.renderOrder).toBe(CURTAIN_RENDER_ORDER);
   });
 });

@@ -167,6 +167,8 @@ export const TRANSITION_TIMINGS = {
   PORTAL_FUSE_TIMEOUT_MS: 1500,
 } as const;
 
+export const CURTAIN_RENDER_ORDER = 99999;
+
 export const PORTAL_DIMENSIONS = {
   FRAME_WIDTH: 1.2,
   FRAME_HEIGHT: 2.0,

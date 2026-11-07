@@ -1,4 +1,4 @@
-import { TRANSITION_TIMINGS } from "../constants";
+import { CURTAIN_RENDER_ORDER, TRANSITION_TIMINGS } from "../constants";
 
 export const CAMERA_CURTAIN_ID = "cv-camera-curtain";
 
@@ -10,6 +10,8 @@ export interface CameraCurtainComponentData {
 export interface CameraCurtainEntity extends HTMLElement {
   object3D?: {
     visible: boolean;
+    renderOrder?: number;
+    traverse?: (cb: (node: unknown) => void) => void;
   };
 }
 
@@ -43,6 +45,26 @@ export function createCameraCurtainComponentDefinition() {
       this.opacity = 0;
       this.isAnimating = false;
       this.el.setAttribute("visible", "false");
+
+      const applyRenderOrder = () => {
+        if (this.el.object3D) {
+          this.el.object3D.renderOrder = CURTAIN_RENDER_ORDER;
+          if (typeof this.el.object3D.traverse === "function") {
+            this.el.object3D.traverse((node: unknown) => {
+              if (node && typeof node === "object") {
+                (node as { renderOrder?: number }).renderOrder =
+                  CURTAIN_RENDER_ORDER;
+              }
+            });
+          }
+        }
+      };
+
+      applyRenderOrder();
+      if (typeof this.el.addEventListener === "function") {
+        this.el.addEventListener("object3dset", applyRenderOrder);
+      }
+
       if (this.el.object3D) {
         this.el.object3D.visible = false;
       }
@@ -53,6 +75,9 @@ export function createCameraCurtainComponentDefinition() {
 
     setOpacity: function (this: CameraCurtainComponentInstance, val: number) {
       this.opacity = Math.max(0, Math.min(1, val));
+      if (this.el.object3D) {
+        this.el.object3D.renderOrder = CURTAIN_RENDER_ORDER;
+      }
       const currentMaterial = this.el.getAttribute("material");
       if (typeof currentMaterial === "string") {
         if (/opacity:\s*[\d.]+/.test(currentMaterial)) {
@@ -86,6 +111,15 @@ export function createCameraCurtainComponentDefinition() {
       this.el.setAttribute("visible", "true");
       if (this.el.object3D) {
         this.el.object3D.visible = true;
+        this.el.object3D.renderOrder = CURTAIN_RENDER_ORDER;
+        if (typeof this.el.object3D.traverse === "function") {
+          this.el.object3D.traverse((node: unknown) => {
+            if (node && typeof node === "object") {
+              (node as { renderOrder?: number }).renderOrder =
+                CURTAIN_RENDER_ORDER;
+            }
+          });
+        }
       }
 
       const hasAFrame =
