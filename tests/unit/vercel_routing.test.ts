@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { assert } from "../helpers/assert";
+import { describe, it, expect } from "vitest";
 
 interface VercelRewriteRule {
   readonly source: string;
@@ -27,44 +27,41 @@ const TEST_CONFIG = {
   ],
 } as const;
 
-function runVercelRoutingUnitTests(): void {
-  console.log("--- [UNIT TEST] Vercel SPA Routing Configuration ---");
-
+describe("Vercel SPA Routing Configuration", () => {
   const configPath = path.resolve(process.cwd(), TEST_CONFIG.VERCEL_CONFIG_FILE);
-  assert.ok(fs.existsSync(configPath), `Configuration file ${TEST_CONFIG.VERCEL_CONFIG_FILE} must exist at root`);
 
-  const rawContent = fs.readFileSync(configPath, "utf-8");
-  const parsed: VercelConfig = JSON.parse(rawContent);
+  it("verifies vercel.json structure and rules array", () => {
+    expect(fs.existsSync(configPath)).toBe(true);
 
-  assert.ok(Array.isArray(parsed.rewrites), "vercel.json must define a 'rewrites' array");
-  assert.equal(parsed.rewrites.length >= 2, true, "vercel.json must contain at least 2 rewrite rules");
+    const rawContent = fs.readFileSync(configPath, "utf-8");
+    const parsed: VercelConfig = JSON.parse(rawContent);
 
-  const [apiRule, spaRule] = parsed.rewrites;
+    expect(Array.isArray(parsed.rewrites)).toBe(true);
+    expect((parsed.rewrites ?? []).length).toBeGreaterThanOrEqual(2);
 
-  // Verify Rule 1: API bypass
-  assert.equal(apiRule.source, TEST_CONFIG.EXPECTED_API_SOURCE, "First rewrite rule source must target /api/:path*");
-  assert.equal(apiRule.destination, TEST_CONFIG.EXPECTED_API_DESTINATION, "First rewrite rule destination must preserve /api/:path*");
-  console.log("✓ Test 1 Passed: Serverless /api/:path* passthrough rule verified");
+    const [apiRule, spaRule] = parsed.rewrites!;
 
-  // Verify Rule 2: SPA fallback
-  assert.equal(spaRule.source, TEST_CONFIG.EXPECTED_SPA_SOURCE, "Second rewrite rule source must use negative lookahead for non-API routes");
-  assert.equal(spaRule.destination, TEST_CONFIG.EXPECTED_SPA_DESTINATION, "Second rewrite rule destination must be /index.html");
-  console.log("✓ Test 2 Passed: SPA fallback to /index.html verified");
+    // Verify Rule 1: API bypass
+    expect(apiRule.source).toBe(TEST_CONFIG.EXPECTED_API_SOURCE);
+    expect(apiRule.destination).toBe(TEST_CONFIG.EXPECTED_API_DESTINATION);
 
-  // Verify regex behavior for SPA client paths vs API endpoints
-  const spaPattern = new RegExp(`^${TEST_CONFIG.EXPECTED_SPA_SOURCE}$`);
+    // Verify Rule 2: SPA fallback
+    expect(spaRule.source).toBe(TEST_CONFIG.EXPECTED_SPA_SOURCE);
+    expect(spaRule.destination).toBe(TEST_CONFIG.EXPECTED_SPA_DESTINATION);
+  });
 
-  for (const clientPath of TEST_CONFIG.SPA_PATHS) {
-    const isMatched = spaPattern.test(clientPath);
-    assert.equal(isMatched, true, `Client path '${clientPath}' must be matched by SPA rewrite rule`);
-  }
-  console.log("✓ Test 3 Passed: Client SPA paths (/admin, /, /survey, etc.) correctly match rewrite pattern");
+  it("matches SPA and API routes against rewrite pattern regex", () => {
+    const rawContent = fs.readFileSync(configPath, "utf-8");
+    const parsed: VercelConfig = JSON.parse(rawContent);
+    const [, spaRule] = parsed.rewrites!;
+    const regex = new RegExp(`^${spaRule.source}$`);
 
-  for (const apiPath of TEST_CONFIG.API_PATHS) {
-    const isMatched = spaPattern.test(apiPath);
-    assert.equal(isMatched, false, `API path '${apiPath}' must NOT match negative lookahead SPA rewrite rule`);
-  }
-  console.log("✓ Test 4 Passed: Backend API endpoints correctly bypass SPA fallback pattern");
-}
+    for (const spaPath of TEST_CONFIG.SPA_PATHS) {
+      expect(regex.test(spaPath)).toBe(true);
+    }
 
-runVercelRoutingUnitTests();
+    for (const apiPath of TEST_CONFIG.API_PATHS) {
+      expect(regex.test(apiPath)).toBe(false);
+    }
+  });
+});

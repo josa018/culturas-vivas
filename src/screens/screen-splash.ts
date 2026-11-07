@@ -3,7 +3,7 @@ import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import {
   ScenePreloadManager,
-  PRELOAD_CONSTANTS,
+  getCriticalRoomAssets,
 } from "../experience/preload-manager";
 
 export class SplashScreenView implements ScreenView {
@@ -150,7 +150,7 @@ export class SplashScreenView implements ScreenView {
         : null;
 
     await this.preloadManager.preloadAll(
-      PRELOAD_CONSTANTS.DEFAULT_CRITICAL_ASSETS,
+      getCriticalRoomAssets(),
     );
 
     if (sceneEl) {

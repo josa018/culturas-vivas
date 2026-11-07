@@ -1,36 +1,30 @@
-import { assert } from "../helpers/assert";
+import { describe, it, expect } from "vitest";
 import {
   ScenePreloadManager,
   PRELOAD_CONSTANTS,
+  getCriticalRoomAssets,
   type PreloadProgress,
 } from "../../src/experience/preload-manager";
 
-async function runPreloadManagerUnitTests(): Promise<void> {
-  console.log("--- [UNIT TEST] Scene Preload Manager ---");
-
-  // Test 1: Empty asset list preloads immediately with 100% progress
-  {
+describe("ScenePreloadManager", () => {
+  it("preloads immediately with 100% progress for empty asset list", async () => {
     const progressLog: PreloadProgress[] = [];
     const manager = new ScenePreloadManager({
       onProgress: (p) => progressLog.push(p),
     });
 
     const result = await manager.preloadAll([]);
-    assert.equal(result.success, true);
-    assert.equal(result.loaded.length, 0);
-    assert.equal(result.failed.length, 0);
-    assert.equal(progressLog.length, 1);
-    assert.equal(
-      progressLog[0].percentage,
-      PRELOAD_CONSTANTS.PERCENTAGE_COMPLETE,
+    expect(result.success).toBe(true);
+    expect(result.loaded.length).toBe(0);
+    expect(result.failed.length).toBe(0);
+    expect(progressLog.length).toBe(1);
+    expect(progressLog[0].percentage).toBe(
+      PRELOAD_CONSTANTS.PERCENTAGE_COMPLETE
     );
-    assert.equal(progressLog[0].isComplete, true);
+    expect(progressLog[0].isComplete).toBe(true);
+  });
 
-    console.log("✓ Test 1 Passed: Empty asset list handled synchronously");
-  }
-
-  // Test 2: Preloading sequential assets reports granular progress
-  {
+  it("reports granular progress when preloading sequential assets", async () => {
     const progressLog: PreloadProgress[] = [];
     const manager = new ScenePreloadManager({
       timeoutMs: 1000,
@@ -40,27 +34,23 @@ async function runPreloadManagerUnitTests(): Promise<void> {
     const testUrls = ["/test/asset1.png", "/test/asset2.png"];
     const result = await manager.preloadAll(testUrls);
 
-    assert.equal(result.loaded.length + result.failed.length, testUrls.length);
-    // Initial progress (0%) + 1 per asset = 3 total progress updates
-    assert.equal(progressLog.length, 3);
-    assert.equal(progressLog[0].percentage, 0);
-    assert.equal(progressLog[0].isComplete, false);
-    assert.equal(progressLog[1].percentage, 50);
-    assert.equal(progressLog[1].currentAsset, testUrls[0]);
-    assert.equal(progressLog[2].percentage, 100);
-    assert.equal(progressLog[2].currentAsset, testUrls[1]);
-    assert.equal(progressLog[2].isComplete, true);
+    expect(result.loaded.length + result.failed.length).toBe(testUrls.length);
+    expect(progressLog.length).toBe(3);
+    expect(progressLog[0].percentage).toBe(0);
+    expect(progressLog[0].isComplete).toBe(false);
+    expect(progressLog[1].percentage).toBe(50);
+    expect(progressLog[1].currentAsset).toBe(testUrls[0]);
+    expect(progressLog[2].percentage).toBe(100);
+    expect(progressLog[2].currentAsset).toBe(testUrls[1]);
+    expect(progressLog[2].isComplete).toBe(true);
+  });
 
-    console.log("✓ Test 2 Passed: Granular progress and completion notified");
-  }
-
-  // Test 3: Scene loaded detection
-  {
+  it("detects WebGL scene lifecycle detection accurately", async () => {
     const manager = new ScenePreloadManager();
 
     // Null scene element
     const nullResult = await manager.waitForSceneLoaded(null);
-    assert.equal(nullResult, true);
+    expect(nullResult).toBe(true);
 
     // Already loaded scene
     const mockLoadedScene = {
@@ -69,7 +59,7 @@ async function runPreloadManagerUnitTests(): Promise<void> {
       removeEventListener: () => {},
     } as unknown as HTMLElement;
     const loadedResult = await manager.waitForSceneLoaded(mockLoadedScene);
-    assert.equal(loadedResult, true);
+    expect(loadedResult).toBe(true);
 
     // Scene awaiting event
     let registeredCallback: (() => void) | null = null;
@@ -84,16 +74,13 @@ async function runPreloadManagerUnitTests(): Promise<void> {
     } as unknown as HTMLElement;
 
     const promise = manager.waitForSceneLoaded(mockPendingScene, 500);
-    assert.ok(registeredCallback !== null);
+    expect(registeredCallback).not.toBeNull();
     registeredCallback!();
     const eventResult = await promise;
-    assert.equal(eventResult, true);
+    expect(eventResult).toBe(true);
+  });
 
-    console.log("✓ Test 3 Passed: WebGL scene lifecycle detection verified");
-  }
-
-  // Test 4: Scene loaded timeout fallback
-  {
+  it("handles scene loaded timeout fallback gracefully", async () => {
     const manager = new ScenePreloadManager();
     const mockStalledScene = {
       hasLoaded: false,
@@ -103,19 +90,15 @@ async function runPreloadManagerUnitTests(): Promise<void> {
 
     const timeoutResult = await manager.waitForSceneLoaded(
       mockStalledScene,
-      100,
+      100
     );
-    assert.equal(timeoutResult, false);
+    expect(timeoutResult).toBe(false);
+  });
 
-    console.log(
-      "✓ Test 4 Passed: Scene loaded timeout fallback handled gracefully",
-    );
-  }
-
-  console.log("=== ALL PRELOAD MANAGER UNIT TESTS PASSED ===");
-}
-
-runPreloadManagerUnitTests().catch((err) => {
-  console.error("Test failed:", err);
-  process.exit(1);
+  it("extracts unique critical room assets from ROOM_DEFINITIONS", () => {
+    const assets = getCriticalRoomAssets();
+    expect(assets.length).toBeGreaterThanOrEqual(2);
+    expect(assets).toContain("/scenes/scene1.webp");
+    expect(assets).toContain("/scenes/scene2.webp");
+  });
 });

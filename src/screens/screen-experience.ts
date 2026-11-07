@@ -2,6 +2,18 @@ import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
+import { RoomTransitionStateMachine } from "../experience/room-transition-state-machine";
+import { RoomId } from "../experience/types";
+import {
+  ensureCameraCurtain,
+  type CameraCurtainComponentInstance,
+} from "../experience/components/camera-curtain";
+import {
+  PORTAL_ACTIVATED_EVENT,
+  type PortalActivatedEventDetail,
+} from "../experience/components/portal-waypoint";
+import { DEFAULT_ROOM_ID, ROOM_DEFINITIONS } from "../experience/constants";
+import { getSharedInspectionController } from "../experience/components/inspectable";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -27,18 +39,40 @@ interface AFrameSceneElement extends HTMLElement {
 export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
+  private roomBadgeEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
+  private portalHandler: ((evt: Event) => void) | null = null;
+  private readonly transitionStateMachine: RoomTransitionStateMachine;
 
-  constructor(dispatch: NavigationDispatcher, viewMode: string = "vr") {
+  constructor(
+    dispatch: NavigationDispatcher,
+    viewMode: string = "vr",
+    transitionStateMachine?: RoomTransitionStateMachine,
+  ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
+    this.transitionStateMachine =
+      transitionStateMachine ?? new RoomTransitionStateMachine();
+  }
+
+  public getTransitionStateMachine(): RoomTransitionStateMachine {
+    return this.transitionStateMachine;
   }
 
   public setViewMode(viewMode: string): void {
     this.viewMode = viewMode;
+  }
+
+  public updateRoomBadge(roomId: RoomId): void {
+    if (!this.roomBadgeEl) {
+      return;
+    }
+    const roomDef =
+      ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
+    this.roomBadgeEl.textContent = roomDef.title;
   }
 
   public mount(parent: HTMLElement): void {
@@ -55,7 +89,10 @@ export class ExperienceScreenView implements ScreenView {
 
     const badge = document.createElement("span");
     badge.className = "cv-badge";
-    badge.textContent = UI_TEXT.EXPERIENCE_SCENE_LABEL;
+    this.roomBadgeEl = badge;
+    this.updateRoomBadge(
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
+    );
 
     const exitButton = document.createElement("button");
     exitButton.type = "button";
@@ -81,6 +118,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.roomBadgeEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -93,6 +131,9 @@ export class ExperienceScreenView implements ScreenView {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
+    this.updateRoomBadge(
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
+    );
     this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
   }
@@ -135,6 +176,90 @@ export class ExperienceScreenView implements ScreenView {
     return this.container;
   }
 
+  public transitionToRoom(targetRoomId: RoomId): boolean {
+    if (typeof document === "undefined") {
+      return false;
+    }
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    if (!scene) {
+      return false;
+    }
+
+    const started = this.transitionStateMachine.triggerTransition(targetRoomId);
+    if (!started) {
+      return false;
+    }
+
+    // 1. Abort any active exhibit inspection
+    getSharedInspectionController().abortActiveInspection();
+
+    // 2. Lock cursor raycaster during transition to prevent interaction glitches
+    const cursor = scene.querySelector("a-cursor");
+    if (cursor) {
+      cursor.setAttribute("raycaster", "objects: none");
+    }
+
+    // 3. Ensure camera curtain exists on active camera
+    const cameraEl =
+      scene.querySelector("a-camera") || scene.querySelector("[camera]");
+    const curtainEl = cameraEl ? ensureCameraCurtain(cameraEl) : null;
+    const aframeCurtain = curtainEl as unknown as {
+      components?: Record<string, CameraCurtainComponentInstance>;
+    };
+    const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
+
+    if (curtain && typeof curtain.fadeOut === "function") {
+      const finishSwap = () => {
+        this.updateRoomBadge(targetRoomId);
+        this.transitionStateMachine.notifyRoomReady();
+
+        // 5. Fade curtain back in to reveal target room
+        curtain.fadeIn(() => {
+          this.transitionStateMachine.notifyFadeInComplete();
+          if (cursor) {
+            cursor.setAttribute("raycaster", "objects: .clickable");
+          }
+        });
+      };
+
+      curtain.fadeOut(() => {
+        this.transitionStateMachine.notifyFadeOutComplete();
+
+        // 4. Mount target room and update skybox
+        const roomGroup = ExhibitRoomBuilder.mountRoom(
+          scene,
+          targetRoomId,
+          this.viewMode,
+        );
+        const skyEl = scene.querySelector("a-sky");
+
+        const hasAFrame =
+          typeof globalThis !== "undefined" &&
+          Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+        if (hasAFrame) {
+          void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
+            finishSwap,
+          );
+        } else {
+          finishSwap();
+        }
+      });
+    } else {
+      // Direct synchronous execution fallback (headless or no animation support)
+      this.transitionStateMachine.notifyFadeOutComplete();
+      ExhibitRoomBuilder.mountRoom(scene, targetRoomId, this.viewMode);
+      this.updateRoomBadge(targetRoomId);
+      this.transitionStateMachine.notifyRoomReady();
+      this.transitionStateMachine.notifyFadeInComplete();
+      if (cursor) {
+        cursor.setAttribute("raycaster", "objects: .clickable");
+      }
+    }
+
+    return true;
+  }
+
   private toggleSceneLifecycle(active: boolean): void {
     if (typeof document === "undefined") {
       return;
@@ -149,7 +274,37 @@ export class ExperienceScreenView implements ScreenView {
       if (scene.classList && typeof scene.classList.add === "function") {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
-      ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      const roomGroup = ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+
+      // Attach curtain to camera on scene activation and fade in smoothly
+      const cameraEl =
+        scene.querySelector("a-camera") || scene.querySelector("[camera]");
+      if (cameraEl) {
+        const curtainEl = ensureCameraCurtain(cameraEl);
+        const aframeCurtain = curtainEl as unknown as {
+          components?: Record<string, CameraCurtainComponentInstance>;
+        };
+        const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
+        if (curtain && typeof curtain.fadeIn === "function") {
+          curtain.setOpacity(1);
+          curtainEl.setAttribute("visible", "true");
+          const skyEl = scene.querySelector("a-sky");
+          const hasAFrame =
+            typeof globalThis !== "undefined" &&
+            Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+          if (hasAFrame) {
+            void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
+              () => {
+                curtain.fadeIn();
+              },
+            );
+          } else {
+            curtain.fadeIn();
+          }
+        }
+      }
+
       if (typeof scene.play === "function") {
         scene.play();
       }
@@ -231,31 +386,54 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   private setupSceneListeners(): void {
-    if (typeof document === "undefined" || this.exitVRHandler) {
+    if (typeof document === "undefined") {
       return;
     }
     const scene = document.querySelector<AFrameSceneElement>("a-scene");
     if (!scene || typeof scene.addEventListener !== "function") {
       return;
     }
-    this.exitVRHandler = () => {
-      if (this.isProgrammaticExit) {
-        return;
-      }
-      if (this.viewMode === "vr") {
-        this.dispatch(NavigationAction.REQUEST_EXIT);
-      }
-    };
-    scene.addEventListener("exit-vr", this.exitVRHandler);
+
+    if (!this.exitVRHandler) {
+      this.exitVRHandler = () => {
+        if (this.isProgrammaticExit) {
+          return;
+        }
+        if (this.viewMode === "vr") {
+          this.dispatch(NavigationAction.REQUEST_EXIT);
+        }
+      };
+      scene.addEventListener("exit-vr", this.exitVRHandler);
+    }
+
+    if (!this.portalHandler) {
+      this.portalHandler = (evt: Event) => {
+        const detail = (evt as CustomEvent<PortalActivatedEventDetail>).detail;
+        if (detail?.targetRoomId) {
+          this.transitionToRoom(detail.targetRoomId);
+        }
+      };
+      scene.addEventListener(PORTAL_ACTIVATED_EVENT, this.portalHandler);
+    }
   }
 
   private teardownSceneListeners(): void {
-    if (this.exitVRHandler && typeof document !== "undefined") {
-      const scene = document.querySelector<AFrameSceneElement>("a-scene");
-      if (scene && typeof scene.removeEventListener === "function") {
-        scene.removeEventListener("exit-vr", this.exitVRHandler);
-      }
+    if (typeof document === "undefined") {
+      return;
+    }
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    if (!scene || typeof scene.removeEventListener !== "function") {
+      return;
+    }
+
+    if (this.exitVRHandler) {
+      scene.removeEventListener("exit-vr", this.exitVRHandler);
       this.exitVRHandler = null;
+    }
+
+    if (this.portalHandler) {
+      scene.removeEventListener(PORTAL_ACTIVATED_EVENT, this.portalHandler);
+      this.portalHandler = null;
     }
   }
 

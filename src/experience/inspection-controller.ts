@@ -118,6 +118,25 @@ export class ExhibitInspectionController {
     return true;
   }
 
+  public abortActiveInspection(): boolean {
+    if (this.state === InspectionState.IDLE) {
+      return false;
+    }
+    this.previousExhibitId = this.activeExhibitId;
+    this.activeExhibitId = null;
+    this.state = InspectionState.IDLE;
+    this.notifyListeners();
+    return true;
+  }
+
+  public setExhibits(exhibits: readonly ExhibitItemConfig[]): void {
+    this.abortActiveInspection();
+    this.exhibits.clear();
+    for (const e of exhibits) {
+      this.exhibits.set(e.id, e);
+    }
+  }
+
   public isAutoRotateActive(): boolean {
     if (this.state !== InspectionState.INSPECTING) {
       return false;

@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assert } from "../helpers/assert";
-import { MockElement, setupMockDocument } from "../helpers/mock_dom";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { NavigationAction, ScreenId } from "../../src/navigation/index";
 import type { DispatchPayload } from "../../src/navigation/index";
 import {
@@ -14,277 +13,199 @@ import {
   UI_CLASSES,
 } from "../../src/screens/index";
 
-function runScreensUnitTests(): void {
-  console.log("--- [UNIT TEST] Screen Views & Interactions ---");
-
-  setupMockDocument();
-  const root = new MockElement("div") as unknown as HTMLElement;
-  const dispatched: Array<{
+describe("Screen Views & Interactions", () => {
+  let root: HTMLElement;
+  let dispatched: Array<{
     action: NavigationAction;
     payload?: DispatchPayload;
-  }> = [];
+  }>;
   const dispatch = (action: NavigationAction, payload?: DispatchPayload) => {
     dispatched.push({ action, payload });
   };
 
-  // Screen 1: Splash
-  {
+  beforeEach(() => {
+    dispatched = [];
+    root = document.createElement("div");
+    root.id = "app";
+    document.body.innerHTML = "";
+    document.body.appendChild(root);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("mounts Splash screen, updates readiness and dispatches FINISH_LOADING on enter", () => {
     const splash = new SplashScreenView(dispatch);
-    assert.equal(splash.id, ScreenId.SPLASH);
+    expect(splash.id).toBe(ScreenId.SPLASH);
     splash.mount(root);
-    assert.ok(splash.getElement());
+    expect(splash.getElement()).toBeTruthy();
     splash.show();
 
-    const splashEl = splash.getElement() as unknown as MockElement;
+    const splashEl = splash.getElement()!;
     const enterBtn = splashEl.querySelector(
       '[data-action="enter"]',
-    ) as MockElement;
-    assert.ok(enterBtn, "Enter button must be rendered in DOM");
-    assert.equal(enterBtn.style.display, "none");
+    ) as HTMLElement;
+    expect(enterBtn).toBeTruthy();
+    expect(enterBtn.style.display).toBe("none");
 
     splash.setReady();
-    assert.equal(enterBtn.style.display, "inline-block");
+    expect(enterBtn.style.display).toBe("inline-block");
 
-    enterBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    enterBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.FINISH_LOADING,
     );
-    console.log(
-      "✓ Screen 1 (Splash) mounted, set ready, and dispatched FINISH_LOADING via enter button",
-    );
-  }
+  });
 
-  // Screen 2: Welcome
-  {
+  it("mounts Welcome screen and dispatches SELECT_VR & SELECT_2D", () => {
     const welcome = new WelcomeScreenView(dispatch);
-    assert.equal(welcome.id, ScreenId.WELCOME);
+    expect(welcome.id).toBe(ScreenId.WELCOME);
     welcome.mount(root);
-    const el = welcome.getElement() as unknown as MockElement;
+    const el = welcome.getElement()!;
 
-    const vrBtn = el.querySelector('[data-action="vr"]') as MockElement;
-    assert.ok(vrBtn);
-    vrBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    const vrBtn = el.querySelector('[data-action="vr"]') as HTMLElement;
+    expect(vrBtn).toBeTruthy();
+    vrBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SELECT_VR,
     );
 
-    const touchBtn = el.querySelector('[data-action="2d"]') as MockElement;
-    assert.ok(touchBtn);
-    touchBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    const touchBtn = el.querySelector('[data-action="2d"]') as HTMLElement;
+    expect(touchBtn).toBeTruthy();
+    touchBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SELECT_2D,
     );
-    console.log(
-      "✓ Screen 2 (Welcome) mounted and dispatched SELECT_VR & SELECT_2D",
-    );
-  }
+  });
 
-  // Screen 3: Tutorial
-  {
+  it("mounts Tutorial screen and dispatches CONFIRM_INSERTION", () => {
     const tutorial = new TutorialScreenView(dispatch);
-    assert.equal(tutorial.id, ScreenId.TUTORIAL);
+    expect(tutorial.id).toBe(ScreenId.TUTORIAL);
     tutorial.mount(root);
-    const el = tutorial.getElement() as unknown as MockElement;
+    const el = tutorial.getElement()!;
 
     const startBtn = el.querySelector(
       '[data-action="confirm-insertion"]',
-    ) as MockElement;
-    assert.ok(startBtn);
-    startBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(startBtn).toBeTruthy();
+    startBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.CONFIRM_INSERTION,
     );
-    console.log(
-      "✓ Screen 3 (Tutorial) mounted and dispatched CONFIRM_INSERTION",
-    );
-  }
+  });
 
-  // Screen 4: Experience HUD & Viewport Synchronization
-  {
-    const mockScene = new MockElement("a-scene");
+  it("manages Experience HUD, viewport synchronization, enterVR/exitVR, and 2D touch unlock", async () => {
+    const mockScene = document.createElement("a-scene") as HTMLElement & {
+      resize?: () => void;
+      enterVR?: () => Promise<void>;
+      exitVR?: () => Promise<void>;
+      is?: (state: string) => boolean;
+      removeState?: (state: string) => void;
+      renderer?: { xr: { enabled: boolean } };
+    };
+
     let resizeInvoked = false;
     let enterVRCount = 0;
     let exitVRCount = 0;
-    (
-      mockScene as unknown as {
-        resize: () => void;
-        enterVR: () => Promise<void>;
-        exitVR: () => Promise<void>;
-        is: (state: string) => boolean;
-      }
-    ).resize = () => {
+
+    mockScene.resize = () => {
       resizeInvoked = true;
     };
-    (
-      mockScene as unknown as {
-        resize: () => void;
-        enterVR: () => Promise<void>;
-        exitVR: () => Promise<void>;
-        is: (state: string) => boolean;
-      }
-    ).enterVR = async () => {
+    mockScene.enterVR = async () => {
       enterVRCount++;
     };
-    (
-      mockScene as unknown as {
-        resize: () => void;
-        enterVR: () => Promise<void>;
-        exitVR: () => Promise<void>;
-        is: (state: string) => boolean;
-      }
-    ).exitVR = async () => {
+    mockScene.exitVR = async () => {
       exitVRCount++;
     };
-    (
-      mockScene as unknown as {
-        resize: () => void;
-        enterVR: () => Promise<void>;
-        exitVR: () => Promise<void>;
-        is: (state: string) => boolean;
-      }
-    ).is = (state: string) => state === "vr-mode";
+    mockScene.is = (state: string) => state === "vr-mode";
 
-    setupMockDocument(root as unknown as MockElement, mockScene);
+    document.body.appendChild(mockScene);
 
     const experience = new ExperienceScreenView(dispatch, "vr");
-    assert.equal(experience.id, ScreenId.EXPERIENCE_3D);
+    expect(experience.id).toBe(ScreenId.EXPERIENCE_3D);
     experience.mount(root);
     experience.show();
 
-    assert.equal(
-      resizeInvoked,
-      false,
-      "Scene resize must NOT be invoked in VR mode to prevent WebGL framebuffer mismatch",
+    expect(root.querySelector(".cv-badge")?.textContent).toBe(
+      "Sala de Arqueologia",
     );
-    assert.equal(
-      enterVRCount,
-      1,
-      "enterVR must be called when viewMode is vr on show",
-    );
-    assert.equal(
-      mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
-      true,
-      "Scene must contain active class on show",
-    );
+    expect(resizeInvoked).toBe(false);
+    expect(enterVRCount).toBe(1);
+    expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(true);
 
     experience.hide();
-    assert.equal(exitVRCount, 1, "exitVR must be called on hide");
-    assert.equal(
-      mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE),
-      false,
-      "Scene must not contain active class on hide",
-    );
+    expect(exitVRCount).toBe(1);
+    expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(false);
 
     // Test 2D mode
     experience.setViewMode("2d");
     experience.show();
-    assert.equal(
-      resizeInvoked,
-      true,
-      "Scene resize must be invoked when entering in 2d mode",
-    );
-    assert.equal(
-      exitVRCount,
-      2,
-      "exitVR must be called when entering in 2d mode",
-    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(resizeInvoked).toBe(true);
+    expect(exitVRCount).toBe(2);
 
     experience.hide();
-    assert.equal(
-      exitVRCount,
-      3,
-      "exitVR must be called when hiding in 2d mode",
-    );
+    expect(exitVRCount).toBe(3);
 
     experience.show();
-    const el = experience.getElement() as unknown as MockElement;
+    const el = experience.getElement()!;
     const exitHudBtn = el.querySelector(
       '[data-action="request-exit"]',
-    ) as MockElement;
-    assert.ok(exitHudBtn);
-    exitHudBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(exitHudBtn).toBeTruthy();
+    exitHudBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.REQUEST_EXIT,
     );
+
     // Test native exit-vr event in VR mode
     experience.setViewMode("vr");
     experience.show();
     const initialDispatchedCount = dispatched.length;
-    mockScene.dispatchEvent("exit-vr");
-    assert.equal(
-      dispatched.length,
-      initialDispatchedCount + 1,
-      "exit-vr event must dispatch REQUEST_EXIT",
-    );
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    mockScene.dispatchEvent(new CustomEvent("exit-vr"));
+    expect(dispatched.length).toBe(initialDispatchedCount + 1);
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.REQUEST_EXIT,
     );
 
     // Test retainBackground() decoupling
     const enterVRCountBeforeRetain = enterVRCount;
     experience.retainBackground();
-    assert.equal(
-      enterVRCount,
-      enterVRCountBeforeRetain,
-      "retainBackground must NEVER invoke enterVR",
-    );
-    assert.equal(
-      mockScene.style.display,
-      "block",
-      "Scene canvas must remain display block during retainBackground",
-    );
-    const hudContainer = experience.getElement() as unknown as MockElement;
-    assert.equal(
-      hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN),
+    expect(enterVRCount).toBe(enterVRCountBeforeRetain);
+    expect(mockScene.style.display).toBe("block");
+    const hudContainer = experience.getElement()!;
+    expect(hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN)).toBe(
       true,
-      "HUD must be hidden during retainBackground",
     );
 
     // Test 2D Touch Mode Camera Unlock & Viewport Sanitization after exiting VR
-    const mockCamera = new MockElement("a-camera");
+    const mockCamera = document.createElement("a-camera") as HTMLElement & {
+      object3D?: {
+        matrixAutoUpdate: boolean;
+        updateMatrix: () => void;
+      };
+      components?: Record<
+        string,
+        {
+          touchStarted: boolean;
+          mouseDown: boolean;
+          data: { touchEnabled: boolean; enabled: boolean };
+          addEventListeners: () => void;
+        }
+      >;
+    };
+
     let cameraMatrixUpdated = false;
     let lookControlsAddListenersCalled = false;
-    (
-      mockCamera as unknown as {
-        object3D: {
-          matrixAutoUpdate: boolean;
-          updateMatrix: () => void;
-        };
-        components: Record<
-          string,
-          {
-            touchStarted: boolean;
-            mouseDown: boolean;
-            data: { touchEnabled: boolean; enabled: boolean };
-            addEventListeners: () => void;
-          }
-        >;
-      }
-    ).object3D = {
+
+    mockCamera.object3D = {
       matrixAutoUpdate: false,
       updateMatrix: () => {
         cameraMatrixUpdated = true;
       },
     };
-    (
-      mockCamera as unknown as {
-        components: Record<
-          string,
-          {
-            touchStarted: boolean;
-            mouseDown: boolean;
-            data: { touchEnabled: boolean; enabled: boolean };
-            addEventListeners: () => void;
-          }
-        >;
-      }
-    ).components = {
+    mockCamera.components = {
       "look-controls": {
         touchStarted: true,
         mouseDown: true,
@@ -297,19 +218,10 @@ function runScreensUnitTests(): void {
     mockScene.appendChild(mockCamera);
 
     const removedStates: string[] = [];
-    (
-      mockScene as unknown as {
-        removeState: (s: string) => void;
-        renderer: { xr: { enabled: boolean } };
-      }
-    ).removeState = (s: string) => {
+    mockScene.removeState = (s: string) => {
       removedStates.push(s);
     };
-    (
-      mockScene as unknown as {
-        renderer: { xr: { enabled: boolean } };
-      }
-    ).renderer = {
+    mockScene.renderer = {
       xr: { enabled: true },
     };
 
@@ -317,170 +229,86 @@ function runScreensUnitTests(): void {
     experience.setViewMode("2d");
     experience.show();
 
-    const cameraObj3D = (
-      mockCamera as unknown as {
-        object3D: { matrixAutoUpdate: boolean };
-      }
-    ).object3D;
-    assert.equal(
-      cameraObj3D.matrixAutoUpdate,
-      true,
-      "Camera matrixAutoUpdate must be restored to true in 2D touch mode",
-    );
-    assert.equal(
-      cameraMatrixUpdated,
-      true,
-      "Camera updateMatrix must be invoked during 2D viewport sanitization",
-    );
-    assert.equal(
-      (
-        mockScene as unknown as {
-          renderer: { xr: { enabled: boolean } };
-        }
-      ).renderer.xr.enabled,
-      false,
-      "renderer.xr.enabled must be set to false in 2D touch mode",
-    );
-    const cameraControls = (
-      mockCamera as unknown as {
-        components: {
-          "look-controls": {
-            touchStarted: boolean;
-            mouseDown: boolean;
-            data: { touchEnabled: boolean; enabled: boolean };
-          };
-        };
-      }
-    ).components["look-controls"];
-    assert.equal(
-      cameraControls.touchStarted,
-      false,
-      "look-controls touchStarted must be reset to false in 2D mode",
-    );
-    assert.equal(
-      cameraControls.mouseDown,
-      false,
-      "look-controls mouseDown must be reset to false in 2D mode",
-    );
-    assert.equal(
-      cameraControls.data.touchEnabled,
-      true,
-      "look-controls touchEnabled must be true in 2D mode",
-    );
-    assert.equal(
-      lookControlsAddListenersCalled,
-      true,
-      "look-controls addEventListeners must be called on 2D mode entry",
-    );
-    assert.ok(
-      removedStates.includes("vr-mode"),
-      "Scene vr-mode state must be stripped when sanitizing 2D viewport",
-    );
+    const cameraObj3D = mockCamera.object3D!;
+    expect(cameraObj3D.matrixAutoUpdate).toBe(true);
+    expect(cameraMatrixUpdated).toBe(true);
+    expect(mockScene.renderer.xr.enabled).toBe(false);
 
-    console.log(
-      "✓ Screen 4 (Experience HUD) mounted, synchronized viewport, managed enterVR/exitVR, handled exit-vr event, retained background, unlocked touch camera, and dispatched REQUEST_EXIT",
-    );
-  }
+    const cameraControls = mockCamera.components!["look-controls"];
+    expect(cameraControls.touchStarted).toBe(false);
+    expect(cameraControls.mouseDown).toBe(false);
+    expect(cameraControls.data.touchEnabled).toBe(true);
+    expect(lookControlsAddListenersCalled).toBe(true);
+    expect(removedStates).toContain("vr-mode");
+  });
 
-  // Screen 5: Exit Modal
-  {
+  it("mounts Exit Modal and dispatches RESUME_TOUR, SWITCH_TO_TOUCH, and CONFIRM_EXIT", () => {
     const modal = new ExitModalScreenView(dispatch);
-    assert.equal(modal.id, ScreenId.EXIT_MODAL);
+    expect(modal.id).toBe(ScreenId.EXIT_MODAL);
     modal.mount(root);
-    const el = modal.getElement() as unknown as MockElement;
+    const el = modal.getElement()!;
 
     const resumeBtn = el.querySelector(
       '[data-action="resume-tour"]',
-    ) as MockElement;
-    assert.ok(resumeBtn);
-    resumeBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(resumeBtn).toBeTruthy();
+    resumeBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.RESUME_TOUR,
     );
 
     const switchTouchBtn = el.querySelector(
       '[data-action="switch-to-touch"]',
-    ) as MockElement;
-    assert.ok(switchTouchBtn);
-    switchTouchBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(switchTouchBtn).toBeTruthy();
+    switchTouchBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SWITCH_TO_TOUCH,
     );
 
     const exitBtn = el.querySelector(
       '[data-action="confirm-exit"]',
-    ) as MockElement;
-    assert.ok(exitBtn);
-    exitBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(exitBtn).toBeTruthy();
+    exitBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.CONFIRM_EXIT,
     );
-    console.log(
-      "✓ Screen 5 (Exit Modal) mounted and dispatched RESUME_TOUR, SWITCH_TO_TOUCH & CONFIRM_EXIT",
-    );
-  }
+  });
 
-  // Screen 6: Survey
-  {
+  it("mounts Survey screen and dispatches COMPLETE_SURVEY and SKIP_SURVEY", () => {
     const survey = new SurveyScreenView(dispatch);
-    assert.equal(survey.id, ScreenId.SURVEY);
+    expect(survey.id).toBe(ScreenId.SURVEY);
     survey.mount(root);
-    const el = survey.getElement() as unknown as MockElement;
+    const el = survey.getElement()!;
 
     const submitBtn = el.querySelector(
       '[data-action="submit-survey"]',
-    ) as MockElement;
-    assert.ok(submitBtn);
-    submitBtn.dispatchEvent("click");
+    ) as HTMLElement;
+    expect(submitBtn).toBeTruthy();
+    submitBtn.click();
     const lastDispatch = dispatched[dispatched.length - 1];
-    assert.equal(lastDispatch.action, NavigationAction.COMPLETE_SURVEY);
-    assert.equal(lastDispatch.payload?.surveyAnswers?.rating, 5);
+    expect(lastDispatch.action).toBe(NavigationAction.COMPLETE_SURVEY);
+    expect(lastDispatch.payload?.surveyAnswers?.rating).toBe(5);
 
     const skipBtn = el.querySelector(
       '[data-action="skip-survey"]',
-    ) as MockElement;
-    assert.ok(skipBtn);
-    skipBtn.dispatchEvent("click");
-    assert.equal(
-      dispatched[dispatched.length - 1].action,
+    ) as HTMLElement;
+    expect(skipBtn).toBeTruthy();
+    skipBtn.click();
+    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SKIP_SURVEY,
     );
-    console.log(
-      "✓ Screen 6 (Survey) mounted and dispatched COMPLETE_SURVEY & SKIP_SURVEY",
-    );
-  }
+  });
 
-  // FOUC Prevention & Initial Scene Concealment Markup
-  {
+  it("verifies index.html markup for stylesheet and FOUC prevention", () => {
     const htmlPath = path.resolve(process.cwd(), "index.html");
     const indexHtml = fs.readFileSync(htmlPath, "utf8");
 
-    assert.ok(
-      indexHtml.includes('<link rel="stylesheet" href="/src/style.css"'),
-      "index.html must include a render-blocking link to /src/style.css in <head>",
-    );
-    assert.ok(
-      indexHtml.includes("background-color: #111318"),
-      "index.html must declare critical initial dark background style",
-    );
-    assert.ok(
-      indexHtml.includes("a-scene:not(.cv-scene--active)"),
-      "index.html must conceal a-scene before cv-scene--active is added",
-    );
-    assert.ok(
-      indexHtml.includes("opacity: 0 !important") &&
-        indexHtml.includes("visibility: hidden !important"),
-      "index.html must force opacity 0 and visibility hidden for inactive scene",
-    );
-    console.log(
-      "✓ index.html document head verified for render-blocking stylesheet and FOUC suppression",
-    );
-  }
-
-  console.log("All screen view tests passed.\n");
-}
-
-runScreensUnitTests();
+    expect(indexHtml).toContain('<link rel="stylesheet" href="/src/style.css"');
+    expect(indexHtml).toContain("background-color: #111318");
+    expect(indexHtml).toContain("a-scene:not(.cv-scene--active)");
+    expect(indexHtml).toContain("opacity: 0 !important");
+    expect(indexHtml).toContain("visibility: hidden !important");
+  });
+});

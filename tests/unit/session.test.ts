@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import { describe, it, expect } from "vitest";
 import {
   VisitorSessionManager,
   SessionStorageAdapter,
@@ -46,33 +46,26 @@ class MockFetcher implements SessionNetworkFetcher {
   }
 }
 
-async function runSessionTests(): Promise<void> {
-  console.log("--- [UNIT TEST] VisitorSessionManager Vertical Slice ---");
-
-  // Test 1: Generate new session via endpoint and store it
-  {
+describe("VisitorSessionManager", () => {
+  it("generates new session via endpoint and persists in storage", async () => {
     const storage = new MockStorage();
     const fetcher = new MockFetcher();
     const manager = new VisitorSessionManager(storage, fetcher, 100);
 
     const sessionId = await manager.start();
-    assert.equal(sessionId, fetcher.startResponseId, "Session ID should match server response");
-    assert.equal(
-      storage.getItem(SESSION_CONSTANTS.STORAGE_KEY),
+    expect(sessionId).toBe(fetcher.startResponseId);
+    expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(
       fetcher.startResponseId,
-      "Session ID should be persisted in storage"
     );
-    assert.equal(fetcher.postCalls.length, 1, "Should have called start endpoint exactly once");
-    assert.equal(fetcher.postCalls[0].url, SESSION_CONSTANTS.ENDPOINTS.START);
-    assert.equal(manager.isTracking(), true, "Heartbeat timer should be active");
+    expect(fetcher.postCalls.length).toBe(1);
+    expect(fetcher.postCalls[0].url).toBe(SESSION_CONSTANTS.ENDPOINTS.START);
+    expect(manager.isTracking()).toBe(true);
 
     manager.stop();
-    assert.equal(manager.isTracking(), false, "Heartbeat timer should be inactive after stop()");
-    console.log("✓ Test 1 Passed: Initial session acquisition and storage persistence");
-  }
+    expect(manager.isTracking()).toBe(false);
+  });
 
-  // Test 2: Reuse existing valid session ID from storage without calling start
-  {
+  it("reuses existing valid session ID from storage without calling start", async () => {
     const storage = new MockStorage();
     const existingId = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, existingId);
@@ -81,40 +74,28 @@ async function runSessionTests(): Promise<void> {
     const manager = new VisitorSessionManager(storage, fetcher, 100);
 
     const sessionId = await manager.start();
-    assert.equal(sessionId, existingId, "Should reuse existing session ID");
-    assert.equal(fetcher.postCalls.length, 0, "Must not call start endpoint when ID already in storage");
-    assert.equal(manager.isTracking(), true, "Heartbeat timer should be active");
+    expect(sessionId).toBe(existingId);
+    expect(fetcher.postCalls.length).toBe(0);
+    expect(manager.isTracking()).toBe(true);
 
     manager.stop();
-    console.log("✓ Test 2 Passed: Existing session reuse without network overhead");
-  }
+  });
 
-  // Test 3: Fallback UUID v4 generation when network endpoint fails
-  {
+  it("falls back to UUID v4 generation when network endpoint fails", async () => {
     const storage = new MockStorage();
     const fetcher = new MockFetcher();
     fetcher.shouldFailStart = true;
     const manager = new VisitorSessionManager(storage, fetcher, 100);
 
     const sessionId = await manager.start();
-    assert.ok(sessionId, "Fallback session ID must be generated");
-    assert.match(
-      sessionId,
-      SESSION_CONSTANTS.REGEX.UUID_V4,
-      "Fallback session ID must conform to UUID v4 pattern"
-    );
-    assert.equal(
-      storage.getItem(SESSION_CONSTANTS.STORAGE_KEY),
-      sessionId,
-      "Fallback session ID must be persisted in storage"
-    );
+    expect(sessionId).toBeTruthy();
+    expect(sessionId).toMatch(SESSION_CONSTANTS.REGEX.UUID_V4);
+    expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(sessionId);
 
     manager.stop();
-    console.log("✓ Test 3 Passed: Offline and network failure fallback to valid UUID v4");
-  }
+  });
 
-  // Test 4: Heartbeat ping transmission and payload structure
-  {
+  it("dispatches heartbeat ping with correct payload structure", async () => {
     const storage = new MockStorage();
     const fetcher = new MockFetcher();
     const manager = new VisitorSessionManager(storage, fetcher, 100);
@@ -122,18 +103,16 @@ async function runSessionTests(): Promise<void> {
     await manager.start();
     const pingOk = await manager.sendPing();
 
-    assert.equal(pingOk, true, "Ping should return success");
-    assert.equal(fetcher.postCalls.length, 2, "Expected 1 start and 1 manual ping");
+    expect(pingOk).toBe(true);
+    expect(fetcher.postCalls.length).toBe(2);
     const pingCall = fetcher.postCalls[1];
-    assert.equal(pingCall.url, SESSION_CONSTANTS.ENDPOINTS.PING);
-    assert.deepEqual(pingCall.body, { sessionId: fetcher.startResponseId });
+    expect(pingCall.url).toBe(SESSION_CONSTANTS.ENDPOINTS.PING);
+    expect(pingCall.body).toEqual({ sessionId: fetcher.startResponseId });
 
     manager.stop();
-    console.log("✓ Test 4 Passed: Heartbeat ping payload structure and dispatch");
-  }
+  });
 
-  // Test 5: Error resilience on failed ping
-  {
+  it("handles ping error without uncaught exceptions", async () => {
     const storage = new MockStorage();
     const fetcher = new MockFetcher();
     fetcher.shouldFailPing = true;
@@ -141,31 +120,28 @@ async function runSessionTests(): Promise<void> {
 
     await manager.start();
     const pingOk = await manager.sendPing();
-    assert.equal(pingOk, false, "Ping should return false when endpoint fails, without throwing");
+    expect(pingOk).toBe(false);
 
     manager.stop();
-    console.log("✓ Test 5 Passed: Ping failure resilience without uncaught exceptions");
-  }
+  });
 
-  // Test 6: UUID v4 validation regex correctness
-  {
-    assert.ok(
-      SESSION_CONSTANTS.REGEX.UUID_V4.test("123e4567-e89b-42d3-a456-426614174000"),
-      "Valid UUID v4 must pass"
+  it("validates UUID v4 regex pattern correctly", () => {
+    expect(
+      SESSION_CONSTANTS.REGEX.UUID_V4.test(
+        "123e4567-e89b-42d3-a456-426614174000",
+      ),
+    ).toBe(true);
+    expect(
+      SESSION_CONSTANTS.REGEX.UUID_V4.test(
+        "123e4567-e89b-12d3-a456-426614174000",
+      ),
+    ).toBe(false);
+    expect(SESSION_CONSTANTS.REGEX.UUID_V4.test("invalid-uuid-string")).toBe(
+      false,
     );
-    assert.ok(
-      !SESSION_CONSTANTS.REGEX.UUID_V4.test("123e4567-e89b-12d3-a456-426614174000"),
-      "UUID v1 must fail"
-    );
-    assert.ok(
-      !SESSION_CONSTANTS.REGEX.UUID_V4.test("invalid-uuid-string"),
-      "Malformed string must fail"
-    );
-    console.log("✓ Test 6 Passed: Strict UUID v4 regex pattern validation");
-  }
+  });
 
-  // Test 7: API ping handler method and input validation
-  {
+  it("validates serverless ping endpoint request method and payload", async () => {
     const pingHandler = (await import("../../api/session/ping")).default;
 
     let statusCode = 0;
@@ -181,27 +157,24 @@ async function runSessionTests(): Promise<void> {
       },
     };
 
-    // Test rejection of non-POST
+    // Rejection of non-POST
     await pingHandler({ method: "GET" }, mockRes);
-    assert.equal(statusCode, 405, "Non-POST request should return 405");
+    expect(statusCode).toBe(405);
 
-    // Test rejection of missing sessionId
+    // Rejection of missing sessionId
     await pingHandler({ method: "POST", body: {} }, mockRes);
-    assert.equal(statusCode, 400, "Missing sessionId should return 400");
+    expect(statusCode).toBe(400);
 
-    // Test rejection of non-UUID v4
-    await pingHandler({ method: "POST", body: { sessionId: "invalid-uuid" } }, mockRes);
-    assert.equal(statusCode, 400, "Malformed sessionId should return 400");
-    assert.ok(
-      (jsonBody as { error: string }).error.includes("Must be UUID v4"),
-      "Error message should indicate UUID v4 requirement"
+    // Rejection of non-UUID v4
+    await pingHandler(
+      { method: "POST", body: { sessionId: "invalid-uuid" } },
+      mockRes,
     );
+    expect(statusCode).toBe(400);
+    expect((jsonBody as { error: string }).error).toContain("Must be UUID v4");
+  }, 10000);
 
-    console.log("✓ Test 7 Passed: Serverless ping endpoint request and UUID validation");
-  }
-
-  // Test 8: API start handler method rejection
-  {
+  it("validates serverless start endpoint method rejection", async () => {
     const startHandler = (await import("../../api/session/start")).default;
 
     let statusCode = 0;
@@ -215,14 +188,6 @@ async function runSessionTests(): Promise<void> {
     };
 
     await startHandler({ method: "PUT" }, mockRes);
-    assert.equal(statusCode, 405, "Non-POST request to start should return 405");
-    console.log("✓ Test 8 Passed: Serverless start endpoint method validation");
-  }
-
-  console.log("All VisitorSessionManager tests passed successfully.");
-}
-
-runSessionTests().catch((err) => {
-  console.error("Test execution failed:", err);
-  process.exit(1);
+    expect(statusCode).toBe(405);
+  });
 });
