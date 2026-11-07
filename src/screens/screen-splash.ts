@@ -3,7 +3,6 @@ import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import {
   ScenePreloadManager,
-  PRELOAD_CONSTANTS,
   getCriticalRoomAssets,
 } from "../experience/preload-manager";
 

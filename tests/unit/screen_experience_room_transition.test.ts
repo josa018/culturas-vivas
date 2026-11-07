@@ -38,6 +38,9 @@ describe("ScreenExperience Room Transition", () => {
     screen.show();
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      "Sala de Arqueologia",
+    );
 
     // Focus an exhibit
     const inspectionController = getSharedInspectionController();
@@ -65,6 +68,9 @@ describe("ScreenExperience Room Transition", () => {
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.TEXTILES);
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.TEXTILES);
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      "Sala de Textiles",
+    );
     expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
 
     // Return to Archaeology
@@ -81,6 +87,9 @@ describe("ScreenExperience Room Transition", () => {
     scene.dispatchEvent(returnEvent);
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      "Sala de Arqueologia",
+    );
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
 
     screen.unmount();

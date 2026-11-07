@@ -12,6 +12,7 @@ import {
   PORTAL_ACTIVATED_EVENT,
   type PortalActivatedEventDetail,
 } from "../experience/components/portal-waypoint";
+import { DEFAULT_ROOM_ID, ROOM_DEFINITIONS } from "../experience/constants";
 import { getSharedInspectionController } from "../experience/components/inspectable";
 
 interface AFrameSceneElement extends HTMLElement {
@@ -38,6 +39,7 @@ interface AFrameSceneElement extends HTMLElement {
 export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
+  private roomBadgeEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
   private isProgrammaticExit: boolean = false;
@@ -64,6 +66,15 @@ export class ExperienceScreenView implements ScreenView {
     this.viewMode = viewMode;
   }
 
+  public updateRoomBadge(roomId: RoomId): void {
+    if (!this.roomBadgeEl) {
+      return;
+    }
+    const roomDef =
+      ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
+    this.roomBadgeEl.textContent = roomDef.title;
+  }
+
   public mount(parent: HTMLElement): void {
     if (this.container) {
       return;
@@ -78,7 +89,10 @@ export class ExperienceScreenView implements ScreenView {
 
     const badge = document.createElement("span");
     badge.className = "cv-badge";
-    badge.textContent = UI_TEXT.EXPERIENCE_SCENE_LABEL;
+    this.roomBadgeEl = badge;
+    this.updateRoomBadge(
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
+    );
 
     const exitButton = document.createElement("button");
     exitButton.type = "button";
@@ -104,6 +118,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.roomBadgeEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -116,6 +131,9 @@ export class ExperienceScreenView implements ScreenView {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
+    this.updateRoomBadge(
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
+    );
     this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
   }
@@ -190,19 +208,20 @@ export class ExperienceScreenView implements ScreenView {
     };
     const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
 
-    const finishSwap = () => {
-      this.transitionStateMachine.notifyRoomReady();
-
-      // 5. Fade curtain back in to reveal target room
-      curtain.fadeIn(() => {
-        this.transitionStateMachine.notifyFadeInComplete();
-        if (cursor) {
-          cursor.setAttribute("raycaster", "objects: .clickable");
-        }
-      });
-    };
-
     if (curtain && typeof curtain.fadeOut === "function") {
+      const finishSwap = () => {
+        this.updateRoomBadge(targetRoomId);
+        this.transitionStateMachine.notifyRoomReady();
+
+        // 5. Fade curtain back in to reveal target room
+        curtain.fadeIn(() => {
+          this.transitionStateMachine.notifyFadeInComplete();
+          if (cursor) {
+            cursor.setAttribute("raycaster", "objects: .clickable");
+          }
+        });
+      };
+
       curtain.fadeOut(() => {
         this.transitionStateMachine.notifyFadeOutComplete();
 
@@ -230,6 +249,7 @@ export class ExperienceScreenView implements ScreenView {
       // Direct synchronous execution fallback (headless or no animation support)
       this.transitionStateMachine.notifyFadeOutComplete();
       ExhibitRoomBuilder.mountRoom(scene, targetRoomId, this.viewMode);
+      this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
       if (cursor) {
@@ -388,9 +408,7 @@ export class ExperienceScreenView implements ScreenView {
 
     if (!this.portalHandler) {
       this.portalHandler = (evt: Event) => {
-        const detail = (
-          evt as CustomEvent<PortalActivatedEventDetail>
-        ).detail;
+        const detail = (evt as CustomEvent<PortalActivatedEventDetail>).detail;
         if (detail?.targetRoomId) {
           this.transitionToRoom(detail.targetRoomId);
         }

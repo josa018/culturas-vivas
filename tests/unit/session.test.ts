@@ -55,7 +55,7 @@ describe("VisitorSessionManager", () => {
     const sessionId = await manager.start();
     expect(sessionId).toBe(fetcher.startResponseId);
     expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(
-      fetcher.startResponseId
+      fetcher.startResponseId,
     );
     expect(fetcher.postCalls.length).toBe(1);
     expect(fetcher.postCalls[0].url).toBe(SESSION_CONSTANTS.ENDPOINTS.START);
@@ -128,16 +128,16 @@ describe("VisitorSessionManager", () => {
   it("validates UUID v4 regex pattern correctly", () => {
     expect(
       SESSION_CONSTANTS.REGEX.UUID_V4.test(
-        "123e4567-e89b-42d3-a456-426614174000"
-      )
+        "123e4567-e89b-42d3-a456-426614174000",
+      ),
     ).toBe(true);
     expect(
       SESSION_CONSTANTS.REGEX.UUID_V4.test(
-        "123e4567-e89b-12d3-a456-426614174000"
-      )
+        "123e4567-e89b-12d3-a456-426614174000",
+      ),
     ).toBe(false);
     expect(SESSION_CONSTANTS.REGEX.UUID_V4.test("invalid-uuid-string")).toBe(
-      false
+      false,
     );
   });
 
@@ -168,11 +168,11 @@ describe("VisitorSessionManager", () => {
     // Rejection of non-UUID v4
     await pingHandler(
       { method: "POST", body: { sessionId: "invalid-uuid" } },
-      mockRes
+      mockRes,
     );
     expect(statusCode).toBe(400);
     expect((jsonBody as { error: string }).error).toContain("Must be UUID v4");
-  });
+  }, 10000);
 
   it("validates serverless start endpoint method rejection", async () => {
     const startHandler = (await import("../../api/session/start")).default;

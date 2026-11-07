@@ -44,7 +44,7 @@ describe("Screen Views & Interactions", () => {
 
     const splashEl = splash.getElement()!;
     const enterBtn = splashEl.querySelector(
-      '[data-action="enter"]'
+      '[data-action="enter"]',
     ) as HTMLElement;
     expect(enterBtn).toBeTruthy();
     expect(enterBtn.style.display).toBe("none");
@@ -54,7 +54,7 @@ describe("Screen Views & Interactions", () => {
 
     enterBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.FINISH_LOADING
+      NavigationAction.FINISH_LOADING,
     );
   });
 
@@ -68,14 +68,14 @@ describe("Screen Views & Interactions", () => {
     expect(vrBtn).toBeTruthy();
     vrBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SELECT_VR
+      NavigationAction.SELECT_VR,
     );
 
     const touchBtn = el.querySelector('[data-action="2d"]') as HTMLElement;
     expect(touchBtn).toBeTruthy();
     touchBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SELECT_2D
+      NavigationAction.SELECT_2D,
     );
   });
 
@@ -86,12 +86,12 @@ describe("Screen Views & Interactions", () => {
     const el = tutorial.getElement()!;
 
     const startBtn = el.querySelector(
-      '[data-action="confirm-insertion"]'
+      '[data-action="confirm-insertion"]',
     ) as HTMLElement;
     expect(startBtn).toBeTruthy();
     startBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.CONFIRM_INSERTION
+      NavigationAction.CONFIRM_INSERTION,
     );
   });
 
@@ -127,6 +127,9 @@ describe("Screen Views & Interactions", () => {
     experience.mount(root);
     experience.show();
 
+    expect(root.querySelector(".cv-badge")?.textContent).toBe(
+      "Sala de Arqueologia",
+    );
     expect(resizeInvoked).toBe(false);
     expect(enterVRCount).toBe(1);
     expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(true);
@@ -148,12 +151,12 @@ describe("Screen Views & Interactions", () => {
     experience.show();
     const el = experience.getElement()!;
     const exitHudBtn = el.querySelector(
-      '[data-action="request-exit"]'
+      '[data-action="request-exit"]',
     ) as HTMLElement;
     expect(exitHudBtn).toBeTruthy();
     exitHudBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.REQUEST_EXIT
+      NavigationAction.REQUEST_EXIT,
     );
 
     // Test native exit-vr event in VR mode
@@ -163,7 +166,7 @@ describe("Screen Views & Interactions", () => {
     mockScene.dispatchEvent(new CustomEvent("exit-vr"));
     expect(dispatched.length).toBe(initialDispatchedCount + 1);
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.REQUEST_EXIT
+      NavigationAction.REQUEST_EXIT,
     );
 
     // Test retainBackground() decoupling
@@ -172,7 +175,9 @@ describe("Screen Views & Interactions", () => {
     expect(enterVRCount).toBe(enterVRCountBeforeRetain);
     expect(mockScene.style.display).toBe("block");
     const hudContainer = experience.getElement()!;
-    expect(hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN)).toBe(true);
+    expect(hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN)).toBe(
+      true,
+    );
 
     // Test 2D Touch Mode Camera Unlock & Viewport Sanitization after exiting VR
     const mockCamera = document.createElement("a-camera") as HTMLElement & {
@@ -244,30 +249,30 @@ describe("Screen Views & Interactions", () => {
     const el = modal.getElement()!;
 
     const resumeBtn = el.querySelector(
-      '[data-action="resume-tour"]'
+      '[data-action="resume-tour"]',
     ) as HTMLElement;
     expect(resumeBtn).toBeTruthy();
     resumeBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.RESUME_TOUR
+      NavigationAction.RESUME_TOUR,
     );
 
     const switchTouchBtn = el.querySelector(
-      '[data-action="switch-to-touch"]'
+      '[data-action="switch-to-touch"]',
     ) as HTMLElement;
     expect(switchTouchBtn).toBeTruthy();
     switchTouchBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SWITCH_TO_TOUCH
+      NavigationAction.SWITCH_TO_TOUCH,
     );
 
     const exitBtn = el.querySelector(
-      '[data-action="confirm-exit"]'
+      '[data-action="confirm-exit"]',
     ) as HTMLElement;
     expect(exitBtn).toBeTruthy();
     exitBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.CONFIRM_EXIT
+      NavigationAction.CONFIRM_EXIT,
     );
   });
 
@@ -278,7 +283,7 @@ describe("Screen Views & Interactions", () => {
     const el = survey.getElement()!;
 
     const submitBtn = el.querySelector(
-      '[data-action="submit-survey"]'
+      '[data-action="submit-survey"]',
     ) as HTMLElement;
     expect(submitBtn).toBeTruthy();
     submitBtn.click();
@@ -287,12 +292,12 @@ describe("Screen Views & Interactions", () => {
     expect(lastDispatch.payload?.surveyAnswers?.rating).toBe(5);
 
     const skipBtn = el.querySelector(
-      '[data-action="skip-survey"]'
+      '[data-action="skip-survey"]',
     ) as HTMLElement;
     expect(skipBtn).toBeTruthy();
     skipBtn.click();
     expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SKIP_SURVEY
+      NavigationAction.SKIP_SURVEY,
     );
   });
 
