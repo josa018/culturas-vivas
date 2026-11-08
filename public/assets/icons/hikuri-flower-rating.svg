@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 5-Petal Sacred Hikuri (Peyote) Geometry -->
+  <!-- Center Seed Diamond -->
+  <polygon points="16,11.5 19.5,16 16,20.5 12.5,16" class="hikuri-core" fill="#D99B26" stroke="#D99B26" stroke-width="1.5" />
+  <circle cx="16" cy="16" r="1.5" fill="#EDE8DF" />
+
+  <!-- 5 Surrounding Radiating Petals (Wixárika Diamond Petals) -->
+  <!-- Top Petal -->
+  <path d="M16 11.5L13 6.5C14.5 4 17.5 4 19 6.5L16 11.5Z" class="hikuri-petal" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+  <!-- Top Right Petal -->
+  <path d="M19.5 14L25 11C26.5 13 26 16 24 18L18.5 17Z" class="hikuri-petal" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+  <!-- Bottom Right Petal -->
+  <path d="M17.5 19L21.5 24.5C19.5 26.5 16.5 26 15 24.5L15 19Z" class="hikuri-petal" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+  <!-- Bottom Left Petal -->
+  <path d="M14.5 19L11 24.5C9 23 8 20 10 18L13.5 17Z" class="hikuri-petal" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+  <!-- Top Left Petal -->
+  <path d="M12.5 14L7 11C6 13 6.5 16 9 18L13.5 15Z" class="hikuri-petal" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+</svg>

@@ -13,6 +13,7 @@ import {
   WelcomeScreenView,
 } from "./screens/index";
 import type { ScreenView } from "./screens/index";
+import { syncCulturalAssetsToCSS } from "./screens/constants";
 
 export class AppRouter {
   private readonly rootContainer: HTMLElement;
@@ -26,9 +27,14 @@ export class AppRouter {
   ) {
     this.rootContainer = rootContainer;
     this.stateMachine = stateMachine;
+    this.syncCulturalAssets();
     this.initializeScreens();
     this.mountScreens();
     this.subscribeToTransitions();
+  }
+
+  private syncCulturalAssets(): void {
+    syncCulturalAssetsToCSS();
   }
 
   public getStateMachine(): NavigationStateMachine {

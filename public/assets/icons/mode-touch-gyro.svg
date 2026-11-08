@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Smartphone Body in Landscape / Slanted 3D Gyro Angle -->
+  <rect x="14" y="8" width="20" height="32" rx="4" stroke="#008F85" stroke-width="2.5" fill="#141923" />
+  
+  <!-- Screen Area -->
+  <rect x="17" y="13" width="14" height="22" rx="1.5" stroke="#008F85" stroke-width="1.2" opacity="0.6" fill="#0B0F17" />
+  
+  <!-- Home Indicator / Notch -->
+  <line x1="22" y1="10.5" x2="26" y2="10.5" stroke="#EDE8DF" stroke-width="1.5" />
+  <circle cx="24" cy="37.5" r="1" fill="#EDE8DF" />
+
+  <!-- 360 Degree Gyro Rotation Arc (Left to Right) -->
+  <path d="M7 24C7 16 12 11 18 10" stroke="#D99B26" stroke-width="2" stroke-dasharray="3 2" />
+  <path d="M41 24C41 32 36 37 30 38" stroke="#D99B26" stroke-width="2" stroke-dasharray="3 2" />
+  
+  <!-- Directional Arrow Heads -->
+  <polyline points="15 7 19 10 16 13" stroke="#D99B26" stroke-width="2" />
+  <polyline points="33 35 29 38 32 41" stroke="#D99B26" stroke-width="2" />
+</svg>

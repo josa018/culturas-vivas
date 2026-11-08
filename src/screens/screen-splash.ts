@@ -1,6 +1,6 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
-import { UI_CLASSES, UI_TEXT } from "./constants";
+import { UI_CLASSES, UI_TEXT, CULTURAL_ASSETS } from "./constants";
 import {
   ScenePreloadManager,
   getCriticalRoomAssets,
@@ -10,6 +10,7 @@ export class SplashScreenView implements ScreenView {
   public readonly id = ScreenId.SPLASH;
   private container: HTMLElement | null = null;
   private spinner: HTMLElement | null = null;
+  private progressFill: HTMLElement | null = null;
   private statusText: HTMLElement | null = null;
   private enterBtn: HTMLElement | null = null;
   private isReady = false;
@@ -28,6 +29,9 @@ export class SplashScreenView implements ScreenView {
           if (this.statusText && !this.isReady) {
             this.statusText.textContent = `${UI_TEXT.SPLASH_LOADING} (${progress.percentage}%)`;
           }
+          if (this.progressFill) {
+            this.progressFill.style.width = `${progress.percentage}%`;
+          }
         },
       });
   }
@@ -44,9 +48,14 @@ export class SplashScreenView implements ScreenView {
     const content = document.createElement("div");
     content.className = "cv-splash-content";
 
-    const logo = document.createElement("div");
-    logo.className = "cv-logo-placeholder";
-    logo.textContent = "CV";
+    // Traditional Tsikuri (Ojo de Dios) Emblem Container
+    const tsikuriBox = document.createElement("div");
+    tsikuriBox.className = "cv-tsikuri-loader";
+    const tsikuriImg = document.createElement("img");
+    tsikuriImg.src = CULTURAL_ASSETS.TSIKURI_MANDALA;
+    tsikuriImg.alt = "Tsikuri Ojo de Dios";
+    tsikuriImg.className = "cv-tsikuri-mandala-img";
+    tsikuriBox.appendChild(tsikuriImg);
 
     const title = document.createElement("h1");
     title.className = "cv-title";
@@ -54,12 +63,21 @@ export class SplashScreenView implements ScreenView {
 
     const subtitle = document.createElement("p");
     subtitle.className = "cv-subtitle";
-    subtitle.textContent = UI_TEXT.SPLASH_SUBTITLE;
+    subtitle.style.color = "var(--cv-color-accent-cempasuchil)";
+    subtitle.textContent = UI_TEXT.SPLASH_TAGLINE;
 
+    // Geometric Diamond Progress Bar Container
     const spinner = document.createElement("div");
-    spinner.className = "cv-loader-spinner";
+    spinner.className = "cv-progress-container";
     spinner.setAttribute("role", "progressbar");
     spinner.setAttribute("aria-label", UI_TEXT.SPLASH_LOADING);
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "cv-progress-bar";
+    const progressFill = document.createElement("div");
+    progressFill.className = "cv-progress-bar__fill";
+    progressBar.appendChild(progressFill);
+    spinner.appendChild(progressBar);
 
     const statusText = document.createElement("p");
     statusText.className = "cv-caption cv-splash-status";
@@ -82,12 +100,13 @@ export class SplashScreenView implements ScreenView {
       }
     });
 
-    content.append(logo, title, subtitle, spinner, statusText, enterBtn);
+    content.append(tsikuriBox, title, subtitle, spinner, statusText, enterBtn);
     element.appendChild(content);
 
     parent.appendChild(element);
     this.container = element;
     this.spinner = spinner;
+    this.progressFill = progressFill;
     this.statusText = statusText;
     this.enterBtn = enterBtn;
 
@@ -99,6 +118,7 @@ export class SplashScreenView implements ScreenView {
       this.container.remove();
       this.container = null;
       this.spinner = null;
+      this.progressFill = null;
       this.statusText = null;
       this.enterBtn = null;
     }
@@ -132,7 +152,7 @@ export class SplashScreenView implements ScreenView {
       this.spinner.style.display = "none";
     }
     if (this.statusText) {
-      this.statusText.textContent = UI_TEXT.SPLASH_READY;
+      this.statusText.style.display = "none";
     }
     if (this.enterBtn) {
       this.enterBtn.style.display = "inline-block";
@@ -149,9 +169,8 @@ export class SplashScreenView implements ScreenView {
         ? (document.querySelector("a-scene") as HTMLElement | null)
         : null;
 
-    await this.preloadManager.preloadAll(
-      getCriticalRoomAssets(),
-    );
+    const roomAssets = getCriticalRoomAssets();
+    await this.preloadManager.preloadAll(roomAssets);
 
     if (sceneEl) {
       await this.preloadManager.waitForSceneLoaded(sceneEl, 3000);

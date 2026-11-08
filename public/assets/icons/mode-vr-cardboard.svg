@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Cardboard Visor Outer Frame -->
+  <path d="M6 14C6 11.79 7.79 10 10 10H38C40.21 10 42 11.79 42 14V34C42 36.21 40.21 38 38 38H30L27 33C26.5 32 25.5 31.5 24 31.5C22.5 31.5 21.5 32 21 33L18 38H10C7.79 38 6 36.21 6 34V14Z" stroke="#D99B26" stroke-width="2.5" fill="#141923" />
+  
+  <!-- Optical Lenses (Dual Stereoscopic Viewports) -->
+  <circle cx="16.5" cy="22" r="6" stroke="#D99B26" stroke-width="2" fill="#0B0F17" />
+  <circle cx="31.5" cy="22" r="6" stroke="#D99B26" stroke-width="2" fill="#0B0F17" />
+  
+  <!-- Optical Reflections -->
+  <path d="M14 20A3.5 3.5 0 0 1 17.5 16.5" stroke="#EDE8DF" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+  <path d="M29 20A3.5 3.5 0 0 1 32.5 16.5" stroke="#EDE8DF" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+
+  <!-- Nose Bridge Notch Highlight -->
+  <path d="M21 33C21.8 31.8 22.8 31.5 24 31.5C25.2 31.5 26.2 31.8 27 33" stroke="#B83A2C" stroke-width="2.5" />
+</svg>
