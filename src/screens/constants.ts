@@ -1,12 +1,11 @@
 export const CULTURAL_ASSETS = {
-  TSIKURI_MANDALA: "/assets/branding/tsikuri-mandala.svg",
+  LOGO: "/assets/branding/culturas-vivas-logo.svg",
+  TSIKURI_MANDALA: "/assets/branding/culturas-vivas-logo.svg",
   FAJA_BORDER_PATTERN: "/assets/branding/faja_wixarika_pattern.svg",
-  KAUYUMARI_ICON: "/assets/icons/kauyumari-deer-icon.svg",
   TEXTILE_WARP_GRID: "/assets/backgrounds/textile-warp-grid.svg",
   MODE_VR_ICON: "/assets/icons/mode-vr-cardboard.svg",
   MODE_TOUCH_ICON: "/assets/icons/mode-touch-gyro.svg",
   HIKURI_FLOWER_ICON: "/assets/icons/hikuri-flower-rating.svg",
-  EXHIBIT_MASK_PREVIEW: "/assets/exhibits/mascara-chaquira.webp",
 } as const;
 
 export function syncCulturalAssetsToCSS(): void {

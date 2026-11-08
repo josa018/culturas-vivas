@@ -23,17 +23,18 @@ export class WelcomeScreenView implements ScreenView {
     const card = document.createElement("div");
     card.className = `${UI_CLASSES.NIERIKA_CARD} cv-welcome-card`;
 
-    // Header branding with Kauyumari icon
+    // Header branding with Culturas Vivas logo
     const headerRow = document.createElement("div");
     headerRow.style.display = "flex";
     headerRow.style.alignItems = "center";
     headerRow.style.gap = "8px";
 
-    const deerIcon = document.createElement("img");
-    deerIcon.src = CULTURAL_ASSETS.KAUYUMARI_ICON;
-    deerIcon.alt = "Kauyumari";
-    deerIcon.style.width = "24px";
-    deerIcon.style.height = "24px";
+    const logoIcon = document.createElement("img");
+    logoIcon.src = CULTURAL_ASSETS.LOGO;
+    logoIcon.alt = "Culturas Vivas";
+    logoIcon.style.width = "26px";
+    logoIcon.style.height = "26px";
+    logoIcon.style.objectFit = "contain";
 
     const brandName = document.createElement("span");
     brandName.textContent = "CULTURAS VIVAS";
@@ -42,7 +43,7 @@ export class WelcomeScreenView implements ScreenView {
     brandName.style.letterSpacing = "0.08em";
     brandName.style.color = "var(--cv-color-text-bone)";
 
-    headerRow.append(deerIcon, brandName);
+    headerRow.append(logoIcon, brandName);
 
     const title = document.createElement("h1");
     title.className = "cv-title";

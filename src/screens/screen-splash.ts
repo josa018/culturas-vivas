@@ -48,12 +48,12 @@ export class SplashScreenView implements ScreenView {
     const content = document.createElement("div");
     content.className = "cv-splash-content";
 
-    // Traditional Tsikuri (Ojo de Dios) Emblem Container
+    // Culturas Vivas 4-Cultures Logo Emblem Container
     const tsikuriBox = document.createElement("div");
     tsikuriBox.className = "cv-tsikuri-loader";
     const tsikuriImg = document.createElement("img");
-    tsikuriImg.src = CULTURAL_ASSETS.TSIKURI_MANDALA;
-    tsikuriImg.alt = "Tsikuri Ojo de Dios";
+    tsikuriImg.src = CULTURAL_ASSETS.LOGO;
+    tsikuriImg.alt = "Culturas Vivas";
     tsikuriImg.className = "cv-tsikuri-mandala-img";
     tsikuriBox.appendChild(tsikuriImg);
 
