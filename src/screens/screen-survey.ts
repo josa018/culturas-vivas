@@ -1,6 +1,6 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
-import { UI_CLASSES, UI_TEXT } from "./constants";
+import { UI_CLASSES, UI_TEXT, CULTURAL_ASSETS } from "./constants";
 
 const DEFAULT_RATING = 5;
 
@@ -24,7 +24,7 @@ export class SurveyScreenView implements ScreenView {
     element.setAttribute("data-screen-id", this.id);
 
     const card = document.createElement("div");
-    card.className = "cv-survey-card";
+    card.className = `${UI_CLASSES.NIERIKA_CARD} cv-survey-card`;
 
     const title = document.createElement("h2");
     title.className = "cv-title";
@@ -50,8 +50,15 @@ export class SurveyScreenView implements ScreenView {
         star <= DEFAULT_RATING ? UI_CLASSES.RATING_ACTIVE : ""
       }`;
       starBtn.setAttribute("data-rating", star.toString());
-      starBtn.setAttribute("aria-label", `${star} de 5 estrellas`);
-      starBtn.textContent = "★";
+      starBtn.setAttribute("aria-label", `${star} de 5 flores sagradas`);
+
+      const flowerIcon = document.createElement("img");
+      flowerIcon.src = CULTURAL_ASSETS.HIKURI_FLOWER_ICON;
+      flowerIcon.alt = "Híkuri";
+      flowerIcon.style.width = "24px";
+      flowerIcon.style.height = "24px";
+      flowerIcon.style.pointerEvents = "none";
+      starBtn.appendChild(flowerIcon);
 
       starBtn.addEventListener("click", (event) => {
         event.stopPropagation();

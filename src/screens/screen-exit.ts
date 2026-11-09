@@ -23,15 +23,11 @@ export class ExitModalScreenView implements ScreenView {
     backdrop.setAttribute("aria-modal", "true");
 
     const card = document.createElement("div");
-    card.className = UI_CLASSES.MODAL_CARD;
+    card.className = `${UI_CLASSES.MODAL_CARD} ${UI_CLASSES.NIERIKA_DIALOG}`;
 
     const title = document.createElement("h2");
     title.className = "cv-title";
     title.textContent = UI_TEXT.EXIT_MODAL_TITLE;
-
-    const description = document.createElement("p");
-    description.className = "cv-description";
-    description.textContent = UI_TEXT.EXIT_MODAL_DESCRIPTION;
 
     const buttonStack = document.createElement("div");
     buttonStack.className = "cv-button-stack";
@@ -79,7 +75,7 @@ export class ExitModalScreenView implements ScreenView {
     });
 
     buttonStack.append(resumeBtn, switchTouchBtn, exitBtn);
-    card.append(title, description, buttonStack);
+    card.append(title, buttonStack);
     backdrop.appendChild(card);
 
     parent.appendChild(backdrop);

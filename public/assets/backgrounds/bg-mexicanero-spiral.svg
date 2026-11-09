@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="320" height="320" fill="none">
+  <!-- Mexicanero / Nahua Sacred Corn & Water Spiral (Brightened Monochrome Watermark) -->
+
+  <!-- Dual Interlocking Sacred River Spirals -->
+  <path d="
+    M160,160 
+    C160,130 135,105 105,105 
+    C75,105 50,130 50,160 
+    C50,205 85,240 130,240 
+    C175,240 210,205 210,160 
+    C210,100 160,50 100,50
+  " stroke="#EDE8DF" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.12" fill="none" />
+
+  <path d="
+    M160,160 
+    C160,190 185,215 215,215 
+    C245,215 270,190 270,160 
+    C270,115 235,80 190,80 
+    C145,80 110,115 110,160 
+    C110,220 160,270 220,270
+  " stroke="#EDE8DF" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.12" fill="none" />
+
+  <!-- Secondary Parallel Water Waves -->
+  <path d="
+    M160,160 
+    C160,140 145,125 125,125 
+    C105,125 90,140 90,160 
+    C90,185 110,205 135,205 
+    C160,205 180,185 180,160
+  " stroke="#EDE8DF" stroke-width="0.9" stroke-linecap="round" stroke-opacity="0.08" stroke-dasharray="3 4" fill="none" />
+
+  <!-- Central Sacred Germinated Maize Grain (Cin-tli) -->
+  <g transform="translate(160, 160)">
+    <path d="M0,-35 C20,-20 22,10 0,35 C-22,10 -20,-20 0,-35 Z" fill="#EDE8DF" fill-opacity="0.03" stroke="#EDE8DF" stroke-width="1.3" stroke-opacity="0.13" />
+    <path d="M0,-20 C10,-10 12,5 0,20 C-12,5 -10,-10 0,-20 Z" fill="#EDE8DF" fill-opacity="0.05" stroke="#EDE8DF" stroke-width="0.9" stroke-opacity="0.10" />
+    <circle cx="0" cy="0" r="1.8" fill="#EDE8DF" fill-opacity="0.16" />
+
+    <!-- Lateral Corn Leaf Foliage Sprigs -->
+    <path d="M-8,-5 C-25,-15 -35,-5 -35,5 C-25,5 -15,0 -8,-2" stroke="#EDE8DF" stroke-width="0.9" stroke-opacity="0.09" stroke-linecap="round" fill="none" />
+    <path d="M8,-5 C25,-15 35,-5 35,5 C25,5 15,0 8,-2" stroke="#EDE8DF" stroke-width="0.9" stroke-opacity="0.09" stroke-linecap="round" fill="none" />
+  </g>
+
+  <!-- Water Droplet Beads -->
+  <circle cx="100" cy="50" r="2" fill="#EDE8DF" fill-opacity="0.13" />
+  <circle cx="220" cy="270" r="2" fill="#EDE8DF" fill-opacity="0.13" />
+  <circle cx="50" cy="160" r="1.6" fill="#EDE8DF" fill-opacity="0.10" />
+  <circle cx="270" cy="160" r="1.6" fill="#EDE8DF" fill-opacity="0.10" />
+  <circle cx="160" cy="125" r="1.5" fill="#EDE8DF" fill-opacity="0.11" />
+  <circle cx="160" cy="195" r="1.5" fill="#EDE8DF" fill-opacity="0.11" />
+</svg>

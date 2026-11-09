@@ -1,36 +1,55 @@
 :root {
-  /* Material Design 3 Dark Theme Tonal Palette */
-  --md-sys-color-background: #111318;
-  --md-sys-color-surface: #111318;
-  --md-sys-color-surface-container-lowest: #0c0e13;
-  --md-sys-color-surface-container-low: #191c20;
-  --md-sys-color-surface-container: #1d2024;
-  --md-sys-color-surface-container-high: #282a2f;
-  --md-sys-color-surface-container-highest: #33353a;
+  /* Traditional Nayarit Mineral Pigment Tokens (Nierika & Cora Loom) */
+  --cv-color-surface-base: #0B0F17;
+  --cv-color-surface-container: #141923;
+  --cv-color-surface-container-high: #1D2433;
+  --cv-color-accent-cempasuchil: #D99B26;
+  --cv-color-accent-cochinilla: #B83A2C;
+  --cv-color-accent-turquesa: #008F85;
+  --cv-color-text-bone: #EDE8DF;
+  --cv-color-text-muted: #9CA3AF;
+  --cv-color-border-faja: rgba(237, 232, 223, 0.12);
+  --cv-faja-border-height: 28px;
+  --cv-asset-faja-border-pattern: url("/assets/branding/faja_wixarika_pattern.svg");
+  --cv-asset-faja-pattern: var(--cv-asset-faja-border-pattern);
+  --cv-asset-textile-warp-grid: url("/assets/backgrounds/textile-warp-grid.svg");
+  --cv-asset-bg-wixarika-constellation: url("/assets/backgrounds/bg-wixarika-constellation.svg");
+  --cv-asset-bg-naayeri-greca: url("/assets/backgrounds/bg-naayeri-greca.svg");
+  --cv-asset-bg-odam-mitote: url("/assets/backgrounds/bg-odam-mitote.svg");
+  --cv-asset-bg-mexicanero-spiral: url("/assets/backgrounds/bg-mexicanero-spiral.svg");
 
-  /* Primary & Accent Tones */
-  --md-sys-color-primary: #d0bcff;
-  --md-sys-color-on-primary: #381e72;
-  --md-sys-color-primary-container: #4f378b;
-  --md-sys-color-on-primary-container: #eaddff;
-  --md-sys-color-secondary: #ccc2dc;
-  --md-sys-color-secondary-container: #4a4458;
-  --md-sys-color-on-secondary: #332d41;
-  --md-sys-color-tertiary: #7ddcde;
+  /* Material Design 3 Dark Theme Tonal Palette */
+  --md-sys-color-background: var(--cv-color-surface-base);
+  --md-sys-color-surface: var(--cv-color-surface-base);
+  --md-sys-color-surface-container-lowest: #080B10;
+  --md-sys-color-surface-container-low: #10141C;
+  --md-sys-color-surface-container: var(--cv-color-surface-container);
+  --md-sys-color-surface-container-high: var(--cv-color-surface-container-high);
+  --md-sys-color-surface-container-highest: #283042;
+
+  /* Primary & Accent Tones Mapped to Cultural Palette */
+  --md-sys-color-primary: var(--cv-color-accent-cempasuchil);
+  --md-sys-color-on-primary: #0B0F17;
+  --md-sys-color-primary-container: #5C3E00;
+  --md-sys-color-on-primary-container: #FFDE9E;
+  --md-sys-color-secondary: var(--cv-color-accent-turquesa);
+  --md-sys-color-secondary-container: #004D47;
+  --md-sys-color-on-secondary: #0B0F17;
+  --md-sys-color-tertiary: var(--cv-color-accent-cochinilla);
 
   /* Neutrals & Outlines */
-  --md-sys-color-outline: #938f99;
-  --md-sys-color-outline-variant: #49454f;
-  --md-sys-color-on-surface: #e6e1e5;
-  --md-sys-color-on-surface-variant: #cac4d0;
-  --md-sys-color-error: #f2b8b5;
-  --md-sys-color-error-container: #8c1d18;
+  --md-sys-color-outline: #73777F;
+  --md-sys-color-outline-variant: var(--cv-color-border-faja);
+  --md-sys-color-on-surface: var(--cv-color-text-bone);
+  --md-sys-color-on-surface-variant: var(--cv-color-text-muted);
+  --md-sys-color-error: #FFB4AB;
+  --md-sys-color-error-container: #93000A;
 
   /* Semantic Capacity Tones */
-  --md-custom-capacity-optimal: #6dd58c;
-  --md-custom-capacity-moderate: #f9bc2c;
-  --md-custom-capacity-high: #ff897d;
-  --md-custom-star-gold: #e5c158;
+  --md-custom-capacity-optimal: var(--cv-color-accent-turquesa);
+  --md-custom-capacity-moderate: var(--cv-color-accent-cempasuchil);
+  --md-custom-capacity-high: var(--cv-color-accent-cochinilla);
+  --md-custom-star-gold: var(--cv-color-accent-cempasuchil);
 
   /* Typography */
   --cv-font-family:
@@ -89,8 +108,32 @@ body {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 24px 20px;
+  padding: calc(var(--cv-faja-border-height) + 16px) 20px;
   background-color: var(--md-sys-color-background);
+  background-image:
+    var(--cv-asset-bg-wixarika-constellation),
+    var(--cv-asset-bg-naayeri-greca),
+    var(--cv-asset-bg-odam-mitote),
+    var(--cv-asset-bg-mexicanero-spiral),
+    var(--cv-asset-textile-warp-grid);
+  background-position:
+    top -20px right -20px,
+    bottom -20px right -20px,
+    bottom -20px left -20px,
+    top -20px left -20px,
+    center center;
+  background-size:
+    min(280px, 45vw) min(280px, 45vw),
+    min(260px, 42vw) min(260px, 42vw),
+    min(270px, 44vw) min(270px, 44vw),
+    min(260px, 42vw) min(260px, 42vw),
+    96px 96px;
+  background-repeat:
+    no-repeat,
+    no-repeat,
+    no-repeat,
+    no-repeat,
+    repeat;
   overflow-y: auto;
   overflow-x: hidden;
   opacity: 0;
@@ -99,6 +142,99 @@ body {
     opacity var(--cv-transition-duration) var(--cv-transition-easing),
     visibility var(--cv-transition-duration) var(--cv-transition-easing);
   pointer-events: none;
+}
+
+/* Woven Faja Cora Structural Borders (Restricted to 2D onboarding screens) */
+.cv-screen:not(.cv-screen--experience):not(.cv-modal-backdrop)::before,
+.cv-screen:not(.cv-screen--experience):not(.cv-modal-backdrop)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--cv-faja-border-height);
+  background-image: var(--cv-asset-faja-border-pattern, var(--cv-asset-faja-pattern));
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.cv-screen:not(.cv-screen--experience):not(.cv-modal-backdrop)::before {
+  top: 0;
+}
+
+.cv-screen:not(.cv-screen--experience):not(.cv-modal-backdrop)::after {
+  bottom: 0;
+}
+
+/* Explicit suppression of pattern borders and background texture on 3D Experience HUD and Modal Backdrops */
+.cv-screen--experience,
+.cv-modal-backdrop {
+  background-image: none !important;
+}
+
+.cv-screen--experience::before,
+.cv-screen--experience::after,
+.cv-modal-backdrop::before,
+.cv-modal-backdrop::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Cultural Background Spot Vignettes (Non-tiled decorative accents) */
+.cv-bg-spot {
+  position: absolute;
+  width: clamp(200px, 35vw, 320px);
+  height: clamp(200px, 35vw, 320px);
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  z-index: 0;
+  opacity: 0.85;
+}
+
+.cv-bg-spot--top-left {
+  top: calc(var(--cv-faja-border-height) + 8px);
+  left: -40px;
+}
+
+.cv-bg-spot--top-right {
+  top: calc(var(--cv-faja-border-height) + 8px);
+  right: -40px;
+}
+
+.cv-bg-spot--bottom-left {
+  bottom: calc(var(--cv-faja-border-height) + 8px);
+  left: -40px;
+}
+
+.cv-bg-spot--bottom-right {
+  bottom: calc(var(--cv-faja-border-height) + 8px);
+  right: -40px;
+}
+
+.cv-bg-spot--center {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cv-bg-spot--wixarika {
+  background-image: var(--cv-asset-bg-wixarika-constellation);
+}
+
+.cv-bg-spot--naayeri {
+  background-image: var(--cv-asset-bg-naayeri-greca);
+}
+
+.cv-bg-spot--odam {
+  background-image: var(--cv-asset-bg-odam-mitote);
+}
+
+.cv-bg-spot--mexicanero {
+  background-image: var(--cv-asset-bg-mexicanero-spiral);
 }
 
 .cv-screen--active {
@@ -111,6 +247,181 @@ body {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* Nierika 45-Degree Beveled Corner Card & Dialog */
+.cv-nierika-card,
+.cv-nierika-dialog {
+  position: relative;
+  background-color: var(--cv-color-surface-container);
+  border: 1px solid var(--cv-color-border-faja);
+  border-radius: 12px;
+  clip-path: polygon(
+    8px 0%,
+    calc(100% - 8px) 0%,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    0% calc(100% - 8px),
+    0% 8px
+  );
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+/* Interactive Mode Selection Cards */
+.cv-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  background-color: var(--cv-color-surface-container);
+  border: 1px solid var(--cv-color-border-faja);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1), border-color 160ms ease, background-color 160ms ease;
+  width: 100%;
+}
+
+.cv-mode-card:hover {
+  background-color: var(--cv-color-surface-container-high);
+  border-color: rgba(217, 155, 38, 0.4);
+  transform: translateY(-2px);
+}
+
+.cv-mode-card:active {
+  transform: scale(0.98);
+}
+
+.cv-mode-card--vr {
+  border-left: 4px solid var(--cv-color-accent-cempasuchil);
+}
+
+.cv-mode-card--touch {
+  border-left: 4px solid var(--cv-color-accent-turquesa);
+}
+
+.cv-mode-card__icon-box {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv-mode-card__icon-box img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.cv-mode-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cv-mode-card__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--cv-color-text-bone);
+}
+
+.cv-mode-card__badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--cv-color-accent-cempasuchil);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cv-mode-card__desc {
+  font-size: 13px;
+  color: var(--cv-color-text-muted);
+  line-height: 1.35;
+}
+
+/* Trust Badges Row */
+.cv-trust-badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.cv-trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: rgba(20, 25, 35, 0.7);
+  border: 1px solid var(--cv-color-border-faja);
+  border-radius: var(--cv-radius-pill);
+  font-size: 12px;
+  color: var(--cv-color-text-bone);
+  backdrop-filter: blur(8px);
+}
+
+/* Tsikuri Loader in Splash Screen */
+.cv-tsikuri-loader {
+  width: 140px;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 12px 0;
+}
+
+.cv-tsikuri-mandala-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: cv-tsikuri-pulse 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes cv-tsikuri-pulse {
+  0%, 100% {
+    transform: scale(0.97) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.03) rotate(2deg);
+  }
+}
+
+/* Diamond Progress Bar */
+.cv-progress-container {
+  width: 100%;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cv-progress-bar {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(237, 232, 223, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.cv-progress-bar__fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cv-color-accent-turquesa), var(--cv-color-accent-cempasuchil));
+  transition: width 200ms ease;
+  border-radius: 3px;
 }
 
 /* Splash Screen (1) */

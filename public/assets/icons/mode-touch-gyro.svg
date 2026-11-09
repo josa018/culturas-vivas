@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none">
+  <!-- 360° Gyroscopic Orbital Dynamic Arcs (Solar Gold #D99B26) -->
+  <path d="M7,24 C7,15.5 12,10 18,9" stroke="#D99B26" stroke-width="2" stroke-dasharray="3.5 2" stroke-linecap="round" />
+  <polygon points="15,6 19.5,9.5 15.5,12.5" fill="#D99B26" />
+
+  <path d="M41,24 C41,32.5 36,38 30,39" stroke="#D99B26" stroke-width="2" stroke-dasharray="3.5 2" stroke-linecap="round" />
+  <polygon points="33,42 28.5,38.5 32.5,35.5" fill="#D99B26" />
+
+  <!-- Nodal Orbital Chaquira Beads -->
+  <circle cx="7" cy="24" r="1.6" fill="#D99B26" stroke="#EDE8DF" stroke-width="0.8" />
+  <circle cx="41" cy="24" r="1.6" fill="#D99B26" stroke="#EDE8DF" stroke-width="0.8" />
+
+  <!-- Smartphone Body with 45° Nierika Beveled Contours -->
+  <path d="M17,8 L31,8 L34,11 L34,37 L31,40 L17,40 L14,37 L14,11 Z" fill="#141923" stroke="#008F85" stroke-width="2.2" stroke-linejoin="round" />
+  
+  <!-- Screen Recessed Bezel -->
+  <path d="M18,12 L30,12 L32,14 L32,34 L30,36 L18,36 L16,34 L16,14 Z" fill="#0B0F17" stroke="#008F85" stroke-width="1" stroke-opacity="0.5" />
+
+  <!-- Central Gyroscope Tsikuri Diamond Target -->
+  <polygon points="24,20.5 27.5,24 24,27.5 20.5,24" fill="#141923" stroke="#008F85" stroke-width="1.4" />
+  <circle cx="24" cy="24" r="1.4" fill="#EDE8DF" />
+
+  <!-- Speaker Ear-Piece & Bottom Accent Beads -->
+  <line x1="22" y1="10" x2="26" y2="10" stroke="#EDE8DF" stroke-width="1.5" stroke-linecap="round" />
+  <circle cx="24" cy="38" r="1" fill="#EDE8DF" />
+</svg>
