@@ -3,6 +3,11 @@ export const CULTURAL_ASSETS = {
   TSIKURI_MANDALA: "/assets/branding/culturas-vivas-logo.svg",
   FAJA_BORDER_PATTERN: "/assets/branding/faja_wixarika_pattern.svg",
   TEXTILE_WARP_GRID: "/assets/backgrounds/textile-warp-grid.svg",
+  BG_WIXARIKA_CONSTELLATION:
+    "/assets/backgrounds/bg-wixarika-constellation.svg",
+  BG_NAAYERI_GRECA: "/assets/backgrounds/bg-naayeri-greca.svg",
+  BG_ODAM_MITOTE: "/assets/backgrounds/bg-odam-mitote.svg",
+  BG_MEXICANERO_SPIRAL: "/assets/backgrounds/bg-mexicanero-spiral.svg",
   MODE_VR_ICON: "/assets/icons/mode-vr-cardboard.svg",
   MODE_TOUCH_ICON: "/assets/icons/mode-touch-gyro.svg",
   HIKURI_FLOWER_ICON: "/assets/icons/hikuri-flower-rating.svg",
