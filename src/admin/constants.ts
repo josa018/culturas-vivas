@@ -79,7 +79,6 @@ export const ADMIN_UI_TEXT = {
 
   // Attendance & Concurrency
   CHART_TITLE: "Concurrencia de Visitantes",
-  CHART_SUBTITLE: "Distribución de sesiones activas (Hoy)",
   CHART_DATASET_LABEL: "Usuarios conectados",
   COUNTER_LABEL: "Usuarios en Línea",
   PEAK_LABEL_PREFIX: "Pico de hoy: ",

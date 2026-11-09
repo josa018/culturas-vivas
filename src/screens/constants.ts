@@ -48,8 +48,6 @@ export const UI_CLASSES = {
   MODE_CARD: "cv-mode-card",
   MODE_CARD_VR: "cv-mode-card cv-mode-card--vr",
   MODE_CARD_TOUCH: "cv-mode-card cv-mode-card--touch",
-  TRUST_BADGES: "cv-trust-badges",
-  TRUST_BADGE: "cv-trust-badge",
   RATING_GROUP: "cv-rating-group",
   RATING_BUTTON: "cv-rating-btn",
   RATING_ACTIVE: "cv-rating-btn--active",
@@ -57,27 +55,17 @@ export const UI_CLASSES = {
 
 export const UI_TEXT = {
   SPLASH_TITLE: "Culturas Vivas",
-  SPLASH_SUBTITLE: "Experiencia Web Inmersiva 360°",
-  SPLASH_TAGLINE: "El latido de nuestras raíces · 360°",
+  SPLASH_TAGLINE: "El latido de nuestras raíces",
   SPLASH_LOADING: "Cargando entorno interactivo...",
-  SPLASH_TAP_PROMPT: "Toca en cualquier parte para continuar",
   SPLASH_BTN_ENTER: "Entrar",
-  SPLASH_READY: "Todo listo",
 
-  WELCOME_TITLE: "Bienvenido",
   WELCOME_HERO: "¡Bienvenido!",
-  WELCOME_DESCRIPTION: "Selecciona la modalidad",
   WELCOME_SUBTITLE: "Elige cómo deseas recorrer las salas culturales.",
   WELCOME_BTN_VR: "Visor VR",
   WELCOME_VR_BADGE: "✦ Recomendado",
-  WELCOME_VR_DESC: "Coloca tu smartphone en un visor para explorar en 3D.",
-  WELCOME_BTN_2D: "Táctil sin visor",
+  WELCOME_VR_DESC: "Colocate los lentes para explorar en 3D",
   WELCOME_TOUCH_TITLE: "Sin Visor",
-  WELCOME_TOUCH_DESC: "Gira tu pantalla con el dedo o moviendo tu teléfono.",
-
-  TRUST_NO_APPS: "Sin descargas",
-  TRUST_NO_REGISTER: "Sin registro",
-  TRUST_FREE: "100% Gratuito",
+  WELCOME_TOUCH_DESC: "Gira tu pantalla con el dedo y moviendo tu teléfono",
 
   TUTORIAL_TITLE: "Instrucciones",
   TUTORIAL_STEP_1:
@@ -88,19 +76,14 @@ export const UI_TEXT = {
   TUTORIAL_BTN_START: "Comenzar",
 
   EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
-  EXPERIENCE_SCENE_LABEL: "Sala 1",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",
-  EXIT_MODAL_DESCRIPTION:
-    "Puedes regresar a la sala o concluir tu visita y calificar la experiencia.",
   EXIT_MODAL_BTN_RESUME: "Regresar a la experiencia",
   EXIT_MODAL_BTN_SWITCH_TOUCH: "Cambiar a modo táctil",
   EXIT_MODAL_BTN_CONFIRM: "Finalizar Experiencia",
 
   SURVEY_TITLE: "Encuesta de Satisfacción",
   SURVEY_QUESTION_RATING: "¿Cómo calificarías tu experiencia?",
-  SURVEY_QUESTION_RECOMMEND:
-    "¿Recomendarías este recorrido a otros visitantes?",
   SURVEY_QUESTION_FEEDBACK: "Comentarios o sugerencias (opcional):",
   SURVEY_FEEDBACK_PLACEHOLDER: "Escribe tu opinión aquí...",
   SURVEY_BTN_SUBMIT: "Enviar Encuesta",
