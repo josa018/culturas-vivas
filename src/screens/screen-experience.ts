@@ -1,9 +1,10 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
-import { UI_CLASSES, UI_TEXT } from "./constants";
+import { UI_CLASSES, UI_TEXT, UI_IDS } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
 import { RoomTransitionStateMachine } from "../experience/room-transition-state-machine";
 import { RoomId } from "../experience/types";
+import { CameraRecenterService } from "../experience/services/camera-recenter-service";
 import {
   ensureCameraCurtain,
   type CameraCurtainComponentInstance,
@@ -94,6 +95,21 @@ export class ExperienceScreenView implements ScreenView {
       ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
     );
 
+    const recalibrateButton = document.createElement("button");
+    recalibrateButton.type = "button";
+    recalibrateButton.id = UI_IDS.HUD_RECALIBRATE_BTN;
+    recalibrateButton.className = `${UI_CLASSES.BUTTON_OUTLINE} cv-hud-recalibrate-btn`;
+    recalibrateButton.setAttribute("data-action", "recalibrate-view");
+
+    const recalibrateLabel = document.createElement("span");
+    recalibrateLabel.textContent = `◎ ${UI_TEXT.EXPERIENCE_RECALIBRATE_HUD}`;
+    recalibrateButton.appendChild(recalibrateLabel);
+
+    recalibrateButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.handleRecalibrate();
+    });
+
     const exitButton = document.createElement("button");
     exitButton.type = "button";
     exitButton.className = `${UI_CLASSES.BUTTON_OUTLINE} cv-hud-exit-btn`;
@@ -108,7 +124,7 @@ export class ExperienceScreenView implements ScreenView {
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
 
-    topBar.append(badge, exitButton);
+    topBar.append(badge, recalibrateButton, exitButton);
     hudOverlay.appendChild(topBar);
 
     parent.appendChild(hudOverlay);
@@ -174,6 +190,18 @@ export class ExperienceScreenView implements ScreenView {
 
   public getElement(): HTMLElement | null {
     return this.container;
+  }
+
+  public handleRecalibrate(): void {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const scene = document.querySelector<AFrameSceneElement>("a-scene");
+    const cameraEl =
+      scene?.querySelector("a-camera") || scene?.querySelector("[camera]");
+    const rigEl = (scene?.querySelector("#camera-rig") ||
+      scene?.querySelector("[camera-rig]")) as HTMLElement | null;
+    CameraRecenterService.getInstance().recenter(cameraEl, rigEl);
   }
 
   public transitionToRoom(targetRoomId: RoomId): boolean {

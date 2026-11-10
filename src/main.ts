@@ -1,6 +1,7 @@
 import "aframe";
 import "./experience/components/inspectable";
 import "./experience/components/stereo-media";
+import "./experience/components/camera-gyro-stabilizer";
 import "./style.css";
 import { AppRouter } from "./app";
 import { AppRoute, RouteMatcher } from "./navigation/route-matcher";

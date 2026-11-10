@@ -89,14 +89,16 @@
         position="-1 4 2"
       ></a-light>
 
-      <a-camera position="0 1.6 0">
-        <a-cursor
-          color="#38bdf8"
-          fuse="true"
-          fuse-timeout="1500"
-          raycaster="objects: .clickable"
-        ></a-cursor>
-      </a-camera>
+      <a-entity id="camera-rig" position="0 0 0" rotation="0 0 0">
+        <a-camera position="0 1.6 0" cv-camera-gyro-stabilizer>
+          <a-cursor
+            color="#38bdf8"
+            fuse="true"
+            fuse-timeout="1500"
+            raycaster="objects: .clickable"
+          ></a-cursor>
+        </a-camera>
+      </a-entity>
     </a-scene>
 
     <script type="module" src="/src/main.ts"></script>
