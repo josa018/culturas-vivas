@@ -240,6 +240,7 @@ export class ExhibitRoomBuilder {
   ): HTMLElement {
     // Teardown previous room entities and dispose resources
     this.teardownRoom(sceneEl);
+    this.ensureCameraRig(sceneEl);
 
     const roomDef =
       ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
@@ -503,10 +504,37 @@ export class ExhibitRoomBuilder {
     return roomGroup as HTMLElement;
   }
 
+  public static ensureCameraRig(sceneEl: HTMLElement): HTMLElement {
+    let rigEl = sceneEl.querySelector("#camera-rig") as HTMLElement | null;
+    if (!rigEl) {
+      rigEl = document.createElement("a-entity");
+      rigEl.setAttribute("id", "camera-rig");
+      rigEl.setAttribute("position", "0 0 0");
+      rigEl.setAttribute("rotation", "0 0 0");
+
+      const cameraEl =
+        sceneEl.querySelector("a-camera") || sceneEl.querySelector("[camera]");
+      if (cameraEl && cameraEl.parentElement === sceneEl) {
+        cameraEl.setAttribute("cv-camera-gyro-stabilizer", "");
+        sceneEl.removeChild(cameraEl);
+        rigEl.appendChild(cameraEl);
+      }
+      sceneEl.appendChild(rigEl);
+    } else {
+      const cameraEl =
+        rigEl.querySelector("a-camera") || rigEl.querySelector("[camera]");
+      if (cameraEl && !cameraEl.hasAttribute("cv-camera-gyro-stabilizer")) {
+        cameraEl.setAttribute("cv-camera-gyro-stabilizer", "");
+      }
+    }
+    return rigEl;
+  }
+
   public static ensureRoom(
     sceneEl: HTMLElement,
     viewMode: string = "vr",
   ): HTMLElement {
+    this.ensureCameraRig(sceneEl);
     const existing = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
     if (existing) {
       // Update stereo components viewMode

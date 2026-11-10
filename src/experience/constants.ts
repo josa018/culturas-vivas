@@ -258,3 +258,13 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
     ],
   },
 };
+
+
+export const CAMERA_STABILIZER_CONSTANTS = {
+  LAMBDA: 15.0,
+  NOISE_THRESHOLD_RAD: 0.0052,
+  BYPASS_THRESHOLD_RAD: 0.021,
+  MAX_RECENTER_DURATION_MS: 150,
+} as const;
+
+export const CAMERA_RECENTER_EVENT = "cv:camera-recenter";

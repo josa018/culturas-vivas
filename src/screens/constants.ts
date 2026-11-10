@@ -51,6 +51,11 @@ export const UI_CLASSES = {
   RATING_GROUP: "cv-rating-group",
   RATING_BUTTON: "cv-rating-btn",
   RATING_ACTIVE: "cv-rating-btn--active",
+  HUD_RECALIBRATE_BTN: "cv-hud-recalibrate-btn",
+} as const;
+
+export const UI_IDS = {
+  HUD_RECALIBRATE_BTN: "cv-hud-recalibrate-btn",
 } as const;
 
 export const UI_TEXT = {
@@ -76,6 +81,7 @@ export const UI_TEXT = {
   TUTORIAL_BTN_START: "Comenzar",
 
   EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
+  EXPERIENCE_RECALIBRATE_HUD: "Centrar vista",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",
   EXIT_MODAL_BTN_RESUME: "Regresar a la experiencia",
