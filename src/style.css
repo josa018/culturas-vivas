@@ -526,6 +526,24 @@ body {
   transform: scale(1);
 }
 
+@media (orientation: portrait) {
+  .cv-splash-brand-carousel {
+    right: 14px;
+    bottom: 14px;
+    width: min(46vw, 200px);
+    height: clamp(70px, 16vw, 98px);
+  }
+}
+
+@media (orientation: landscape) {
+  .cv-splash-brand-carousel {
+    right: 18px;
+    bottom: 18px;
+    width: clamp(180px, 24vw, 260px);
+    height: clamp(82px, 10vw, 120px);
+  }
+}
+
 /* Card Component (Screens 2, 3, 5, 6) */
 .cv-welcome-card,
 .cv-tutorial-card,
