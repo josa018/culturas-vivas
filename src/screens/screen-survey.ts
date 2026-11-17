@@ -1,17 +1,24 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT, CULTURAL_ASSETS } from "./constants";
-
-const DEFAULT_RATING = 5;
+import { SURVEY_CONSTANTS } from "../survey/constants";
+import { SurveySubmissionService } from "../survey/survey-submission-service";
 
 export class SurveyScreenView implements ScreenView {
   public readonly id = ScreenId.SURVEY;
   private container: HTMLElement | null = null;
+  private submitBtn: HTMLButtonElement | null = null;
   private readonly dispatch: NavigationDispatcher;
-  private selectedRating: number = DEFAULT_RATING;
+  private readonly submissionService: SurveySubmissionService;
+  private selectedRating: number = SURVEY_CONSTANTS.RATING.DEFAULT;
+  private isSubmitting = false;
 
-  constructor(dispatch: NavigationDispatcher) {
+  constructor(
+    dispatch: NavigationDispatcher,
+    submissionService: SurveySubmissionService = new SurveySubmissionService(),
+  ) {
     this.dispatch = dispatch;
+    this.submissionService = submissionService;
   }
 
   public mount(parent: HTMLElement): void {
@@ -43,14 +50,21 @@ export class SurveyScreenView implements ScreenView {
     ratingGroup.setAttribute("aria-label", UI_TEXT.SURVEY_QUESTION_RATING);
 
     const starButtons: HTMLButtonElement[] = [];
-    for (let star = 1; star <= 5; star++) {
+    for (
+      let star = SURVEY_CONSTANTS.RATING.MIN;
+      star <= SURVEY_CONSTANTS.RATING.MAX;
+      star++
+    ) {
       const starBtn = document.createElement("button");
       starBtn.type = "button";
       starBtn.className = `${UI_CLASSES.RATING_BUTTON} ${
-        star <= DEFAULT_RATING ? UI_CLASSES.RATING_ACTIVE : ""
+        star <= SURVEY_CONSTANTS.RATING.DEFAULT ? UI_CLASSES.RATING_ACTIVE : ""
       }`;
       starBtn.setAttribute("data-rating", star.toString());
-      starBtn.setAttribute("aria-label", `${star} de 5 flores sagradas`);
+      starBtn.setAttribute(
+        "aria-label",
+        `${star} de ${SURVEY_CONSTANTS.RATING.MAX} flores sagradas`,
+      );
 
       const flowerIcon = document.createElement("img");
       flowerIcon.src = CULTURAL_ASSETS.HIKURI_FLOWER_ICON;
@@ -89,7 +103,8 @@ export class SurveyScreenView implements ScreenView {
     const feedbackTextarea = document.createElement("textarea");
     feedbackTextarea.id = "cv-feedback-input";
     feedbackTextarea.className = "cv-textarea";
-    feedbackTextarea.rows = 3;
+    feedbackTextarea.rows = SURVEY_CONSTANTS.FEEDBACK.TEXTAREA_ROWS;
+    feedbackTextarea.maxLength = SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH;
     feedbackTextarea.placeholder = UI_TEXT.SURVEY_FEEDBACK_PLACEHOLDER;
 
     feedbackQuestion.append(feedbackLabel, feedbackTextarea);
@@ -108,9 +123,27 @@ export class SurveyScreenView implements ScreenView {
 
     submitBtn.addEventListener("click", (event) => {
       event.stopPropagation();
+      if (this.isSubmitting) {
+        return;
+      }
+      this.isSubmitting = true;
+      submitBtn.disabled = true;
+
       const feedbackValue = feedbackTextarea.value
         ? feedbackTextarea.value.trim()
         : "";
+
+      void this.submissionService
+        .submit({
+          rating: this.selectedRating,
+          feedback: feedbackValue || undefined,
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.isSubmitting = false;
+          submitBtn.disabled = false;
+        });
+
       this.dispatch(NavigationAction.COMPLETE_SURVEY, {
         surveyAnswers: {
           rating: this.selectedRating,
@@ -139,16 +172,23 @@ export class SurveyScreenView implements ScreenView {
 
     parent.appendChild(element);
     this.container = element;
+    this.submitBtn = submitBtn;
   }
 
   public unmount(): void {
     if (this.container) {
       this.container.remove();
       this.container = null;
+      this.submitBtn = null;
     }
+    this.isSubmitting = false;
   }
 
   public show(): void {
+    this.isSubmitting = false;
+    if (this.submitBtn) {
+      this.submitBtn.disabled = false;
+    }
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
