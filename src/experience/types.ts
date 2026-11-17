@@ -1,6 +1,7 @@
 import type { ExhibitItemConfig, Vector3D } from "./constants";
 
 export const RoomId = {
+  WIXARIKA: "WIXARIKA",
   ARCHAEOLOGY: "ARCHAEOLOGY",
   TEXTILES: "TEXTILES",
 } as const;

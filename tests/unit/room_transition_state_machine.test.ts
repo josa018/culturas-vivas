@@ -28,7 +28,7 @@ describe("RoomTransitionStateMachine", () => {
     const triggered = sm.triggerTransition(RoomId.TEXTILES);
     expect(triggered).toBe(true);
     expect(sm.getState()).toBe(RoomTransitionState.FADING_OUT);
-    expect(sm.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(sm.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
     expect(sm.getTargetRoomId()).toBe(RoomId.TEXTILES);
     expect(sm.isInputLocked()).toBe(true);
 

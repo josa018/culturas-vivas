@@ -5,10 +5,12 @@ import {
   ExhibitMediaType,
   ROOM_DEFINITIONS,
 } from "./constants";
-import type { RoomId } from "./types";
+import { RoomId } from "./types";
+import { createWixarikaEnvironment } from "./wixarika-environment";
 import { PlaceholderAssetGenerator } from "./placeholders";
 import { createPortalEntity } from "./components/portal-waypoint";
 import { getSharedInspectionController } from "./components/inspectable";
+import { appendImageGallery } from "./image-gallery";
 
 export class ExhibitRoomBuilder {
   public static readonly ROOM_CONTAINER_ID = "cv-prototype-room-group";
@@ -257,6 +259,9 @@ export class ExhibitRoomBuilder {
     const roomGroup = document.createElement("a-entity");
     roomGroup.setAttribute("id", this.ROOM_CONTAINER_ID);
     roomGroup.setAttribute("data-room-id", roomDef.id);
+    if (roomDef.id === RoomId.WIXARIKA) {
+      roomGroup.appendChild(createWixarikaEnvironment());
+    }
 
     // Ensure preloaded media asset IDs are registered in <a-assets>
     this.ensureMediaAssets(sceneEl);
@@ -275,7 +280,7 @@ export class ExhibitRoomBuilder {
       );
       exhibitRoot.setAttribute(
         "cv-inspectable",
-        `id: ${exhibit.id}; title: ${exhibit.title}; description: ${exhibit.description}; autoRotate: ${exhibit.autoRotate}; rotationSpeed: ${exhibit.rotationSpeed}; mediaType: ${exhibit.mediaType}`,
+        `id: ${exhibit.id}; title: ${exhibit.title}; description: ${exhibit.description}; autoRotate: ${exhibit.autoRotate}; rotationSpeed: ${exhibit.rotationSpeed}; mediaType: ${exhibit.mediaType}${exhibit.mediaUrls?.length ? "; focalDistance: 2.4" : ""}`,
       );
 
       switch (exhibit.mediaType) {
@@ -350,6 +355,9 @@ export class ExhibitRoomBuilder {
           frame.setAttribute("material", "shader: flat");
 
           exhibitRoot.append(frame, plane);
+          if (exhibit.mediaUrls?.length) {
+            appendImageGallery(exhibitRoot, plane, exhibit.title, exhibit.mediaUrls);
+          }
           break;
         }
 

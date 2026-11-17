@@ -1,4 +1,5 @@
 import { RoomId, type RoomDefinition } from "./types";
+import { WIXARIKA_EXHIBITS } from "./wixarika";
 
 export const ExhibitMediaType = {
   IMAGE_2D: "IMAGE_2D",
@@ -35,6 +36,7 @@ export interface ExhibitItemConfig {
   readonly autoRotate: boolean;
   readonly rotationSpeed: number;
   readonly mediaUrl?: string;
+  readonly mediaUrls?: readonly string[];
   readonly posterUrl?: string;
 }
 
@@ -186,7 +188,7 @@ export const PORTAL_COLORS = {
   TEXT: "#f8fafc",
 } as const;
 
-export const DEFAULT_ROOM_ID = RoomId.ARCHAEOLOGY;
+export const DEFAULT_ROOM_ID = RoomId.WIXARIKA;
 
 export const TEXTILES_EXHIBITS: readonly ExhibitItemConfig[] = [
   {
@@ -225,6 +227,20 @@ export const TEXTILES_EXHIBITS: readonly ExhibitItemConfig[] = [
 ] as const;
 
 export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
+  [RoomId.WIXARIKA]: {
+    id: RoomId.WIXARIKA,
+    title: "Sala Wixárika",
+    skyboxAssetId: "sky-wixarika",
+    skyboxUrl: "/assets/backgrounds/wixarika-sky.svg",
+    exhibits: WIXARIKA_EXHIBITS,
+    portals: [{
+      id: "portal-wixarika-to-archaeology",
+      targetRoomId: RoomId.ARCHAEOLOGY,
+      title: "Ir a Sala de Arqueologia",
+      position: { x: 0, y: 1.6, z: 3 },
+      rotation: { x: 0, y: 180, z: 0 },
+    }],
+  },
   [RoomId.ARCHAEOLOGY]: {
     id: RoomId.ARCHAEOLOGY,
     title: "Sala de Arqueologia",
@@ -238,6 +254,13 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
         title: "Ir a Sala de Textiles",
         position: { x: 0, y: 1.6, z: 2.8 },
         rotation: { x: 0, y: 180, z: 0 },
+      },
+      {
+        id: "portal-archaeology-to-wixarika",
+        targetRoomId: RoomId.WIXARIKA,
+        title: "Ir a Sala Wixárika",
+        position: { x: -2.8, y: 1.6, z: 0 },
+        rotation: { x: 0, y: 90, z: 0 },
       },
     ],
   },

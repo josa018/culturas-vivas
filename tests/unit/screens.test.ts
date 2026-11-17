@@ -128,7 +128,7 @@ describe("Screen Views & Interactions", () => {
     experience.show();
 
     expect(root.querySelector(".cv-badge")?.textContent).toBe(
-      "Sala de Arqueologia",
+      "Sala Wixárika",
     );
     expect(resizeInvoked).toBe(false);
     expect(enterVRCount).toBe(1);

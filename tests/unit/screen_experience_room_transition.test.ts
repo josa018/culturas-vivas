@@ -30,21 +30,21 @@ describe("ScreenExperience Room Transition", () => {
 
     const stateMachine = screen.getTransitionStateMachine();
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
-    expect(stateMachine.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(stateMachine.getActiveRoomId()).toBe(RoomId.WIXARIKA);
 
     const container = document.createElement("div");
     document.body.appendChild(container);
     screen.mount(container);
     screen.show();
 
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
-      "Sala de Arqueologia",
+      "Sala Wixárika",
     );
 
     // Focus an exhibit
     const inspectionController = getSharedInspectionController();
-    inspectionController.focus("exhibit-statue-3d");
+    inspectionController.focus("exhibit-wixarika-cultura");
     expect(inspectionController.getState()).toBe(InspectionState.FOCUSING);
 
     // Trigger portal activation to Textiles

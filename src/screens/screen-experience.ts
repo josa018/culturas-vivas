@@ -14,6 +14,8 @@ import {
 } from "../experience/components/portal-waypoint";
 import { DEFAULT_ROOM_ID, ROOM_DEFINITIONS } from "../experience/constants";
 import { getSharedInspectionController } from "../experience/components/inspectable";
+import { createWixarikaGuide } from "../experience/wixarika-guide";
+import { configureExperiencePointer } from "../experience/pointer-controls";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -40,6 +42,8 @@ export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
   private roomBadgeEl: HTMLElement | null = null;
+  private wixarikaGuide: HTMLDetailsElement | null = null;
+  private roomSelect: HTMLSelectElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
   private isProgrammaticExit: boolean = false;
@@ -64,15 +68,21 @@ export class ExperienceScreenView implements ScreenView {
 
   public setViewMode(viewMode: string): void {
     this.viewMode = viewMode;
+    this.updateRoomBadge(ExhibitRoomBuilder.getActiveRoomId());
   }
 
   public updateRoomBadge(roomId: RoomId): void {
+    if (this.wixarikaGuide) {
+      this.wixarikaGuide.hidden = roomId !== RoomId.WIXARIKA || this.viewMode !== "2d";
+    }
+    if (this.roomSelect) this.roomSelect.value = roomId;
     if (!this.roomBadgeEl) {
       return;
     }
     const roomDef =
       ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
     this.roomBadgeEl.textContent = roomDef.title;
+    this.container?.setAttribute("data-room-theme", roomId === RoomId.WIXARIKA ? "wixarika" : "default");
   }
 
   public mount(parent: HTMLElement): void {
@@ -108,17 +118,38 @@ export class ExperienceScreenView implements ScreenView {
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
 
-    topBar.append(badge, exitButton);
+    const roomSelect = document.createElement("select");
+    roomSelect.className = "cv-room-select";
+    roomSelect.setAttribute("aria-label", "Cambiar sala");
+    for (const room of Object.values(ROOM_DEFINITIONS)) {
+      const option = document.createElement("option");
+      option.value = room.id;
+      option.textContent = room.title;
+      roomSelect.appendChild(option);
+    }
+    this.roomSelect = roomSelect;
+    roomSelect.addEventListener("change", () => {
+      const target = roomSelect.value as RoomId;
+      roomSelect.value = ExhibitRoomBuilder.getActiveRoomId();
+      this.transitionToRoom(target);
+    });
+    topBar.append(badge, roomSelect, exitButton);
     hudOverlay.appendChild(topBar);
+    this.wixarikaGuide = createWixarikaGuide();
+    hudOverlay.appendChild(this.wixarikaGuide);
+    this.updateRoomBadge(ExhibitRoomBuilder.getActiveRoomId());
 
     parent.appendChild(hudOverlay);
     this.container = hudOverlay;
+    this.updateRoomBadge(ExhibitRoomBuilder.getActiveRoomId());
     this.setupSceneListeners();
   }
 
   public unmount(): void {
     this.teardownSceneListeners();
     this.roomBadgeEl = null;
+    this.wixarikaGuide = null;
+    this.roomSelect = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -275,6 +306,7 @@ export class ExperienceScreenView implements ScreenView {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
       const roomGroup = ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      configureExperiencePointer(scene, this.viewMode);
 
       // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =

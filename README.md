@@ -38,6 +38,31 @@ npm run build
 - Todo cambio entra por Pull Request con la revisión de otro integrante
   antes de fusionarse, sin conflictos.
 
+## Sala Wixárika
+
+El recorrido comienza en la sala wixárika. Incluye 17 fotografías en cinco
+categorías: cultura (3), arte (2), vestimenta (3), alimentación (4) y vivienda (5).
+Las imágenes están en `public/assets/wixarika/` y los textos en
+`src/experience/wixarika.ts`. Se conservó la clasificación de los archivos recibidos;
+no se atribuyen nombres de platillos, personas o edificios sin identificar.
+
+- En el recorrido 3D/VR, cada categoría tiene controles Anterior/Siguiente.
+- En 2D, los cuadros y sus botones responden al clic o toque en su posición;
+  en VR se conserva el cursor de mirada. Los controles tienen un área ampliada.
+- La sala tiene un entorno expositivo propio con cenefas del proyecto, rombos
+  multicolor y piso/techo coordinados; es una interpretación gráfica contemporánea,
+  no una reconstrucción de un templo o un espacio ceremonial.
+- En modo 2D, «Explorar categorías · Wixárika» ofrece las fotos, un resumen y
+  «Saber más» para consultar el resto sin saturar la pantalla.
+- El selector superior permite visitar también las salas de demostración existentes.
+- Las fotos se convirtieron a WebP, manteniendo su proporción y sin recortarlas.
+  Para volver a importarlas: `node scripts/import-wixarika.mjs "ruta a la carpeta"`.
+- Validación: `npm run build` y `npx vitest run`.
+- En teléfonos, la barra superior se compacta y el panel de categorías permite
+  desplazamiento interno, respeta las áreas seguras y funciona en ambas orientaciones.
+  Para probar desde otro dispositivo en la misma red: `npm run dev -- --host 0.0.0.0`
+  y abrir `http://IP-DE-LA-COMPUTADORA:5173`.
+
 ## Encuesta
 Las respuestas siguen `public/data/encuesta.schema.json`.
 No se recogen nombre, correo ni ubicación. Para validar los ejemplos:

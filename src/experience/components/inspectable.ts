@@ -103,7 +103,7 @@ export function createInspectableComponentDefinition() {
       billboard.setAttribute("class", "cv-billboard");
       billboard.setAttribute(
         "position",
-        `${METADATA_BILLBOARD_OFFSET.x} ${METADATA_BILLBOARD_OFFSET.y} ${METADATA_BILLBOARD_OFFSET.z}`,
+        `${METADATA_BILLBOARD_OFFSET.x} ${getSharedInspectionController().getExhibit(this.data.id)?.mediaUrls?.length ? -1.2 : METADATA_BILLBOARD_OFFSET.y} ${METADATA_BILLBOARD_OFFSET.z}`,
       );
       billboard.setAttribute("scale", "0.001 0.001 0.001");
       billboard.setAttribute("visible", "false");
@@ -116,6 +116,7 @@ export function createInspectableComponentDefinition() {
       plane.setAttribute("material", "shader: flat; side: double");
 
       const titleEl = document.createElement("a-text");
+      titleEl.setAttribute("font", "dejavu");
       titleEl.setAttribute("value", this.data.title);
       titleEl.setAttribute("color", "#38bdf8");
       titleEl.setAttribute("align", "left");
@@ -131,6 +132,7 @@ export function createInspectableComponentDefinition() {
       );
 
       const descEl = document.createElement("a-text");
+      descEl.setAttribute("font", "dejavu");
       descEl.setAttribute("value", this.data.description);
       descEl.setAttribute("color", "#f1f5f9");
       descEl.setAttribute("align", "left");
@@ -151,6 +153,7 @@ export function createInspectableComponentDefinition() {
       returnBtn.setAttribute("data-action", "return-exhibit");
 
       const returnText = document.createElement("a-text");
+      returnText.setAttribute("font", "dejavu");
       returnText.setAttribute("value", EXHIBIT_DICTIONARY.CLOSE_ICON);
       returnText.setAttribute("align", "center");
       returnText.setAttribute("color", "#ffffff");
