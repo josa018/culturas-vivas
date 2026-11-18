@@ -5,6 +5,7 @@ import {
 } from "../constants";
 
 export const VR_TAP_HUD_TOGGLE_EVENT = "cv-vr-tap-hud-toggle";
+export const VR_TAP_OUTSIDE_HUD_EVENT = "cv-vr-tap-outside-hud";
 
 export interface PointerPoint2D {
   readonly x: number;
@@ -281,6 +282,15 @@ export function createVrTapTriggerComponentDefinition() {
       this.lastActivationTimestampMs = nowMs;
 
       if (outcome === "ACTIVATE_ENTITY" && upEl) {
+        const isInsideHud = Boolean(
+          upEl.closest?.(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`),
+        );
+        if (!isInsideHud) {
+          this.el.dispatchEvent?.(
+            new CustomEvent(VR_TAP_OUTSIDE_HUD_EVENT, { bubbles: true }),
+          );
+        }
+
         const cursorComp = this.cursorEl?.components?.cursor;
         if (cursorComp?.fuseTimeout !== undefined) {
           clearTimeout(cursorComp.fuseTimeout);

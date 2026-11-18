@@ -20,6 +20,7 @@ import {
 } from "../../src/experience/components/vr-hologram-hud";
 import {
   VR_TAP_HUD_TOGGLE_EVENT,
+  VR_TAP_OUTSIDE_HUD_EVENT,
   computeDragDistancePx,
   createVrTapTriggerComponentDefinition,
   ensureVrTapTrigger,
@@ -335,6 +336,37 @@ describe("VR Hologram HUD Component", () => {
     expect(vi.getTimerCount()).toBeGreaterThan(0);
     instance.remove();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("automatically dismisses an open HUD when ExhibitInspectionController focuses an exhibit and unsubscribes on remove()", () => {
+    const controller = getSharedInspectionController();
+    controller.setExhibits(ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits);
+
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(instance.isOpen).toBe(true);
+    expect(
+      el.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`)?.classList.contains("clickable"),
+    ).toBe(true);
+
+    // Focusing an exhibit (via gaze-fuse or tap) must auto-dismiss the open HUD
+    controller.focus("exhibit-statue-3d");
+    expect(instance.isOpen).toBe(false);
+    expect(el.getAttribute("visible")).toBe("false");
+    expect(
+      el.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`)?.classList.contains("clickable"),
+    ).toBe(false);
+
+    // Re-summon, remove(), and verify subsequent focus does not invoke dismiss() on torn-down instance
+    controller.abortActiveInspection();
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    const dismissSpy = vi.spyOn(instance, "dismiss");
+    instance.remove();
+    controller.focus("exhibit-painting-2d");
+    expect(dismissSpy).not.toHaveBeenCalled();
   });
 
   it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
@@ -735,6 +767,76 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(topBar.classList.contains("cv-hud-topbar--hidden")).toBe(false);
     expect(tapInstance.hudToggleEnabled).toBe(false);
     expect(hudInstance.enabled).toBe(false);
+
+    screen.unmount();
+  });
+
+  it("dismisses open 3D HUD when tapping a .clickable target outside HUD_ROOT, while keeping HUD open when tapping PANEL_BACKDROP", () => {
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    cursor.setAttribute("raycaster", "objects: .clickable");
+    cursor.components = {
+      cursor: {
+        data: { fuse: true, rayOrigin: "entity" },
+      },
+    };
+    const sky = document.createElement("a-sky");
+    const externalTarget = document.createElement("a-entity");
+    externalTarget.setAttribute("class", "clickable");
+    camera.appendChild(cursor);
+    scene.append(camera, sky, externalTarget);
+    document.body.appendChild(scene);
+
+    const appRoot = document.createElement("div");
+    document.body.appendChild(appRoot);
+
+    const screen = new ExperienceScreenView(() => {}, ViewMode.VR);
+    screen.mount(appRoot);
+    screen.show();
+
+    const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`) as VrHologramHudEntity;
+    const tapEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`) as VrTapTriggerEntity;
+    const hudInstance = createMockHudInstance(hudEl);
+    hudInstance.init();
+    const tapInstance = createMockTapTriggerInstance(tapEl);
+    tapInstance.init();
+    (hudEl as unknown as { components?: Record<string, VrHologramHudComponentInstance> }).components = {
+      "cv-vr-hologram-hud": hudInstance,
+    };
+    (tapEl as unknown as { components?: Record<string, VrTapTriggerComponentInstance> }).components = {
+      "cv-vr-tap-trigger": tapInstance,
+    };
+
+    let outsideHudEvents = 0;
+    scene.addEventListener(VR_TAP_OUTSIDE_HUD_EVENT, () => {
+      outsideHudEvents++;
+    });
+
+    // Summon HUD
+    hudInstance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(hudInstance.isOpen).toBe(true);
+
+    // Tapping PANEL_BACKDROP inside HUD_ROOT must NOT emit outside-HUD dismiss or close HUD
+    const backdropEl = hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`) as Element;
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: backdropEl } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: backdropEl } }));
+    expect(outsideHudEvents).toBe(0);
+    expect(hudInstance.isOpen).toBe(true);
+
+    // Tapping external .clickable target outside HUD_ROOT must emit event, deliver click, and dismiss HUD
+    let externalClicks = 0;
+    externalTarget.addEventListener("click", () => {
+      externalClicks++;
+    });
+    vi.spyOn(Date, "now").mockReturnValue(2000);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: externalTarget } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: externalTarget } }));
+
+    expect(externalClicks).toBe(1);
+    expect(outsideHudEvents).toBe(1);
+    expect(hudInstance.isOpen).toBe(false);
 
     screen.unmount();
   });

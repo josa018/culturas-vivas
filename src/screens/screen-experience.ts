@@ -27,6 +27,7 @@ import {
 import {
   ensureVrTapTrigger,
   VR_TAP_HUD_TOGGLE_EVENT,
+  VR_TAP_OUTSIDE_HUD_EVENT,
   type VrTapTriggerComponentInstance,
 } from "../experience/components/vr-tap-trigger";
 
@@ -62,6 +63,7 @@ export class ExperienceScreenView implements ScreenView {
   private exitVRHandler: (() => void) | null = null;
   private portalHandler: ((evt: Event) => void) | null = null;
   private tapHudToggleHandler: (() => void) | null = null;
+  private tapOutsideHudHandler: (() => void) | null = null;
   private hudSwitch2dHandler: (() => void) | null = null;
   private hudExitHandler: (() => void) | null = null;
   private readonly transitionStateMachine: RoomTransitionStateMachine;
@@ -527,6 +529,27 @@ export class ExperienceScreenView implements ScreenView {
       );
     }
 
+    if (!this.tapOutsideHudHandler) {
+      this.tapOutsideHudHandler = () => {
+        if (this.viewMode !== "vr") {
+          return;
+        }
+        const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`);
+        const hudComp = (
+          hudEl as unknown as {
+            components?: Record<string, VrHologramHudComponentInstance>;
+          } | null
+        )?.components?.["cv-vr-hologram-hud"];
+        if (hudComp?.isOpen) {
+          hudComp.dismiss();
+        }
+      };
+      scene.addEventListener(
+        VR_TAP_OUTSIDE_HUD_EVENT,
+        this.tapOutsideHudHandler,
+      );
+    }
+
     if (!this.hudSwitch2dHandler) {
       this.hudSwitch2dHandler = () => {
         if (this.viewMode === "vr") {
@@ -571,6 +594,14 @@ export class ExperienceScreenView implements ScreenView {
         this.tapHudToggleHandler,
       );
       this.tapHudToggleHandler = null;
+    }
+
+    if (this.tapOutsideHudHandler) {
+      scene.removeEventListener(
+        VR_TAP_OUTSIDE_HUD_EVENT,
+        this.tapOutsideHudHandler,
+      );
+      this.tapOutsideHudHandler = null;
     }
 
     if (this.hudSwitch2dHandler) {

@@ -1,5 +1,6 @@
 import {
   DEFAULT_ROOM_ID,
+  InspectionState,
   ROOM_DEFINITIONS,
   VR_HUD_ANIMATION_DURATION_MS,
   VR_HUD_COLORS,
@@ -60,6 +61,7 @@ export interface VrHologramHudComponentInstance {
   dismissTimer?: ReturnType<typeof setTimeout> | null;
   hudOutCompleteHandler?: (() => void) | null;
   interactiveEls?: HTMLElement[];
+  unsubscribeInspection?: (() => void) | null;
   init: () => void;
   setCallbacks: (callbacks: VrHudActionCallbacks) => void;
   setEnabled: (enabled: boolean) => void;
@@ -369,6 +371,19 @@ export function createVrHologramHudComponentDefinition() {
 
       this.interactiveEls = [backdrop, switch2dBtn, exitBtn, dismissBtn];
       this.el.append(backdrop, topTrim, roomChip, switch2dBtn, exitBtn, dismissBtn);
+
+      this.unsubscribeInspection?.();
+      this.unsubscribeInspection = getSharedInspectionController().subscribe(
+        (state) => {
+          if (
+            this.isOpen &&
+            (state === InspectionState.FOCUSING ||
+              state === InspectionState.INSPECTING)
+          ) {
+            this.dismiss();
+          }
+        },
+      );
     },
 
     setCallbacks: function (
@@ -525,6 +540,8 @@ export function createVrHologramHudComponentDefinition() {
     remove: function (this: VrHologramHudComponentInstance) {
       this.hudEpoch = (this.hudEpoch ?? 0) + 1;
       clearPendingHudDismiss(this);
+      this.unsubscribeInspection?.();
+      this.unsubscribeInspection = null;
       setHudInteractiveClickable(this, false);
       this.isOpen = false;
       this.roomChipEl = null;
