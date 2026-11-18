@@ -1,5 +1,13 @@
 export type { ScreenView, NavigationDispatcher } from "./base-screen";
-export { UI_CLASSES, UI_TEXT, SCREEN_TEXTS } from "./constants";
+export {
+  UI_CLASSES,
+  UI_TEXT,
+  SCREEN_TEXTS,
+  PARTNER_LOGOS,
+  SPLASH_DEVELOPERS,
+  SPLASH_TIMING,
+} from "./constants";
+export type { PartnerLogoAsset, PartnerLogoVariant } from "./constants";
 export { SplashScreenView } from "./screen-splash";
 export { WelcomeScreenView } from "./screen-welcome";
 export { TutorialScreenView } from "./screen-tutorial";

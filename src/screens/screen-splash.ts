@@ -4,7 +4,9 @@ import {
   UI_CLASSES,
   UI_TEXT,
   CULTURAL_ASSETS,
-  MAIN_SCREEN_LOGOS,
+  PARTNER_LOGOS,
+  SPLASH_DEVELOPERS,
+  SPLASH_TIMING,
 } from "./constants";
 import {
   ScenePreloadManager,
@@ -17,10 +19,7 @@ export class SplashScreenView implements ScreenView {
   private spinner: HTMLElement | null = null;
   private progressFill: HTMLElement | null = null;
   private statusText: HTMLElement | null = null;
-  private developersText: HTMLElement | null = null;
   private enterBtn: HTMLElement | null = null;
-  private brandCarousel: HTMLElement | null = null;
-  private brandTimer: number | null = null;
   private isReady = false;
   private readonly dispatch: NavigationDispatcher;
   private readonly preloadManager: ScenePreloadManager;
@@ -53,40 +52,38 @@ export class SplashScreenView implements ScreenView {
     element.className = `${UI_CLASSES.SCREEN_CONTAINER} cv-screen--splash`;
     element.setAttribute("data-screen-id", this.id);
 
-    const brandCarousel = document.createElement("div");
-    brandCarousel.className = "cv-splash-brand-carousel";
-    brandCarousel.setAttribute("aria-live", "polite");
+    const shell = document.createElement("div");
+    shell.className = UI_CLASSES.SPLASH_SHELL;
 
-    MAIN_SCREEN_LOGOS.forEach((logo, index) => {
-      const slide = document.createElement("img");
-      slide.src = logo.src;
-      slide.alt = logo.alt;
-      slide.className = `cv-splash-brand-slide ${index === 0 ? "is-visible" : ""}`;
-      brandCarousel.appendChild(slide);
-    });
-
-    const content = document.createElement("div");
-    content.className = "cv-splash-content";
+    const hero = document.createElement("div");
+    hero.className = UI_CLASSES.SPLASH_HERO;
 
     // Culturas Vivas 4-Cultures Logo Emblem Container
     const tsikuriBox = document.createElement("div");
     tsikuriBox.className = "cv-tsikuri-loader";
     const tsikuriImg = document.createElement("img");
     tsikuriImg.src = CULTURAL_ASSETS.LOGO;
-    tsikuriImg.alt = "Culturas Vivas";
+    tsikuriImg.alt = UI_TEXT.SPLASH_TITLE;
     tsikuriImg.className = "cv-tsikuri-mandala-img";
     tsikuriBox.appendChild(tsikuriImg);
+
+    const headerGroup = document.createElement("div");
+    headerGroup.className = UI_CLASSES.SPLASH_HEADER_GROUP;
 
     const title = document.createElement("h1");
     title.className = "cv-title";
     title.textContent = UI_TEXT.SPLASH_TITLE;
 
     const subtitle = document.createElement("p");
-    subtitle.className = "cv-subtitle";
-    subtitle.style.color = "var(--cv-color-accent-cempasuchil)";
+    subtitle.className = "cv-subtitle cv-splash-tagline";
     subtitle.textContent = UI_TEXT.SPLASH_TAGLINE;
 
-    // Geometric Diamond Progress Bar Container
+    headerGroup.append(title, subtitle);
+
+    // Fixed-height action slot prevents layout shift between loading bar and Enter CTA
+    const actionSlot = document.createElement("div");
+    actionSlot.className = UI_CLASSES.SPLASH_ACTION_SLOT;
+
     const spinner = document.createElement("div");
     spinner.className = "cv-progress-container";
     spinner.setAttribute("role", "progressbar");
@@ -103,12 +100,8 @@ export class SplashScreenView implements ScreenView {
     statusText.className = "cv-caption cv-splash-status";
     statusText.textContent = UI_TEXT.SPLASH_LOADING;
 
-    const developersText = document.createElement("p");
-    developersText.className = "cv-splash-developers";
-    developersText.textContent = UI_TEXT.SPLASH_DEVELOPERS;
-    developersText.style.whiteSpace = "pre-line";
-
     const enterBtn = document.createElement("button");
+    enterBtn.type = "button";
     enterBtn.className = `${UI_CLASSES.BUTTON_PRIMARY} cv-splash-enter-btn`;
     enterBtn.setAttribute("data-action", "enter");
     enterBtn.textContent = UI_TEXT.SPLASH_BTN_ENTER;
@@ -119,47 +112,31 @@ export class SplashScreenView implements ScreenView {
       this.dispatch(NavigationAction.FINISH_LOADING);
     });
 
-    element.addEventListener("click", () => {
-      if (this.isReady) {
-        this.dispatch(NavigationAction.FINISH_LOADING);
-      }
-    });
+    actionSlot.append(spinner, statusText, enterBtn);
+    hero.append(tsikuriBox, headerGroup, actionSlot);
 
-    content.append(
-      tsikuriBox,
-      title,
-      subtitle,
-      spinner,
-      statusText,
-      developersText,
-      enterBtn,
-    );
-    element.append(brandCarousel, content);
+    const footer = this.buildFooter();
+    shell.append(hero, footer);
+    element.appendChild(shell);
 
     parent.appendChild(element);
     this.container = element;
     this.spinner = spinner;
     this.progressFill = progressFill;
     this.statusText = statusText;
-    this.developersText = developersText;
     this.enterBtn = enterBtn;
-    this.brandCarousel = brandCarousel;
 
-    this.startBrandCarousel();
     void this.startPreload();
   }
 
   public unmount(): void {
-    this.stopBrandCarousel();
     if (this.container) {
       this.container.remove();
       this.container = null;
       this.spinner = null;
       this.progressFill = null;
       this.statusText = null;
-      this.developersText = null;
       this.enterBtn = null;
-      this.brandCarousel = null;
     }
   }
 
@@ -193,9 +170,6 @@ export class SplashScreenView implements ScreenView {
     if (this.statusText) {
       this.statusText.style.display = "none";
     }
-    if (this.developersText) {
-      this.developersText.style.display = "none";
-    }
     if (this.enterBtn) {
       this.enterBtn.style.display = "inline-block";
     }
@@ -205,30 +179,47 @@ export class SplashScreenView implements ScreenView {
     return this.isReady;
   }
 
-  private startBrandCarousel(): void {
-    if (!this.brandCarousel) {
-      return;
+  private buildFooter(): HTMLElement {
+    const footer = document.createElement("footer");
+    footer.className = UI_CLASSES.SPLASH_FOOTER;
+
+    const partnersRow = document.createElement("div");
+    partnersRow.className = UI_CLASSES.SPLASH_PARTNERS;
+
+    for (const partner of PARTNER_LOGOS) {
+      const logo = document.createElement("img");
+      logo.src = partner.src;
+      logo.alt = partner.alt;
+      logo.decoding = "async";
+      logo.setAttribute("data-partner-id", partner.id);
+      logo.setAttribute("data-partner-variant", partner.variant);
+      logo.className =
+        partner.variant === "emblem"
+          ? `${UI_CLASSES.SPLASH_PARTNER_LOGO} ${UI_CLASSES.SPLASH_PARTNER_EMBLEM}`
+          : UI_CLASSES.SPLASH_PARTNER_LOGO;
+      partnersRow.appendChild(logo);
     }
 
-    const slides = Array.from(this.brandCarousel.querySelectorAll(".cv-splash-brand-slide"));
-    if (slides.length <= 1) {
-      return;
+    const credits = document.createElement("div");
+    credits.className = UI_CLASSES.SPLASH_CREDITS;
+
+    const creditsLabel = document.createElement("p");
+    creditsLabel.className = UI_CLASSES.SPLASH_CREDITS_LABEL;
+    creditsLabel.textContent = UI_TEXT.SPLASH_CREDITS_LABEL;
+
+    const creditsList = document.createElement("ul");
+    creditsList.className = UI_CLASSES.SPLASH_CREDITS_LIST;
+
+    for (const developer of SPLASH_DEVELOPERS) {
+      const item = document.createElement("li");
+      item.className = UI_CLASSES.SPLASH_CREDITS_ITEM;
+      item.textContent = developer;
+      creditsList.appendChild(item);
     }
 
-    let currentIndex = 0;
-    this.brandTimer = window.setInterval(() => {
-      currentIndex = (currentIndex + 1) % slides.length;
-      slides.forEach((slide, index) => {
-        slide.classList.toggle("is-visible", index === currentIndex);
-      });
-    }, 2200);
-  }
-
-  private stopBrandCarousel(): void {
-    if (this.brandTimer !== null) {
-      window.clearInterval(this.brandTimer);
-      this.brandTimer = null;
-    }
+    credits.append(creditsLabel, creditsList);
+    footer.append(partnersRow, credits);
+    return footer;
   }
 
   private async startPreload(): Promise<void> {
@@ -241,10 +232,15 @@ export class SplashScreenView implements ScreenView {
     await this.preloadManager.preloadAll(roomAssets);
 
     if (sceneEl) {
-      await this.preloadManager.waitForSceneLoaded(sceneEl, 3000);
+      await this.preloadManager.waitForSceneLoaded(
+        sceneEl,
+        SPLASH_TIMING.SCENE_LOADED_TIMEOUT_MS,
+      );
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 1400));
+    await new Promise((resolve) =>
+      setTimeout(resolve, SPLASH_TIMING.POST_LOAD_REVEAL_DELAY_MS),
+    );
     this.setReady();
   }
 }

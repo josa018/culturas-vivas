@@ -11,6 +11,10 @@ import {
   ExitModalScreenView,
   SurveyScreenView,
   UI_CLASSES,
+  UI_TEXT,
+  PARTNER_LOGOS,
+  SPLASH_DEVELOPERS,
+  SPLASH_TIMING,
 } from "../../src/screens/index";
 import { SURVEY_CONSTANTS } from "../../src/survey/constants";
 import { SurveySubmissionService } from "../../src/survey/survey-submission-service";
@@ -69,6 +73,90 @@ describe("Screen Views & Interactions", () => {
     document.body.innerHTML = "";
   });
 
+  it("PARTNER_LOGOS and SPLASH_DEVELOPERS expose optimized WebP assets and ordered credits without legacy logos", () => {
+    expect(PARTNER_LOGOS).toHaveLength(3);
+    expect(PARTNER_LOGOS.map((item) => ({ src: item.src, variant: item.variant }))).toEqual([
+      {
+        src: "/assets/partners/cecan-nayarit-horizontal-white.webp",
+        variant: "wide",
+      },
+      {
+        src: "/assets/partners/solon-arguello-horizontal-white.webp",
+        variant: "horizontal",
+      },
+      {
+        src: "/assets/partners/ittepic-emblem.webp",
+        variant: "emblem",
+      },
+    ]);
+
+    for (const partner of PARTNER_LOGOS) {
+      expect(partner.alt.length).toBeGreaterThan(0);
+      const diskPath = path.resolve(process.cwd(), "public", partner.src.replace(/^\//, ""));
+      expect(fs.existsSync(diskPath)).toBe(true);
+    }
+
+    expect(fs.existsSync(path.resolve(process.cwd(), "public/assets/logos"))).toBe(false);
+    expect(UI_TEXT.SPLASH_CREDITS_LABEL).toBe("Desarrolladores");
+    expect(SPLASH_DEVELOPERS).toEqual([
+      "José Alfredo Camarena Martínez",
+      "Rodolfo Humberto Covarrubias García",
+      "Saúl Miguel González Ayala",
+      "Nelly Esmeralda González Nonato",
+      "Josadet Pérez Guerra",
+    ]);
+    expect(SPLASH_TIMING.SCENE_LOADED_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(SPLASH_TIMING.POST_LOAD_REVEAL_DELAY_MS).toBeGreaterThan(0);
+  });
+
+  it("SplashScreenView renders all 3 partner logos simultaneously and keeps 5 developer credits visible before and after setReady", () => {
+    const splash = new SplashScreenView(dispatch);
+    splash.mount(root);
+
+    const splashEl = splash.getElement()!;
+    expect(splashEl.querySelector(".cv-splash-brand-carousel")).toBeNull();
+
+    const footer = splashEl.querySelector(`footer.${UI_CLASSES.SPLASH_FOOTER}`) as HTMLElement;
+    expect(footer).toBeTruthy();
+
+    const partnersEl = footer.querySelector(`.${UI_CLASSES.SPLASH_PARTNERS}`) as HTMLElement;
+    expect(partnersEl).toBeTruthy();
+    expect(partnersEl.getAttribute("aria-live")).toBeNull();
+
+    const partnerImgs = Array.from(partnersEl.querySelectorAll("img"));
+    expect(partnerImgs).toHaveLength(3);
+    expect(partnerImgs.map((img) => img.getAttribute("src"))).toEqual(
+      PARTNER_LOGOS.map((p) => p.src),
+    );
+    expect(partnerImgs[0].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(false);
+    expect(partnerImgs[1].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(false);
+    expect(partnerImgs[2].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(true);
+
+    const actionSlot = splashEl.querySelector(`.${UI_CLASSES.SPLASH_ACTION_SLOT}`) as HTMLElement;
+    expect(actionSlot).toBeTruthy();
+    expect(actionSlot.querySelector('[data-action="enter"]')).toBeTruthy();
+
+    const creditsLabel = footer.querySelector(`.${UI_CLASSES.SPLASH_CREDITS_LABEL}`) as HTMLElement;
+    expect(creditsLabel.textContent).toBe(UI_TEXT.SPLASH_CREDITS_LABEL);
+
+    const creditItems = Array.from(
+      footer.querySelectorAll(`.${UI_CLASSES.SPLASH_CREDITS_LIST} > .${UI_CLASSES.SPLASH_CREDITS_ITEM}`),
+    ) as HTMLElement[];
+    expect(creditItems.map((li) => li.textContent)).toEqual([...SPLASH_DEVELOPERS]);
+
+    splash.setReady();
+
+    expect(footer.style.display).not.toBe("none");
+    for (const item of creditItems) {
+      expect(item.style.display).not.toBe("none");
+    }
+    for (const img of partnerImgs) {
+      expect(img.style.display).not.toBe("none");
+    }
+
+    splash.unmount();
+  });
+
   it("SplashScreenView ignores clicks until ready, then dispatches FINISH_LOADING", () => {
     const splash = new SplashScreenView(dispatch);
     expect(splash.id).toBe(ScreenId.SPLASH);
@@ -85,6 +173,12 @@ describe("Screen Views & Interactions", () => {
 
     splash.setReady();
     expect(enterBtn.style.display).toBe("inline-block");
+
+    // Clicking splash background, partner logos, or credits footer after ready must NOT navigate
+    splashEl.click();
+    (splashEl.querySelector(`.${UI_CLASSES.SPLASH_FOOTER}`) as HTMLElement).click();
+    (splashEl.querySelector(`.${UI_CLASSES.SPLASH_PARTNERS} img`) as HTMLElement).click();
+    expect(dispatched).toHaveLength(0);
 
     enterBtn.click();
     expect(dispatched).toEqual([{ action: NavigationAction.FINISH_LOADING, payload: undefined }]);
@@ -334,6 +428,22 @@ describe("Screen Views & Interactions", () => {
 
     (el.querySelector('[data-action="skip-survey"]') as HTMLElement).click();
     expect(dispatched[1].action).toBe(NavigationAction.SKIP_SURVEY);
+  });
+
+  it("src/style.css defines responsive splash layout classes, emblem contrast rule, and removes legacy brand carousel", () => {
+    const cssPath = path.resolve(process.cwd(), "src/style.css");
+    const styleCss = fs.readFileSync(cssPath, "utf8");
+
+    expect(styleCss).toContain(".cv-splash-shell");
+    expect(styleCss).toMatch(/\.cv-splash-shell\s*\{[^}]*min-height:\s*100%/);
+    expect(styleCss).toMatch(/\.cv-splash-hero\s*\{[^}]*margin-block:\s*auto/);
+    expect(styleCss).toMatch(/\.cv-splash-credits-list\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(styleCss).toContain(".cv-splash-action-slot");
+    expect(styleCss).toContain(".cv-splash-partners");
+    expect(styleCss).toContain(".cv-splash-partner-logo--emblem");
+    expect(styleCss).toContain("@media (min-width: 640px)");
+    expect(styleCss).toContain("@media (orientation: landscape) and (max-height: 520px)");
+    expect(styleCss).not.toContain(".cv-splash-brand-carousel");
   });
 
   it("index.html includes design stylesheet and hides inactive <a-scene> to prevent FOUC", () => {
