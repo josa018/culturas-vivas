@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "aframe": "^1.8.0",
-    "chart.js": "^4.6.1"
+    "bcryptjs": "^3.0.3",
+    "chart.js": "^4.6.1",
+    "jose": "^6.2.17"
   }
 }

@@ -43,6 +43,11 @@ export const ADMIN_UI_CLASSES = {
   CHART_PEAK_BADGE: "cv-admin-peak-badge",
   COUNTER_VALUE: "cv-admin-counter-value",
   COUNTER_LABEL: "cv-admin-counter-label",
+  CONNECTION_STATUS: "cv-admin-connection-status",
+  CONNECTION_ONLINE: "cv-admin-connection-status--online",
+  CONNECTION_OFFLINE: "cv-admin-connection-status--offline",
+  CONNECTION_DOT: "cv-admin-connection-dot",
+  CONNECTION_TEXT: "cv-admin-connection-text",
 
   // Surveys Table Widget
   SURVEY_WIDGET: "cv-admin-survey-widget",
@@ -59,6 +64,7 @@ export const ADMIN_UI_CLASSES = {
   TABLE_MODE_CHIP: "cv-admin-mode-chip",
   TABLE_MODE_CHIP_VR: "cv-admin-mode-chip--vr",
   TABLE_MODE_CHIP_2D: "cv-admin-mode-chip--2d",
+  TABLE_MODE_CHIP_UNKNOWN: "cv-admin-mode-chip--unknown",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -67,22 +73,29 @@ export const ADMIN_UI_TEXT = {
   LOGIN_USER_LABEL: "Usuario",
   LOGIN_PASSWORD_LABEL: "Contraseña",
   LOGIN_SUBMIT_LABEL: "Iniciar Sesión",
+  LOGIN_SUBMITTING_LABEL: "Verificando...",
   LOGIN_RETURN_LINK: "← Regresar al recorrido público",
   LOGIN_ERROR_MESSAGE:
     "Credenciales incorrectas. Verifica usuario y contraseña.",
+  LOGIN_SERVICE_ERROR_MESSAGE:
+    "No se pudo conectar con el servidor de autenticación (/api/admin/login).",
 
   // Header
   HEADER_TITLE: "Culturas Vivas",
   HEADER_SUBTITLE: "Estadísticas",
   HEADER_LOGOUT_BTN: "Cerrar Sesión",
   HEADER_EXIT_BTN: "Volver al Recorrido",
+  DEFAULT_HEADER_USERNAME: "admin",
+  DEFAULT_HEADER_ROLE: "librarian",
 
   // Attendance & Concurrency
   CHART_TITLE: "Concurrencia de Visitantes",
-  CHART_DATASET_LABEL: "Usuarios conectados",
+  CHART_DATASET_LABEL: "Sesiones iniciadas",
   COUNTER_LABEL: "Usuarios en Línea",
   PEAK_LABEL_PREFIX: "Pico de hoy: ",
   PEAK_LABEL_SUFFIX: " sesiones",
+  CONNECTION_ONLINE: "Conectado",
+  CONNECTION_OFFLINE: "Sin conexión",
 
   // Survey Table & Formatting Tokens
   SURVEY_TITLE: "Encuestas Recientes",
@@ -94,6 +107,7 @@ export const ADMIN_UI_TEXT = {
   NO_SURVEYS: "Sin encuestas registradas en la jornada actual.",
   VIEW_MODE_VR: "WebXR VR",
   VIEW_MODE_2D: "Pantalla 2D",
+  VIEW_MODE_UNKNOWN: "—",
   STAR_FILLED: "★",
   STAR_EMPTY: "☆",
   FEEDBACK_EMPTY: "—",

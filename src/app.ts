@@ -14,19 +14,23 @@ import {
 } from "./screens/index";
 import type { ScreenView } from "./screens/index";
 import { syncCulturalAssetsToCSS } from "./screens/constants";
+import { AccessModeTracker } from "./session/access-mode-tracker";
 
 export class AppRouter {
   private readonly rootContainer: HTMLElement;
   private readonly stateMachine: NavigationStateMachine;
+  private readonly accessModeTracker: AccessModeTracker;
   private readonly screens = new Map<ScreenId, ScreenView>();
   private unsubscribe: (() => void) | null = null;
 
   constructor(
     rootContainer: HTMLElement,
     stateMachine: NavigationStateMachine = new NavigationStateMachine(),
+    accessModeTracker: AccessModeTracker = new AccessModeTracker(),
   ) {
     this.rootContainer = rootContainer;
     this.stateMachine = stateMachine;
+    this.accessModeTracker = accessModeTracker;
     this.syncCulturalAssets();
     this.initializeScreens();
     this.mountScreens();
@@ -55,6 +59,16 @@ export class AppRouter {
   private initializeScreens(): void {
     const dispatch = (action: NavigationAction, payload?: DispatchPayload) => {
       this.stateMachine.dispatch(action, payload);
+      if (
+        action === NavigationAction.SELECT_VR ||
+        action === NavigationAction.SELECT_2D ||
+        action === NavigationAction.SWITCH_TO_TOUCH
+      ) {
+        const mode = this.stateMachine.getSession().viewMode;
+        if (mode) {
+          void this.accessModeTracker.track(mode);
+        }
+      }
     };
 
     const views: ScreenView[] = [

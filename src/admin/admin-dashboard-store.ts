@@ -1,15 +1,33 @@
+import {
+  AdminHttpError,
+  createDefaultAdminFetcher,
+  type AdminNetworkFetcher,
+} from "./admin-http-client";
+
+const HOURS_IN_DAY = 24;
+
+function buildHourlyLabels(): readonly string[] {
+  return Array.from({ length: HOURS_IN_DAY }, (_, hour) =>
+    `${String(hour).padStart(2, "0")}:00`,
+  );
+}
 
 export const ADMIN_DASHBOARD_CONSTANTS = {
   DEFAULT_INITIAL_VISITOR_COUNT: 0,
   MIN_VISITOR_COUNT: 0,
-  DEFAULT_HOURLY_LABELS: [
-    "09:00", "10:00", "11:00", "12:00", "13:00",
-    "14:00", "15:00", "16:00", "17:00", "18:00",
-  ],
-  DEFAULT_HOURLY_ATTENDANCE: [3, 8, 14, 19, 12, 10, 16, 22, 15, 6],
+  POLL_INTERVAL_MS: 10000,
+  HOURS_IN_DAY,
+  ENDPOINTS: {
+    STATS: "/api/admin/stats",
+  },
+  HTTP_STATUS: {
+    UNAUTHORIZED: 401,
+  },
+  DEFAULT_HOURLY_LABELS: buildHourlyLabels(),
+  EMPTY_HOURLY_VALUES: Array.from({ length: HOURS_IN_DAY }, () => 0),
 } as const;
 
-export type ViewModeKind = "vr" | "2d";
+export type ViewModeKind = "vr" | "2d" | null;
 
 export interface SurveyLogEntry {
   readonly id: string;
@@ -26,6 +44,8 @@ export interface HourlyAttendanceDataset {
 
 export interface DashboardState {
   readonly activeVisitorsCount: number;
+  readonly dailyPeak: number;
+  readonly averageRating: number;
   readonly surveys: readonly SurveyLogEntry[];
   readonly hourlyAttendance: HourlyAttendanceDataset;
   readonly connected: boolean;
@@ -33,56 +53,105 @@ export interface DashboardState {
 
 export type DashboardListener = (state: DashboardState) => void;
 
-export const INITIAL_MOCK_SURVEYS: readonly SurveyLogEntry[] = [
-  {
-    id: "srv-001",
-    timestamp: Date.now() - 1000 * 60 * 18,
-    rating: 5,
-    feedback: "Excelente recorrido inmersivo, muy intuitivo.",
-    viewMode: "vr",
-  },
-  {
-    id: "srv-002",
-    timestamp: Date.now() - 1000 * 60 * 42,
-    rating: 4,
-    feedback: "Buena fluidez en pantalla táctil, texto muy legible.",
-    viewMode: "2d",
-  },
-  {
-    id: "srv-003",
-    timestamp: Date.now() - 1000 * 60 * 75,
-    rating: 5,
-    feedback: "Los hotspots culturales son claros y responden al instante.",
-    viewMode: "vr",
-  },
-  {
-    id: "srv-004",
-    timestamp: Date.now() - 1000 * 60 * 110,
-    rating: 3,
-    feedback: "Me gustaría que tuviera mayor contraste en la barra de salida.",
-    viewMode: "2d",
-  },
-];
+export interface AdminDashboardStoreOptions {
+  readonly getToken?: () => string | null;
+  readonly fetcher?: AdminNetworkFetcher;
+  readonly onUnauthorized?: () => void;
+  readonly pollIntervalMs?: number;
+  readonly initialVisitorsCount?: number;
+  readonly initialSurveys?: readonly SurveyLogEntry[];
+}
 
+interface AdminStatsPayload {
+  readonly activeSessions?: unknown;
+  readonly hourlyAttendance?: {
+    readonly labels?: unknown;
+    readonly values?: unknown;
+    readonly peak?: unknown;
+  };
+  readonly surveys?: unknown;
+  readonly averageRating?: unknown;
+}
+
+function normalizeViewMode(value: unknown): ViewModeKind {
+  if (value === "vr" || value === "2d") {
+    return value;
+  }
+  return null;
+}
+
+function parseSurveyEntries(raw: unknown): SurveyLogEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const entries: SurveyLogEntry[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const rating = Number(record.rating);
+    const timestamp = Number(record.timestamp);
+    if (!Number.isFinite(rating) || !Number.isFinite(timestamp)) {
+      continue;
+    }
+    entries.push({
+      id: String(record.id ?? ""),
+      timestamp,
+      rating,
+      feedback: typeof record.feedback === "string" ? record.feedback : "",
+      viewMode: normalizeViewMode(record.viewMode),
+    });
+  }
+  return entries;
+}
+
+function computeAverage(surveys: readonly SurveyLogEntry[]): number {
+  if (surveys.length === 0) {
+    return 0;
+  }
+  const sum = surveys.reduce((accum, item) => accum + item.rating, 0);
+  return Number((sum / surveys.length).toFixed(1));
+}
+
+/**
+ * Reactive dashboard store hydrated exclusively from authenticated `/api/admin/stats` responses.
+ */
 export class AdminDashboardStore {
   private state: DashboardState;
   private readonly listeners = new Set<DashboardListener>();
+  private readonly getToken?: () => string | null;
+  private readonly fetcher: AdminNetworkFetcher;
+  private readonly onUnauthorized?: () => void;
+  private readonly pollIntervalMs: number;
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(
-    initialVisitorsCount: number = 0,
-    initialSurveys: readonly SurveyLogEntry[] = INITIAL_MOCK_SURVEYS,
-    initialHourlyData: HourlyAttendanceDataset = {
-      labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
-      values: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_ATTENDANCE],
-    },
-  ) {
+  constructor(options: AdminDashboardStoreOptions = {}) {
+    const initialSurveys = options.initialSurveys
+      ? [...options.initialSurveys]
+      : [];
+    const initialVisitorsCount = Math.max(
+      ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT,
+      Math.floor(
+        options.initialVisitorsCount ??
+          ADMIN_DASHBOARD_CONSTANTS.DEFAULT_INITIAL_VISITOR_COUNT,
+      ),
+    );
+
+    this.getToken = options.getToken;
+    this.fetcher = options.fetcher ?? createDefaultAdminFetcher();
+    this.onUnauthorized = options.onUnauthorized;
+    this.pollIntervalMs =
+      options.pollIntervalMs ?? ADMIN_DASHBOARD_CONSTANTS.POLL_INTERVAL_MS;
+
     this.state = {
       activeVisitorsCount: initialVisitorsCount,
-      surveys: [...initialSurveys],
+      dailyPeak: initialVisitorsCount,
+      averageRating: computeAverage(initialSurveys),
+      surveys: initialSurveys,
       hourlyAttendance: {
-        labels: [...initialHourlyData.labels],
-        values: [...initialHourlyData.values],
+        labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
+        values: [...ADMIN_DASHBOARD_CONSTANTS.EMPTY_HOURLY_VALUES],
       },
       connected: false,
     };
@@ -97,13 +166,15 @@ export class AdminDashboardStore {
   }
 
   public startPolling(): void {
-    if (this.pollingTimer) return;
+    if (this.pollingTimer) {
+      return;
+    }
 
     void this.fetchStats();
 
     this.pollingTimer = setInterval(() => {
       void this.fetchStats();
-    }, 10000);
+    }, this.pollIntervalMs);
   }
 
   public stopPolling(): void {
@@ -113,68 +184,112 @@ export class AdminDashboardStore {
     }
   }
 
-  private async fetchStats(): Promise<void> {
+  public async fetchStats(): Promise<void> {
+    const token = this.getToken ? this.getToken() : null;
+    if (!token) {
+      this.state = { ...this.state, connected: false };
+      this.notify();
+      this.onUnauthorized?.();
+      return;
+    }
+
     try {
-      const response = await fetch("/api/admin/stats", {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Error consultando estadísticas");
-      }
-
-      const data = await response.json();
+      const data = await this.fetcher.get<AdminStatsPayload>(
+        ADMIN_DASHBOARD_CONSTANTS.ENDPOINTS.STATS,
+        { Authorization: `Bearer ${token}` },
+      );
 
       const count = Number(data.activeSessions);
-
       if (!Number.isFinite(count) || count < 0) {
-        throw new Error("Respuesta inválida del backend");
+        throw new Error("Invalid activeSessions payload from telemetry API");
       }
 
+      const rawLabels = Array.isArray(data.hourlyAttendance?.labels)
+        ? data.hourlyAttendance.labels.map(String)
+        : [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS];
+
+      const rawValues = Array.isArray(data.hourlyAttendance?.values)
+        ? data.hourlyAttendance.values.map((v) =>
+            Math.max(0, Math.floor(Number(v) || 0)),
+          )
+        : [...ADMIN_DASHBOARD_CONSTANTS.EMPTY_HOURLY_VALUES];
+
+      const rawPeak = Number(data.hourlyAttendance?.peak);
+      const computedPeak =
+        Number.isFinite(rawPeak) && rawPeak >= 0
+          ? Math.floor(rawPeak)
+          : rawValues.length > 0
+            ? Math.max(...rawValues)
+            : 0;
+
+      const parsedSurveys = parseSurveyEntries(data.surveys);
+      const rawAvg = Number(data.averageRating);
+      const averageRating =
+        Number.isFinite(rawAvg) && rawAvg >= 0
+          ? Number(rawAvg.toFixed(1))
+          : computeAverage(parsedSurveys);
+
       this.state = {
-        ...this.state,
-        activeVisitorsCount: count,
+        activeVisitorsCount: Math.floor(count),
+        dailyPeak: computedPeak,
+        averageRating,
+        surveys: parsedSurveys,
+        hourlyAttendance: {
+          labels: rawLabels,
+          values: rawValues,
+        },
         connected: true,
       };
+      this.notify();
     } catch (error) {
-      console.error("Error al sincronizar dashboard:", error);
+      if (
+        error instanceof AdminHttpError &&
+        error.status === ADMIN_DASHBOARD_CONSTANTS.HTTP_STATUS.UNAUTHORIZED
+      ) {
+        this.stopPolling();
+        this.state = { ...this.state, connected: false };
+        this.notify();
+        this.onUnauthorized?.();
+        return;
+      }
 
       this.state = {
         ...this.state,
         connected: false,
       };
+      this.notify();
     }
-
-    this.notify();
   }
 
   public setVisitorCount(count: number): void {
+    const normalized = Math.max(
+      ADMIN_DASHBOARD_CONSTANTS.MIN_VISITOR_COUNT,
+      Math.floor(count),
+    );
     this.state = {
       ...this.state,
-      activeVisitorsCount: Math.max(0, Math.floor(count)),
+      activeVisitorsCount: normalized,
+      dailyPeak: Math.max(this.state.dailyPeak, normalized),
     };
     this.notify();
   }
 
   public addSurvey(entry: SurveyLogEntry): void {
+    const updatedSurveys = [entry, ...this.state.surveys];
     this.state = {
       ...this.state,
-      surveys: [entry, ...this.state.surveys],
+      surveys: updatedSurveys,
+      averageRating: computeAverage(updatedSurveys),
     };
     this.notify();
   }
 
   public getAverageRating(): number {
-    if (this.state.surveys.length === 0) return 0;
+    return this.state.averageRating;
+  }
 
-    const sum = this.state.surveys.reduce(
-      (accum, item) => accum + item.rating,
-      0,
-    );
-
-    return Number((sum / this.state.surveys.length).toFixed(1));
+  public getDailyPeak(): number {
+    return this.state.dailyPeak;
   }
 
   public subscribe(listener: DashboardListener): () => void {

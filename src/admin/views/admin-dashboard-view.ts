@@ -1,6 +1,6 @@
 import { AdminAuthStore } from "../admin-auth-store";
 import { AdminDashboardStore } from "../admin-dashboard-store";
-import { ADMIN_UI_CLASSES } from "../constants";
+import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 import { AdminHeaderWidget } from "./admin-header";
 import { AttendanceChartWidget } from "./attendance-chart";
 import { SurveysTableWidget } from "./surveys-table";
@@ -39,8 +39,8 @@ export class AdminDashboardView {
 
     const user = this.authStore.getState().user;
     this.headerWidget = new AdminHeaderWidget({
-      username: user?.username ?? "admin",
-      role: user?.role ?? "librarian",
+      username: user?.username ?? ADMIN_UI_TEXT.DEFAULT_HEADER_USERNAME,
+      role: user?.role ?? ADMIN_UI_TEXT.DEFAULT_HEADER_ROLE,
       onLogout: this.onLogout,
       onReturnToTour: this.onReturnToTour,
     });

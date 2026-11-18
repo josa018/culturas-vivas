@@ -14,11 +14,16 @@ export class AdminController {
   constructor(
     rootContainer: HTMLElement,
     authStore: AdminAuthStore = new AdminAuthStore(),
-    dashboardStore: AdminDashboardStore = new AdminDashboardStore(),
+    dashboardStore?: AdminDashboardStore,
   ) {
     this.rootContainer = rootContainer;
     this.authStore = authStore;
-    this.dashboardStore = dashboardStore;
+    this.dashboardStore =
+      dashboardStore ??
+      new AdminDashboardStore({
+        getToken: () => this.authStore.getState().token,
+        onUnauthorized: () => this.authStore.logout(),
+      });
     this.suppress3DCanvas();
     this.initializeViews();
     this.subscribeToAuth();

@@ -50,6 +50,8 @@
   --md-custom-capacity-moderate: var(--cv-color-accent-cempasuchil);
   --md-custom-capacity-high: var(--cv-color-accent-cochinilla);
   --md-custom-star-gold: var(--cv-color-accent-cempasuchil);
+  --cv-color-status-online: #22c55e;
+  --cv-color-status-offline: #ef4444;
 
   /* Typography */
   --cv-font-family:
@@ -1205,6 +1207,49 @@ a-scene canvas.a-canvas {
 .cv-admin-mode-chip--2d {
   background-color: rgba(204, 194, 220, 0.16);
   color: var(--md-sys-color-secondary);
+}
+
+.cv-admin-mode-chip--unknown {
+  background-color: rgba(156, 163, 175, 0.14);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.cv-admin-connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.cv-admin-connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--cv-color-status-offline);
+}
+
+.cv-admin-connection-text {
+  color: var(--cv-color-status-offline);
+}
+
+.cv-admin-connection-status--online .cv-admin-connection-dot {
+  background-color: var(--cv-color-status-online);
+  box-shadow: 0 0 8px var(--cv-color-status-online);
+}
+
+.cv-admin-connection-status--online .cv-admin-connection-text {
+  color: var(--cv-color-status-online);
+}
+
+.cv-admin-connection-status--offline .cv-admin-connection-dot {
+  background-color: var(--cv-color-status-offline);
+  box-shadow: none;
+}
+
+.cv-admin-connection-status--offline .cv-admin-connection-text {
+  color: var(--cv-color-status-offline);
 }
 
 /* Responsive Mobile Feedback List View */

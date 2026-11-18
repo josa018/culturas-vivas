@@ -17,15 +17,21 @@ const CHART_THEME_TOKENS = {
   BAR_BG_COLOR: "rgba(208, 188, 255, 0.85)",
   BAR_HOVER_COLOR: "#d0bcff",
   BAR_BORDER_RADIUS: 6,
+  MAX_BAR_THICKNESS: 34,
   GRID_COLOR: "rgba(67, 71, 78, 0.25)",
   TICK_COLOR: "#8d9199",
+  TICK_FONT_SIZE: 12,
+  TICK_FONT_FAMILY: "inherit",
   TOOLTIP_BG: "#282a2f",
   TOOLTIP_TITLE_COLOR: "#e6e1e5",
   TOOLTIP_BODY_COLOR: "#7ddcde",
+  TOOLTIP_PADDING: 10,
+  TOOLTIP_CORNER_RADIUS: 8,
 } as const;
 
 export class AttendanceChartWidget {
   private connectionElement: HTMLElement | null = null;
+  private connectionTextElement: HTMLElement | null = null;
   private container: HTMLElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
   private valueElement: HTMLElement | null = null;
@@ -65,7 +71,7 @@ export class AttendanceChartWidget {
 
     header.append(titleGroup, peakBadge);
 
-    // KPI Summary Row: Number + Label
+    // KPI Summary Row: Number + Label + Connection status
     const kpiRow = document.createElement("div");
     kpiRow.className = ADMIN_UI_CLASSES.CHART_KPI_GROUP;
 
@@ -78,28 +84,21 @@ export class AttendanceChartWidget {
     labelSpan.className = ADMIN_UI_CLASSES.COUNTER_LABEL;
     labelSpan.textContent = ADMIN_UI_TEXT.COUNTER_LABEL;
 
-    kpiRow.append(valueSpan, labelSpan);
+    const connectionStatus = document.createElement("div");
+    connectionStatus.className = `${ADMIN_UI_CLASSES.CONNECTION_STATUS} ${ADMIN_UI_CLASSES.CONNECTION_OFFLINE}`;
+    connectionStatus.setAttribute("data-admin-metric", "connection-status");
 
-const connectionStatus = document.createElement("div");
-connectionStatus.style.display = "flex";
-connectionStatus.style.alignItems = "center";
-connectionStatus.style.gap = "8px";
-connectionStatus.style.fontSize = "13px";
-connectionStatus.style.marginTop = "8px";
+    const connectionDot = document.createElement("span");
+    connectionDot.className = ADMIN_UI_CLASSES.CONNECTION_DOT;
 
-const connectionDot = document.createElement("span");
-connectionDot.style.width = "8px";
-connectionDot.style.height = "8px";
-connectionDot.style.borderRadius = "50%";
+    const connectionText = document.createElement("span");
+    connectionText.className = ADMIN_UI_CLASSES.CONNECTION_TEXT;
 
-const connectionText = document.createElement("span");
+    connectionStatus.append(connectionDot, connectionText);
+    this.connectionElement = connectionStatus;
+    this.connectionTextElement = connectionText;
 
-connectionStatus.append(connectionDot, connectionText);
-
-this.connectionElement = connectionStatus;
-
-kpiRow.appendChild(connectionStatus);
-
+    kpiRow.append(valueSpan, labelSpan, connectionStatus);
 
     // Body: Chart Container + Canvas
     const body = document.createElement("div");
@@ -121,12 +120,16 @@ kpiRow.appendChild(connectionStatus);
 
     this.unsubscribe = this.store.subscribe((state) => {
       this.updateMetrics(state);
-      this.updateChart(state.hourlyAttendance.values);
+      this.updateChart(
+        state.hourlyAttendance.labels,
+        state.hourlyAttendance.values,
+      );
     });
   }
 
   public unmount(): void {
     this.connectionElement = null;
+    this.connectionTextElement = null;
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
@@ -157,26 +160,28 @@ kpiRow.appendChild(connectionStatus);
       this.valueElement.textContent = String(state.activeVisitorsCount);
     }
     if (this.peakElement) {
-      const peak =
+      const peak = Math.max(
+        state.dailyPeak,
         state.hourlyAttendance.values.length > 0
           ? Math.max(...state.hourlyAttendance.values)
-          : 0;
+          : 0,
+      );
       this.peakElement.textContent = `${ADMIN_UI_TEXT.PEAK_LABEL_PREFIX}${peak}${ADMIN_UI_TEXT.PEAK_LABEL_SUFFIX}`;
     }
 
-if (this.connectionElement) {
-  const dot = this.connectionElement.children[0] as HTMLElement;
-  const text = this.connectionElement.children[1] as HTMLElement;
-
-  dot.style.backgroundColor = state.connected ? "#22c55e" : "#ef4444";
-  dot.style.boxShadow = state.connected
-    ? "0 0 8px #22c55e"
-    : "none";
-
-  text.textContent = state.connected ? "Conectado" : "Sin conexión";
-  text.style.color = state.connected ? "#22c55e" : "#ef4444";
-}
-
+    if (this.connectionElement && this.connectionTextElement) {
+      this.connectionElement.classList.toggle(
+        ADMIN_UI_CLASSES.CONNECTION_ONLINE,
+        state.connected,
+      );
+      this.connectionElement.classList.toggle(
+        ADMIN_UI_CLASSES.CONNECTION_OFFLINE,
+        !state.connected,
+      );
+      this.connectionTextElement.textContent = state.connected
+        ? ADMIN_UI_TEXT.CONNECTION_ONLINE
+        : ADMIN_UI_TEXT.CONNECTION_OFFLINE;
+    }
   }
 
   private renderChart(): void {
@@ -202,7 +207,7 @@ if (this.connectionElement) {
             backgroundColor: CHART_THEME_TOKENS.BAR_BG_COLOR,
             hoverBackgroundColor: CHART_THEME_TOKENS.BAR_HOVER_COLOR,
             borderRadius: CHART_THEME_TOKENS.BAR_BORDER_RADIUS,
-            maxBarThickness: 34,
+            maxBarThickness: CHART_THEME_TOKENS.MAX_BAR_THICKNESS,
           },
         ],
       },
@@ -215,8 +220,8 @@ if (this.connectionElement) {
             titleColor: CHART_THEME_TOKENS.TOOLTIP_TITLE_COLOR,
             bodyColor: CHART_THEME_TOKENS.TOOLTIP_BODY_COLOR,
             displayColors: false,
-            padding: 10,
-            cornerRadius: 8,
+            padding: CHART_THEME_TOKENS.TOOLTIP_PADDING,
+            cornerRadius: CHART_THEME_TOKENS.TOOLTIP_CORNER_RADIUS,
           },
         },
         scales: {
@@ -227,8 +232,8 @@ if (this.connectionElement) {
             ticks: {
               color: CHART_THEME_TOKENS.TICK_COLOR,
               font: {
-                family: "inherit",
-                size: 12,
+                family: CHART_THEME_TOKENS.TICK_FONT_FAMILY,
+                size: CHART_THEME_TOKENS.TICK_FONT_SIZE,
               },
             },
           },
@@ -241,8 +246,8 @@ if (this.connectionElement) {
               color: CHART_THEME_TOKENS.TICK_COLOR,
               precision: 0,
               font: {
-                family: "inherit",
-                size: 12,
+                family: CHART_THEME_TOKENS.TICK_FONT_FAMILY,
+                size: CHART_THEME_TOKENS.TICK_FONT_SIZE,
               },
             },
           },
@@ -251,10 +256,14 @@ if (this.connectionElement) {
     });
   }
 
-  private updateChart(newValues: readonly number[]): void {
+  private updateChart(
+    newLabels: readonly string[],
+    newValues: readonly number[],
+  ): void {
     if (!this.chartInstance) {
       return;
     }
+    this.chartInstance.data.labels = [...newLabels];
     this.chartInstance.data.datasets[0].data = [...newValues];
     this.chartInstance.update();
   }

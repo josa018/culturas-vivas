@@ -138,20 +138,25 @@ export class SurveysTableWidget {
       const modeModifier =
         item.viewMode === "vr"
           ? ADMIN_UI_CLASSES.TABLE_MODE_CHIP_VR
-          : ADMIN_UI_CLASSES.TABLE_MODE_CHIP_2D;
+          : item.viewMode === "2d"
+            ? ADMIN_UI_CLASSES.TABLE_MODE_CHIP_2D
+            : ADMIN_UI_CLASSES.TABLE_MODE_CHIP_UNKNOWN;
       modeChip.className = `${ADMIN_UI_CLASSES.TABLE_MODE_CHIP} ${modeModifier}`;
       modeChip.textContent =
         item.viewMode === "vr"
           ? ADMIN_UI_TEXT.VIEW_MODE_VR
-          : ADMIN_UI_TEXT.VIEW_MODE_2D;
+          : item.viewMode === "2d"
+            ? ADMIN_UI_TEXT.VIEW_MODE_2D
+            : ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN;
       modeCell.appendChild(modeChip);
 
       // Rating (stars)
+      const clampedRating = Math.min(5, Math.max(0, Math.round(item.rating)));
       const ratingCell = document.createElement("td");
       ratingCell.className = `${ADMIN_UI_CLASSES.TABLE_TD} ${ADMIN_UI_CLASSES.TABLE_STARS} ${ADMIN_UI_CLASSES.TABLE_TD_RATING}`;
       ratingCell.textContent =
-        ADMIN_UI_TEXT.STAR_FILLED.repeat(item.rating) +
-        ADMIN_UI_TEXT.STAR_EMPTY.repeat(5 - item.rating);
+        ADMIN_UI_TEXT.STAR_FILLED.repeat(clampedRating) +
+        ADMIN_UI_TEXT.STAR_EMPTY.repeat(5 - clampedRating);
 
       // Feedback
       const feedbackCell = document.createElement("td");
