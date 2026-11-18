@@ -129,6 +129,22 @@ describe("Navigation & State Machine", () => {
     expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
   });
 
+  it("switches directly to touch mode from EXPERIENCE_3D while in VR", () => {
+    const store = new SessionStore(storage);
+    const fsm = new NavigationStateMachine(store);
+
+    fsm.dispatch(NavigationAction.FINISH_LOADING);
+    fsm.dispatch(NavigationAction.SELECT_VR);
+    fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.VR);
+    expect(fsm.canDispatch(NavigationAction.SWITCH_TO_TOUCH)).toBe(true);
+
+    fsm.dispatch(NavigationAction.SWITCH_TO_TOUCH);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
+  });
+
   it("safely rejects illegal transitions", () => {
     const store = new SessionStore(storage);
     const fsm = new NavigationStateMachine(store);

@@ -634,6 +634,11 @@ body {
   pointer-events: auto;
 }
 
+.cv-hud-topbar--hidden {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 .cv-badge {
   background-color: rgba(18, 18, 18, 0.75);
   border: 1px solid var(--md-sys-color-outline-variant);

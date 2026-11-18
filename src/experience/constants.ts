@@ -258,3 +258,50 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
     ],
   },
 };
+
+export const VR_HUD_SUMMON_PITCH_THRESHOLD_DEG = -60;
+export const VR_HUD_FOCAL_DISTANCE_M = 1.5;
+export const VR_HUD_FOCAL_ELEVATION_OFFSET_M = -0.15;
+export const VR_HUD_SUMMON_TIMEOUT_MS = 1000;
+export const VR_HUD_ANIMATION_DURATION_MS = 250;
+
+export const VR_HUD_GEOMETRY = {
+  CURVED_RADIUS_M: 1.8,
+  THETA_LENGTH_DEG: 50,
+  PANEL_HEIGHT_M: 0.8,
+  PANEL_WIDTH_M: 1.45,
+  RUNE_RADIUS_M: 0.35,
+  RUNE_INNER_RADIUS_M: 0.24,
+  RUNE_FLOOR_Y_OFFSET_M: 0.02,
+  BUTTON_WIDTH_M: 0.56,
+  BUTTON_HEIGHT_M: 0.22,
+  DISMISS_RADIUS_M: 0.075,
+} as const;
+
+export const VR_HUD_COLORS = {
+  SURFACE_OBSIDIAN: "#0B0F17",
+  SURFACE_OPACITY: 0.85,
+  ACCENT_CEMPASUCHIL: "#D99B26",
+  ACCENT_TURQUESA: "#008F85",
+  ACCENT_COCHINILLA: "#B83A2C",
+  TEXT_BONE: "#EDE8DF",
+} as const;
+
+export const VR_HUD_ELEMENT_IDS = {
+  HUD_ROOT: "cv-vr-hologram-hud",
+  PANEL_BACKDROP: "cv-vr-hud-panel",
+  ROOM_CHIP: "cv-vr-hud-room-chip",
+  SWITCH_2D_BTN: "cv-vr-hud-switch-2d",
+  EXIT_BTN: "cv-vr-hud-exit",
+  DISMISS_BTN: "cv-vr-hud-dismiss",
+  NADIR_TRIGGER: "cv-nadir-trigger",
+  NADIR_RUNE: "cv-nadir-rune",
+  NADIR_PROGRESS_RING: "cv-nadir-progress-ring",
+} as const;
+
+export const VR_HUD_DICTIONARY = {
+  SWITCH_TO_2D_LABEL: "Modo Tactil 2D",
+  EXIT_TOUR_LABEL: "Salir del Recorrido",
+  DISMISS_LABEL: "✕",
+  SUMMON_HINT_LABEL: "MENU VR",
+} as const;

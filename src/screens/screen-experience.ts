@@ -12,8 +12,23 @@ import {
   PORTAL_ACTIVATED_EVENT,
   type PortalActivatedEventDetail,
 } from "../experience/components/portal-waypoint";
-import { DEFAULT_ROOM_ID, ROOM_DEFINITIONS } from "../experience/constants";
+import {
+  DEFAULT_ROOM_ID,
+  ROOM_DEFINITIONS,
+  VR_HUD_ELEMENT_IDS,
+} from "../experience/constants";
 import { getSharedInspectionController } from "../experience/components/inspectable";
+import {
+  ensureVrHologramHud,
+  VR_HUD_EXIT_EVENT,
+  VR_HUD_SWITCH_2D_EVENT,
+  type VrHologramHudComponentInstance,
+} from "../experience/components/vr-hologram-hud";
+import {
+  ensureNadirTrigger,
+  NADIR_SUMMON_EVENT,
+  type NadirTriggerComponentInstance,
+} from "../experience/components/nadir-trigger";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -39,12 +54,16 @@ interface AFrameSceneElement extends HTMLElement {
 export class ExperienceScreenView implements ScreenView {
   public readonly id = ScreenId.EXPERIENCE_3D;
   private container: HTMLElement | null = null;
+  private topBarEl: HTMLElement | null = null;
   private roomBadgeEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
   private portalHandler: ((evt: Event) => void) | null = null;
+  private nadirSummonHandler: (() => void) | null = null;
+  private hudSwitch2dHandler: (() => void) | null = null;
+  private hudExitHandler: (() => void) | null = null;
   private readonly transitionStateMachine: RoomTransitionStateMachine;
 
   constructor(
@@ -64,15 +83,41 @@ export class ExperienceScreenView implements ScreenView {
 
   public setViewMode(viewMode: string): void {
     this.viewMode = viewMode;
+    this.synchronizeDomHud();
+    if (
+      typeof document !== "undefined" &&
+      this.container?.classList.contains(UI_CLASSES.SCREEN_ACTIVE)
+    ) {
+      const scene = document.querySelector<AFrameSceneElement>("a-scene");
+      if (scene) {
+        this.synchronizeSpatialHud(scene);
+      }
+    }
   }
 
   public updateRoomBadge(roomId: RoomId): void {
-    if (!this.roomBadgeEl) {
-      return;
-    }
     const roomDef =
       ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
-    this.roomBadgeEl.textContent = roomDef.title;
+    if (this.roomBadgeEl) {
+      this.roomBadgeEl.textContent = roomDef.title;
+    }
+    if (typeof document !== "undefined") {
+      const hudEl = document.getElementById(VR_HUD_ELEMENT_IDS.HUD_ROOT);
+      if (hudEl) {
+        const hudComp = (
+          hudEl as unknown as {
+            components?: Record<string, VrHologramHudComponentInstance>;
+          }
+        ).components?.["cv-vr-hologram-hud"];
+        if (hudComp && typeof hudComp.setRoomTitle === "function") {
+          hudComp.setRoomTitle(roomId);
+        }
+        const roomChip = hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
+        if (roomChip) {
+          roomChip.setAttribute("value", roomDef.title);
+        }
+      }
+    }
   }
 
   public mount(parent: HTMLElement): void {
@@ -113,11 +158,14 @@ export class ExperienceScreenView implements ScreenView {
 
     parent.appendChild(hudOverlay);
     this.container = hudOverlay;
+    this.topBarEl = topBar;
+    this.synchronizeDomHud();
     this.setupSceneListeners();
   }
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.topBarEl = null;
     this.roomBadgeEl = null;
     if (this.container) {
       this.container.remove();
@@ -134,8 +182,15 @@ export class ExperienceScreenView implements ScreenView {
     this.updateRoomBadge(
       ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
     );
+    this.synchronizeDomHud();
     this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
+    if (typeof document !== "undefined") {
+      const scene = document.querySelector<AFrameSceneElement>("a-scene");
+      if (scene) {
+        this.synchronizeSpatialHud(scene);
+      }
+    }
   }
 
   public retainBackground(): void {
@@ -151,6 +206,7 @@ export class ExperienceScreenView implements ScreenView {
       return;
     }
 
+    this.disableSpatialHud(scene);
     scene.style.display = "block";
     if (scene.classList && typeof scene.classList.add === "function") {
       scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
@@ -168,6 +224,12 @@ export class ExperienceScreenView implements ScreenView {
     if (this.container) {
       this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
+    }
+    if (typeof document !== "undefined") {
+      const scene = document.querySelector<AFrameSceneElement>("a-scene");
+      if (scene) {
+        this.disableSpatialHud(scene);
+      }
     }
     this.toggleSceneLifecycle(false);
   }
@@ -190,8 +252,17 @@ export class ExperienceScreenView implements ScreenView {
       return false;
     }
 
-    // 1. Abort any active exhibit inspection
+    // 1. Abort any active exhibit inspection and dismiss any open 3D HUD
     getSharedInspectionController().abortActiveInspection();
+    const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`);
+    if (hudEl) {
+      const hudComp = (
+        hudEl as unknown as {
+          components?: Record<string, VrHologramHudComponentInstance>;
+        }
+      ).components?.["cv-vr-hologram-hud"];
+      hudComp?.dismiss();
+    }
 
     // 2. Lock cursor raycaster during transition to prevent interaction glitches
     const cursor = scene.querySelector("a-cursor");
@@ -415,6 +486,44 @@ export class ExperienceScreenView implements ScreenView {
       };
       scene.addEventListener(PORTAL_ACTIVATED_EVENT, this.portalHandler);
     }
+
+    if (!this.nadirSummonHandler) {
+      this.nadirSummonHandler = () => {
+        if (this.viewMode !== "vr") {
+          return;
+        }
+        const hudEl = ensureVrHologramHud(scene);
+        const hudComp = (
+          hudEl as unknown as {
+            components?: Record<string, VrHologramHudComponentInstance>;
+          }
+        ).components?.["cv-vr-hologram-hud"];
+        if (hudComp && typeof hudComp.summon === "function") {
+          hudComp.summon();
+        } else {
+          hudEl.setAttribute("visible", "true");
+        }
+      };
+      scene.addEventListener(NADIR_SUMMON_EVENT, this.nadirSummonHandler);
+    }
+
+    if (!this.hudSwitch2dHandler) {
+      this.hudSwitch2dHandler = () => {
+        if (this.viewMode === "vr") {
+          this.dispatch(NavigationAction.SWITCH_TO_TOUCH);
+        }
+      };
+      scene.addEventListener(VR_HUD_SWITCH_2D_EVENT, this.hudSwitch2dHandler);
+    }
+
+    if (!this.hudExitHandler) {
+      this.hudExitHandler = () => {
+        if (this.viewMode === "vr") {
+          this.dispatch(NavigationAction.REQUEST_EXIT);
+        }
+      };
+      scene.addEventListener(VR_HUD_EXIT_EVENT, this.hudExitHandler);
+    }
   }
 
   private teardownSceneListeners(): void {
@@ -434,6 +543,105 @@ export class ExperienceScreenView implements ScreenView {
     if (this.portalHandler) {
       scene.removeEventListener(PORTAL_ACTIVATED_EVENT, this.portalHandler);
       this.portalHandler = null;
+    }
+
+    if (this.nadirSummonHandler) {
+      scene.removeEventListener(NADIR_SUMMON_EVENT, this.nadirSummonHandler);
+      this.nadirSummonHandler = null;
+    }
+
+    if (this.hudSwitch2dHandler) {
+      scene.removeEventListener(
+        VR_HUD_SWITCH_2D_EVENT,
+        this.hudSwitch2dHandler,
+      );
+      this.hudSwitch2dHandler = null;
+    }
+
+    if (this.hudExitHandler) {
+      scene.removeEventListener(VR_HUD_EXIT_EVENT, this.hudExitHandler);
+      this.hudExitHandler = null;
+    }
+  }
+
+  private synchronizeDomHud(): void {
+    if (!this.topBarEl) {
+      return;
+    }
+    if (this.viewMode === "vr") {
+      this.topBarEl.classList.add("cv-hud-topbar--hidden");
+      this.topBarEl.setAttribute("aria-hidden", "true");
+    } else {
+      this.topBarEl.classList.remove("cv-hud-topbar--hidden");
+      this.topBarEl.removeAttribute("aria-hidden");
+    }
+  }
+
+  private synchronizeSpatialHud(scene: AFrameSceneElement): void {
+    const isVr = this.viewMode === "vr";
+    const activeRoomId =
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID;
+
+    const hudEl = ensureVrHologramHud(scene);
+    hudEl.setAttribute(
+      "cv-vr-hologram-hud",
+      `enabled: ${isVr}; roomId: ${activeRoomId}`,
+    );
+    const hudComp = (
+      hudEl as unknown as {
+        components?: Record<string, VrHologramHudComponentInstance>;
+      }
+    ).components?.["cv-vr-hologram-hud"];
+    if (hudComp) {
+      hudComp.setEnabled(isVr);
+      hudComp.setRoomTitle(activeRoomId);
+    } else if (!isVr) {
+      hudEl.setAttribute("visible", "false");
+    }
+
+    const nadirEl = ensureNadirTrigger(scene);
+    nadirEl.setAttribute("cv-nadir-trigger", `enabled: ${isVr}`);
+    const nadirComp = (
+      nadirEl as unknown as {
+        components?: Record<string, NadirTriggerComponentInstance>;
+      }
+    ).components?.["cv-nadir-trigger"];
+    if (nadirComp) {
+      nadirComp.setEnabled(isVr);
+    } else if (!isVr) {
+      nadirEl.setAttribute("visible", "false");
+    }
+  }
+
+  private disableSpatialHud(scene: AFrameSceneElement): void {
+    const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`);
+    if (hudEl) {
+      hudEl.setAttribute("cv-vr-hologram-hud", "enabled: false");
+      const hudComp = (
+        hudEl as unknown as {
+          components?: Record<string, VrHologramHudComponentInstance>;
+        }
+      ).components?.["cv-vr-hologram-hud"];
+      if (hudComp) {
+        hudComp.setEnabled(false);
+      } else {
+        hudEl.setAttribute("visible", "false");
+      }
+    }
+
+    const nadirEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`);
+    if (nadirEl) {
+      nadirEl.setAttribute("cv-nadir-trigger", "enabled: false");
+      const nadirComp = (
+        nadirEl as unknown as {
+          components?: Record<string, NadirTriggerComponentInstance>;
+        }
+      ).components?.["cv-nadir-trigger"];
+      if (nadirComp) {
+        nadirComp.setEnabled(false);
+      } else {
+        nadirEl.setAttribute("visible", "false");
+      }
     }
   }
 

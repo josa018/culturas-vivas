@@ -26,6 +26,7 @@ const TRANSITIONS: TransitionMap = {
   },
   [ScreenId.EXPERIENCE_3D]: {
     [NavigationAction.REQUEST_EXIT]: ScreenId.EXIT_MODAL,
+    [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.EXPERIENCE_3D,
   },
   [ScreenId.EXIT_MODAL]: {
     [NavigationAction.RESUME_TOUR]: ScreenId.EXPERIENCE_3D,

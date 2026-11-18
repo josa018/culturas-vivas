@@ -7,7 +7,10 @@ import {
   type PortalActivatedEventDetail,
 } from "../../src/experience/components/portal-waypoint";
 import { getSharedInspectionController } from "../../src/experience/components/inspectable";
-import { InspectionState } from "../../src/experience/constants";
+import {
+  InspectionState,
+  VR_HUD_ELEMENT_IDS,
+} from "../../src/experience/constants";
 
 describe("ScreenExperience Room Transition", () => {
   it("mounts screen, aborts active inspection, and transitions room on portal trigger", () => {
@@ -41,6 +44,12 @@ describe("ScreenExperience Room Transition", () => {
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       "Sala de Arqueologia",
     );
+    expect(
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`),
+    ).toBeTruthy();
+    expect(
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`),
+    ).toBeTruthy();
 
     // Focus an exhibit
     const inspectionController = getSharedInspectionController();
@@ -90,6 +99,12 @@ describe("ScreenExperience Room Transition", () => {
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       "Sala de Arqueologia",
     );
+    expect(
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`),
+    ).toBeTruthy();
+    expect(
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`),
+    ).toBeTruthy();
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
 
     screen.unmount();
