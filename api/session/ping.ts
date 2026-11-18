@@ -1,40 +1,31 @@
 
-import type { ServerlessRequest, ServerlessResponse } from "./start.js";
 import { getDb, ensureSessionsTable } from "../_db.js";
-const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function extractSessionId(body: unknown): string | null {
-  if (typeof body === "string") {
-    try {
-      const parsed = JSON.parse(body) as Record<string, unknown>;
-      return typeof parsed.sessionId === "string" ? parsed.sessionId : null;
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof body === "object" && body !== null) {
-    const candidate = (body as Record<string, unknown>).sessionId;
-    return typeof candidate === "string" ? candidate : null;
-  }
-
-  return null;
-}
+import {
+  API_HTTP_STATUS,
+  normalizeUuid,
+  parseJsonObjectBody,
+  type ServerlessRequest,
+  type ServerlessResponse,
+} from "../_http.js";
 
 export default async function handler(
   req: ServerlessRequest,
   res: ServerlessResponse
 ): Promise<void> {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed. Use POST." });
+    res.status(API_HTTP_STATUS.METHOD_NOT_ALLOWED).json({
+      error: "Method not allowed. Use POST.",
+    });
     return;
   }
 
-  const sessionId = extractSessionId(req.body);
+  const body = parseJsonObjectBody(req.body);
+  const sessionId = normalizeUuid(body?.sessionId);
 
-  if (!sessionId || !UUID_V4_PATTERN.test(sessionId)) {
-    res.status(400).json({ error: "Invalid or malformed sessionId. Must be UUID v4." });
+  if (!sessionId) {
+    res.status(API_HTTP_STATUS.BAD_REQUEST).json({
+      error: "Invalid or malformed sessionId. Must be UUID v4.",
+    });
     return;
   }
 
@@ -47,13 +38,13 @@ export default async function handler(
     });
 
     if (result.rowsAffected === 0) {
-      res.status(404).json({ error: "Session not found." });
+      res.status(API_HTTP_STATUS.NOT_FOUND).json({ error: "Session not found." });
       return;
     }
 
-    res.status(200).json({ ok: true });
+    res.status(API_HTTP_STATUS.OK).json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Database operation failed";
-    res.status(500).json({ error: message });
+    res.status(API_HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: message });
   }
 }

@@ -11,7 +11,10 @@ export class AdminLoginModalView {
   private container: HTMLElement | null = null;
   private userInput: HTMLInputElement | null = null;
   private passwordInput: HTMLInputElement | null = null;
+  private submitButton: HTMLButtonElement | null = null;
   private errorElement: HTMLElement | null = null;
+  private errorTextElement: HTMLElement | null = null;
+  private isSubmitting = false;
   private readonly authStore: AdminAuthStore;
   private readonly onLoginSuccess?: () => void;
   private readonly onReturnToTour?: () => void;
@@ -61,6 +64,7 @@ export class AdminLoginModalView {
     errorText.textContent = ADMIN_UI_TEXT.LOGIN_ERROR_MESSAGE;
     errorContainer.appendChild(errorText);
     this.errorElement = errorContainer;
+    this.errorTextElement = errorText;
 
     // User field group
     const userGroup = document.createElement("div");
@@ -103,6 +107,7 @@ export class AdminLoginModalView {
     submitBtn.type = "submit";
     submitBtn.className = ADMIN_UI_CLASSES.BUTTON_SUBMIT;
     submitBtn.textContent = ADMIN_UI_TEXT.LOGIN_SUBMIT_LABEL;
+    this.submitButton = submitBtn;
 
     // Return to public tour link
     const returnBtn = document.createElement("button");
@@ -125,7 +130,7 @@ export class AdminLoginModalView {
       if (domEvent && typeof domEvent.preventDefault === "function") {
         domEvent.preventDefault();
       }
-      this.handleSubmit();
+      void this.handleSubmit();
     });
 
     card.append(header, form);
@@ -141,7 +146,10 @@ export class AdminLoginModalView {
     }
     this.userInput = null;
     this.passwordInput = null;
+    this.submitButton = null;
     this.errorElement = null;
+    this.errorTextElement = null;
+    this.isSubmitting = false;
   }
 
   public show(): void {
@@ -182,33 +190,58 @@ export class AdminLoginModalView {
     }
   }
 
-  private handleSubmit(): void {
+  private async handleSubmit(): Promise<void> {
+    if (this.isSubmitting) {
+      return;
+    }
+
     const user = this.userInput?.value ?? "";
     const pass = this.passwordInput?.value ?? "";
 
-    const success = this.authStore.login({
-      username: user,
-      password: pass,
-    });
+    this.isSubmitting = true;
+    if (this.submitButton) {
+      this.submitButton.disabled = true;
+      this.submitButton.textContent = ADMIN_UI_TEXT.LOGIN_SUBMITTING_LABEL;
+    }
 
-    if (success) {
-      this.clearError();
-      this.clearInputs();
-      if (this.onLoginSuccess) {
-        this.onLoginSuccess();
-      }
-    } else {
-      this.showError();
-      if (this.passwordInput) {
-        this.passwordInput.value = "";
-        if (typeof this.passwordInput.focus === "function") {
-          this.passwordInput.focus();
+    try {
+      const success = await this.authStore.login({
+        username: user,
+        password: pass,
+      });
+
+      if (success) {
+        this.clearError();
+        this.clearInputs();
+        if (this.onLoginSuccess) {
+          this.onLoginSuccess();
         }
+      } else {
+        const message =
+          this.authStore.getLastError() === "service_unavailable"
+            ? ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE
+            : ADMIN_UI_TEXT.LOGIN_ERROR_MESSAGE;
+        this.showError(message);
+        if (this.passwordInput) {
+          this.passwordInput.value = "";
+          if (typeof this.passwordInput.focus === "function") {
+            this.passwordInput.focus();
+          }
+        }
+      }
+    } finally {
+      this.isSubmitting = false;
+      if (this.submitButton) {
+        this.submitButton.disabled = false;
+        this.submitButton.textContent = ADMIN_UI_TEXT.LOGIN_SUBMIT_LABEL;
       }
     }
   }
 
-  private showError(): void {
+  private showError(message: string = ADMIN_UI_TEXT.LOGIN_ERROR_MESSAGE): void {
+    if (this.errorTextElement) {
+      this.errorTextElement.textContent = message;
+    }
     if (this.errorElement) {
       this.errorElement.classList.remove(ADMIN_UI_CLASSES.ERROR_HIDDEN);
     }

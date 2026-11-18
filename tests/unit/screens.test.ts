@@ -12,6 +12,9 @@ import {
   SurveyScreenView,
   UI_CLASSES,
 } from "../../src/screens/index";
+import { SURVEY_CONSTANTS } from "../../src/survey/constants";
+import { SurveySubmissionService } from "../../src/survey/survey-submission-service";
+import { SESSION_CONSTANTS } from "../../src/session/constants";
 
 describe("Screen Views & Interactions", () => {
   let root: HTMLElement;
@@ -282,6 +285,17 @@ describe("Screen Views & Interactions", () => {
     survey.mount(root);
     const el = survey.getElement()!;
 
+    const ratingButtons = el.querySelectorAll("[data-rating]");
+    expect(ratingButtons.length).toBe(
+      SURVEY_CONSTANTS.RATING.MAX - SURVEY_CONSTANTS.RATING.MIN + 1,
+    );
+
+    const feedbackInput = el.querySelector(
+      "#cv-feedback-input",
+    ) as HTMLTextAreaElement;
+    expect(feedbackInput).toBeTruthy();
+    expect(feedbackInput.maxLength).toBe(SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH);
+
     const submitBtn = el.querySelector(
       '[data-action="submit-survey"]',
     ) as HTMLElement;
@@ -289,7 +303,9 @@ describe("Screen Views & Interactions", () => {
     submitBtn.click();
     const lastDispatch = dispatched[dispatched.length - 1];
     expect(lastDispatch.action).toBe(NavigationAction.COMPLETE_SURVEY);
-    expect(lastDispatch.payload?.surveyAnswers?.rating).toBe(5);
+    expect(lastDispatch.payload?.surveyAnswers?.rating).toBe(
+      SURVEY_CONSTANTS.RATING.DEFAULT,
+    );
 
     const skipBtn = el.querySelector(
       '[data-action="skip-survey"]',
@@ -299,6 +315,68 @@ describe("Screen Views & Interactions", () => {
     expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SKIP_SURVEY,
     );
+  });
+
+  it("submits survey via composed SurveySubmissionService and guards duplicate clicks", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    let resolvePost!: (value: unknown) => void;
+    const pendingPost = new Promise((resolve) => {
+      resolvePost = resolve;
+    });
+
+    const storage = {
+      getItem: (key: string) =>
+        key === SESSION_CONSTANTS.STORAGE_KEY
+          ? "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d"
+          : null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+    const fetcher = {
+      post: async <T = unknown>(url: string, body?: unknown): Promise<T> => {
+        calls.push({ url, body });
+        return (await pendingPost) as T;
+      },
+    };
+
+    const service = new SurveySubmissionService(storage, fetcher);
+    const survey = new SurveyScreenView(dispatch, service);
+    survey.mount(root);
+    survey.show();
+
+    const el = survey.getElement()!;
+    const ratingBtn3 = el.querySelector('[data-rating="3"]') as HTMLButtonElement;
+    ratingBtn3.click();
+
+    const feedbackInput = el.querySelector(
+      "#cv-feedback-input",
+    ) as HTMLTextAreaElement;
+    feedbackInput.value = "  Muy buena experiencia  ";
+
+    const submitBtn = el.querySelector(
+      '[data-action="submit-survey"]',
+    ) as HTMLButtonElement;
+
+    submitBtn.click();
+    submitBtn.click(); // duplicate click ignored while in flight
+
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0].action).toBe(NavigationAction.COMPLETE_SURVEY);
+    expect(submitBtn.disabled).toBe(true);
+    expect(calls).toEqual([
+      {
+        url: SURVEY_CONSTANTS.ENDPOINTS.SUBMIT,
+        body: {
+          sessionId: "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d",
+          rating: 3,
+          feedback: "Muy buena experiencia",
+        },
+      },
+    ]);
+
+    resolvePost({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(submitBtn.disabled).toBe(false);
   });
 
   it("verifies index.html markup for stylesheet and FOUC prevention", () => {

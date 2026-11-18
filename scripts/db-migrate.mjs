@@ -1,76 +1,127 @@
-import dotenv from 'dotenv';
-import { createClient } from '@libsql/client';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import dotenv from "dotenv";
+import { createClient } from "@libsql/client";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-dotenv.config({ path: '.env', quiet: true });
+const MIGRATIONS_FOLDER = join(process.cwd(), "db", "migrations");
 
-const dryRun = process.argv.includes('--dry-run');
-const url = process.env.TURSO_DATABASE_URL;
-const authToken = process.env.TURSO_AUTH_TOKEN;
-if (!url) {
-  console.error('Missing TURSO_DATABASE_URL (check your .env.local).');
-  process.exit(1);
+export function loadDatabaseEnv() {
+  dotenv.config({ path: ".env.local", quiet: true });
+  dotenv.config({ path: ".env", quiet: true });
+  return {
+    dbUrl: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  };
 }
 
-const db = createClient({ url, authToken });
-const folder = 'db/migrations';
-const files = readdirSync(folder).filter((f) => f.endsWith('.sql')).sort();
-
-async function listTables() {
+async function listTables(db) {
   const r = await db.execute(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   );
   return r.rows.map((row) => String(row.name));
 }
 
-async function listApplied() {
-  const r = await db.execute('SELECT name FROM _migrations');
+async function listApplied(db) {
+  const r = await db.execute("SELECT name FROM _migrations");
   return new Set(r.rows.map((row) => String(row.name)));
 }
 
-const before = await listTables();
-
-if (dryRun) {
-  console.log('DRY RUN - nothing will be changed\n');
-  console.log('Tables currently in Turso:');
-  before.forEach((t) => console.log(`  - ${t}`));
-  const applied = before.includes('_migrations') ? await listApplied() : new Set();
-  const pending = files.filter((f) => !applied.has(f));
-  console.log('\nPending migrations:');
-  if (pending.length === 0) console.log('  (none)');
-  pending.forEach((f) => console.log(`  - ${f}`));
-  db.close();
-  process.exit(0);
-}
-
-// Control table: remembers which migrations were already applied
-await db.execute(`CREATE TABLE IF NOT EXISTS _migrations (
-  name TEXT PRIMARY KEY,
-  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-)`);
-
-const applied = await listApplied();
-let count = 0;
-for (const file of files) {
-  if (applied.has(file)) {
-    console.log(`= ${file} (already applied)`);
-    continue;
+/**
+ * Applies pending SQL migrations in sorted order with `_migrations` idempotency tracking.
+ */
+export async function runMigrations({
+  dbUrl,
+  authToken,
+  migrationsDir = MIGRATIONS_FOLDER,
+  dryRun = false,
+  log = console.log,
+}) {
+  if (!dbUrl) {
+    throw new Error("Missing TURSO_DATABASE_URL (check .env.local or .env).");
   }
-  await db.executeMultiple(readFileSync(join(folder, file), 'utf8'));
-  await db.execute({ sql: 'INSERT INTO _migrations (name) VALUES (?)', args: [file] });
-  console.log(`+ ${file} applied`);
-  count++;
+
+  const db = createClient({ url: dbUrl, authToken });
+
+  try {
+    const files = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+
+    const before = await listTables(db);
+
+    if (dryRun) {
+      log("DRY RUN - nothing will be changed\n");
+      log("Tables currently in database:");
+      before.forEach((t) => log(`  - ${t}`));
+      const applied = before.includes("_migrations")
+        ? await listApplied(db)
+        : new Set();
+      const pending = files.filter((f) => !applied.has(f));
+      log("\nPending migrations:");
+      if (pending.length === 0) log("  (none)");
+      pending.forEach((f) => log(`  - ${f}`));
+      return {
+        appliedCount: 0,
+        skippedCount: applied.size,
+        pending,
+        tables: before,
+      };
+    }
+
+    await db.execute("PRAGMA foreign_keys = ON;");
+    await db.execute(`CREATE TABLE IF NOT EXISTS _migrations (
+      name TEXT PRIMARY KEY,
+      applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    const applied = await listApplied(db);
+    let appliedCount = 0;
+    let skippedCount = 0;
+
+    for (const file of files) {
+      if (applied.has(file)) {
+        log(`= ${file} (already applied)`);
+        skippedCount++;
+        continue;
+      }
+      const sql = readFileSync(join(migrationsDir, file), "utf8");
+      await db.executeMultiple(sql);
+      await db.execute({
+        sql: "INSERT INTO _migrations (name) VALUES (?)",
+        args: [file],
+      });
+      log(`+ ${file} applied`);
+      appliedCount++;
+    }
+
+    log(`\n${appliedCount} new migration(s).`);
+
+    const tables = await listTables(db);
+    log("\nTables in database:");
+    tables.forEach((t) => log(`  - ${t}`));
+
+    const idx = await db.execute(
+      "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND (name LIKE 'idx_%' OR name LIKE 'ux_%') ORDER BY name",
+    );
+    log("\nIndexes:");
+    idx.rows.forEach((i) => log(`  - ${i.name} (${i.tbl_name})`));
+
+    return { appliedCount, skippedCount, pending: [], tables };
+  } finally {
+    db.close();
+  }
 }
-console.log(`\n${count} new migration(s).`);
 
-console.log('\nTables in Turso:');
-(await listTables()).forEach((t) => console.log(`  - ${t}`));
+const isMainEntry =
+  typeof process.argv[1] === "string" &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 
-const idx = await db.execute(
-  "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%' ORDER BY name",
-);
-console.log('\nIndexes:');
-idx.rows.forEach((i) => console.log(`  - ${i.name} (${i.tbl_name})`));
-
-db.close();
+if (isMainEntry) {
+  const { dbUrl, authToken } = loadDatabaseEnv();
+  const dryRun = process.argv.includes("--dry-run");
+  runMigrations({ dbUrl, authToken, dryRun }).catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

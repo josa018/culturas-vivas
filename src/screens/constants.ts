@@ -53,10 +53,27 @@ export const UI_CLASSES = {
   RATING_ACTIVE: "cv-rating-btn--active",
 } as const;
 
+export const MAIN_SCREEN_LOGOS = [
+  {
+    src: "/assets/logos/imagen-jes.png",
+    alt: "Logo de la iniciativa",
+  },
+  {
+    src: "/assets/logos/logo-arguello-03.png",
+    alt: "Logo de José Alfredo Arguello",
+  },
+  {
+    src: "/assets/logos/cecan-convivencia-horizontal.png",
+    alt: "Logo de Nayarit CECAN Convivencia",
+  },
+] as const;
+
 export const UI_TEXT = {
   SPLASH_TITLE: "Culturas Vivas",
   SPLASH_TAGLINE: "El latido de nuestras raíces",
   SPLASH_LOADING: "Cargando entorno interactivo...",
+  SPLASH_DEVELOPERS:
+    "Desarrolladores:\nCamarena Martínez José Alfredo\nCovarrubias García Rodolfo Humberto\nGonzález Ayala Saúl Miguel\nGonzález Nonato Nelly Esmeralda\nPérez Guerra Josadet",
   SPLASH_BTN_ENTER: "Entrar",
 
   WELCOME_HERO: "¡Bienvenido!",

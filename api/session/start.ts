@@ -1,30 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { getDb, ensureSessionsTable } from "../_db.js";
+import {
+  API_HTTP_STATUS,
+  type ServerlessRequest,
+  type ServerlessResponse,
+} from "../_http.js";
 
-export interface ServerlessRequest {
-  method?: string;
-  body?: unknown;
-  headers?: Record<string, string | string[] | undefined>;
-}
-
-export interface ServerlessResponse {
-  status: (statusCode: number) => {
-    json: (body: unknown) => void;
-  };
-}
+export type { ServerlessRequest, ServerlessResponse };
 
 export default async function handler(
   req: ServerlessRequest,
   res: ServerlessResponse
 ): Promise<void> {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed. Use POST." });
+    res.status(API_HTTP_STATUS.METHOD_NOT_ALLOWED).json({
+      error: "Method not allowed. Use POST.",
+    });
     return;
   }
 
   try {
     await ensureSessionsTable();
-    const sessionId = randomUUID();
+    const sessionId = randomUUID().toLowerCase();
     const timestamp = Date.now();
     const db = getDb();
 
@@ -33,9 +30,9 @@ export default async function handler(
       args: [sessionId, timestamp, timestamp],
     });
 
-    res.status(201).json({ sessionId });
+    res.status(API_HTTP_STATUS.CREATED).json({ sessionId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Database operation failed";
-    res.status(500).json({ error: message });
+    res.status(API_HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: message });
   }
 }

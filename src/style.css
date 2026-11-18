@@ -50,6 +50,8 @@
   --md-custom-capacity-moderate: var(--cv-color-accent-cempasuchil);
   --md-custom-capacity-high: var(--cv-color-accent-cochinilla);
   --md-custom-star-gold: var(--cv-color-accent-cempasuchil);
+  --cv-color-status-online: #22c55e;
+  --cv-color-status-offline: #ef4444;
 
   /* Typography */
   --cv-font-family:
@@ -477,6 +479,71 @@ body {
 .cv-splash-enter-btn {
   margin-top: 12px;
   min-width: 180px;
+}
+
+.cv-splash-developers {
+  font-size: 12px;
+  color: var(--cv-color-text-bone);
+  opacity: 0.9;
+  text-align: center;
+  line-height: 1.6;
+  max-width: 620px;
+  margin-top: 4px;
+  white-space: pre-line;
+}
+
+.cv-splash-brand-carousel {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  width: clamp(230px, 30vw, 340px);
+  height: clamp(110px, 16vw, 170px);
+  pointer-events: none;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.cv-splash-brand-slide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 380ms ease, transform 380ms ease;
+  background: transparent;
+}
+
+.cv-splash-brand-slide.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (orientation: portrait) {
+  .cv-splash-brand-carousel {
+    right: 14px;
+    bottom: 14px;
+    width: min(46vw, 200px);
+    height: clamp(70px, 16vw, 98px);
+  }
+}
+
+@media (orientation: landscape) {
+  .cv-splash-brand-carousel {
+    right: 18px;
+    bottom: 18px;
+    width: clamp(180px, 24vw, 260px);
+    height: clamp(82px, 10vw, 120px);
+  }
 }
 
 /* Card Component (Screens 2, 3, 5, 6) */
@@ -1145,6 +1212,49 @@ a-scene canvas.a-canvas {
 .cv-admin-mode-chip--2d {
   background-color: rgba(204, 194, 220, 0.16);
   color: var(--md-sys-color-secondary);
+}
+
+.cv-admin-mode-chip--unknown {
+  background-color: rgba(156, 163, 175, 0.14);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.cv-admin-connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.cv-admin-connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--cv-color-status-offline);
+}
+
+.cv-admin-connection-text {
+  color: var(--cv-color-status-offline);
+}
+
+.cv-admin-connection-status--online .cv-admin-connection-dot {
+  background-color: var(--cv-color-status-online);
+  box-shadow: 0 0 8px var(--cv-color-status-online);
+}
+
+.cv-admin-connection-status--online .cv-admin-connection-text {
+  color: var(--cv-color-status-online);
+}
+
+.cv-admin-connection-status--offline .cv-admin-connection-dot {
+  background-color: var(--cv-color-status-offline);
+  box-shadow: none;
+}
+
+.cv-admin-connection-status--offline .cv-admin-connection-text {
+  color: var(--cv-color-status-offline);
 }
 
 /* Responsive Mobile Feedback List View */

@@ -3,14 +3,18 @@ export type {
   AdminUser,
   AdminAuthState,
   AdminAuthCredentials,
+  AdminLoginResponse,
+  AdminAuthErrorKind,
   AdminAuthListener,
 } from "./admin-auth-store";
+
+export { AdminHttpError, createDefaultAdminFetcher } from "./admin-http-client";
+export type { AdminNetworkFetcher } from "./admin-http-client";
 
 export { ADMIN_UI_CLASSES, ADMIN_UI_TEXT, ADMIN_THRESHOLDS } from "./constants";
 
 export {
   ADMIN_DASHBOARD_CONSTANTS,
-  INITIAL_MOCK_SURVEYS,
   AdminDashboardStore,
 } from "./admin-dashboard-store";
 export type {
@@ -19,6 +23,7 @@ export type {
   HourlyAttendanceDataset,
   DashboardState,
   DashboardListener,
+  AdminDashboardStoreOptions,
 } from "./admin-dashboard-store";
 
 export { AdminLoginModalView } from "./views/admin-login-modal";

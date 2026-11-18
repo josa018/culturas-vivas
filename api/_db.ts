@@ -35,6 +35,7 @@ export async function ensureSessionsTable(): Promise<void> {
   }
 
   const db = getDb();
+  await db.execute("PRAGMA foreign_keys = ON;");
   await db.execute(`CREATE TABLE IF NOT EXISTS visitor_sessions (
   id TEXT PRIMARY KEY,
   created_at INTEGER NOT NULL,
