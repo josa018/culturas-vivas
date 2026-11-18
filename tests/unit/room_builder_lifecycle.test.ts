@@ -1,11 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
 import {
   EXHIBIT_ASSET_IDS,
   ROOM_DEFINITIONS,
 } from "../../src/experience/constants";
-import { getSharedInspectionController } from "../../src/experience/components/inspectable";
+import {
+  getSharedInspectionController,
+  setSharedInspectionController,
+} from "../../src/experience/components/inspectable";
 
 class MockObject3D {
   public geometryDisposed = false;
@@ -35,7 +38,19 @@ class MockObject3D {
 }
 
 describe("ExhibitRoomBuilder Lifecycle", () => {
-  it("mountRoom renders Archaeology exhibits, portal, and skybox", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    const resetScene = document.createElement("a-scene");
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.ARCHAEOLOGY);
+    setSharedInspectionController(null);
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+  });
+
+  it("mountRoom renders Archaeology exhibits, portal, skybox, and <a-assets>", () => {
     const scene = document.createElement("a-scene");
     const sky = document.createElement("a-sky");
     scene.appendChild(sky);
@@ -45,38 +60,22 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     expect(roomEl.getAttribute("data-room-id")).toBe(RoomId.ARCHAEOLOGY);
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
 
-    // Verify skybox URL was updated
     expect(sky.getAttribute("src")).toBe(
       ROOM_DEFINITIONS[RoomId.ARCHAEOLOGY].skyboxUrl,
     );
+    expect(roomEl.querySelector("#portal-archaeology-to-textiles")).not.toBeNull();
 
-    // Verify portal entity is mounted
-    const portal = roomEl.querySelector("#portal-archaeology-to-textiles");
-    expect(portal).not.toBeNull();
-
-    // Verify inspection controller exhibits are updated
     const controller = getSharedInspectionController();
     expect(controller.getAllExhibits()).toHaveLength(
       ROOM_DEFINITIONS[RoomId.ARCHAEOLOGY].exhibits.length,
     );
 
-    // Verify standardized media assets were injected into <a-assets>
-    const assetsEl = scene.querySelector("a-assets");
-    expect(assetsEl).not.toBeNull();
-    expect(
-      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.PAINTING_2D}`),
-    ).not.toBeNull();
-    expect(
-      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.PHOTO_STEREO}`),
-    ).not.toBeNull();
-    expect(
-      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_2D}`),
-    ).not.toBeNull();
-    expect(
-      assetsEl?.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS}`),
-    ).not.toBeNull();
+    const assetsEl = scene.querySelector("a-assets")!;
+    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.PAINTING_2D}`)).not.toBeNull();
+    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.PHOTO_STEREO}`)).not.toBeNull();
+    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_2D}`)).not.toBeNull();
+    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS}`)).not.toBeNull();
 
-    // Verify planes link to asset IDs
     const paintingPlane = roomEl.querySelector(
       "#exhibit-painting-2d a-plane.clickable",
     );
@@ -85,7 +84,7 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     );
   });
 
-  it("disposes Three.js resources and mounts destination room on swap", () => {
+  it("disposes single and array Three.js materials/geometries and swaps rooms cleanly", () => {
     const scene = document.createElement("a-scene");
     const sky = document.createElement("a-sky");
     scene.appendChild(sky);
@@ -94,29 +93,59 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     const mockObj3D = new MockObject3D();
     (room1 as unknown as { object3D: MockObject3D }).object3D = mockObj3D;
 
-    // Mount Room 2 (Textiles)
+    let arrayMatDisposed = false;
+    let arrayMapDisposed = false;
+    const childWithArrayMat = document.createElement("a-entity");
+    (childWithArrayMat as unknown as { object3D: unknown }).object3D = {
+      traverse: (cb: (n: unknown) => void) =>
+        cb({
+          material: [
+            {
+              dispose: () => {
+                arrayMatDisposed = true;
+              },
+              map: {
+                dispose: () => {
+                  arrayMapDisposed = true;
+                },
+              },
+            },
+          ],
+        }),
+    };
+    room1.appendChild(childWithArrayMat);
+
     const room2 = ExhibitRoomBuilder.mountRoom(scene, RoomId.TEXTILES);
     expect(room2).not.toBe(room1);
     expect(room2.getAttribute("data-room-id")).toBe(RoomId.TEXTILES);
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.TEXTILES);
 
-    // Old room object3D should have had its geometry/materials disposed
     expect(mockObj3D.geometryDisposed).toBe(true);
     expect(mockObj3D.materialDisposed).toBe(true);
     expect(mockObj3D.mapDisposed).toBe(true);
+    expect(arrayMatDisposed).toBe(true);
+    expect(arrayMapDisposed).toBe(true);
 
-    // Verify room 2 has portal to archaeology
-    const portal = room2.querySelector("#portal-textiles-to-archaeology");
-    expect(portal).not.toBeNull();
-
-    // Verify inspection controller now has Textiles exhibits
-    const controller = getSharedInspectionController();
-    expect(controller.getAllExhibits()).toHaveLength(
+    expect(room2.querySelector("#portal-textiles-to-archaeology")).not.toBeNull();
+    expect(getSharedInspectionController().getAllExhibits()).toHaveLength(
       ROOM_DEFINITIONS[RoomId.TEXTILES].exhibits.length,
     );
   });
 
-  it("teardownRoom removes room entity completely from scene", () => {
+  it("ensureRoom reuses existing room and updates cv-stereo-media viewMode attribute", () => {
+    const scene = document.createElement("a-scene");
+    const room1 = ExhibitRoomBuilder.ensureRoom(scene, "vr");
+    const room2 = ExhibitRoomBuilder.ensureRoom(scene, "2d");
+
+    expect(room2).toBe(room1);
+    const stereoPlanes = room2.querySelectorAll("[cv-stereo-media]");
+    expect(stereoPlanes.length).toBeGreaterThan(0);
+    stereoPlanes.forEach((plane) => {
+      expect(plane.getAttribute("cv-stereo-media")).toContain("viewMode: 2d");
+    });
+  });
+
+  it("teardownRoom removes room container from scene", () => {
     const scene = document.createElement("a-scene");
     ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
     expect(
@@ -129,92 +158,38 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     ).toBeNull();
   });
 
-  it("waitForSkyboxReady handles null and event lifecycle cleanly", async () => {
-    // Null element
-    const nullReady = await ExhibitRoomBuilder.waitForSkyboxReady(null);
-    expect(nullReady).toBe(true);
+  it("waitForSkyboxReady resolves on materialtextureloaded or timeout", async () => {
+    expect(await ExhibitRoomBuilder.waitForSkyboxReady(null)).toBe(true);
 
-    // Mock element with event dispatch
-    let textureCallback: (() => void) | null = null;
-    const mockSky = {
-      addEventListener: (evt: string, cb: () => void) => {
-        if (evt === "materialtextureloaded") textureCallback = cb;
-      },
-      removeEventListener: () => {
-        textureCallback = null;
-      },
-    } as unknown as HTMLElement;
-
-    // Simulate AFRAME presence for test
     (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
 
-    const promise = ExhibitRoomBuilder.waitForSkyboxReady(mockSky, 500);
-    expect(textureCallback).not.toBeNull();
-    textureCallback!();
-    const result = await promise;
-    expect(result).toBe(true);
+    const sky = document.createElement("a-sky");
+    const eventPromise = ExhibitRoomBuilder.waitForSkyboxReady(sky, 500);
+    sky.dispatchEvent(new Event("materialtextureloaded"));
+    expect(await eventPromise).toBe(true);
 
-    // Timeout fallback
-    const mockTimeoutSky = {
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    } as unknown as HTMLElement;
-    const timeoutResult = await ExhibitRoomBuilder.waitForSkyboxReady(
-      mockTimeoutSky,
-      50,
-    );
-    expect(timeoutResult).toBe(true);
-
-    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+    const stalledSky = document.createElement("a-sky");
+    const timeoutPromise = ExhibitRoomBuilder.waitForSkyboxReady(stalledSky, 100);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await timeoutPromise).toBe(true);
   });
 
-  it("waitForRoomReady coordinates skybox, roomGroup loaded lifecycle, and double rAF", async () => {
-    // Null element handling
-    const nullResult = await ExhibitRoomBuilder.waitForRoomReady(null, null);
-    expect(nullResult).toBe(true);
+  it("waitForRoomReady coordinates room loaded, skybox texture, and double rAF", async () => {
+    expect(await ExhibitRoomBuilder.waitForRoomReady(null, null)).toBe(true);
 
-    // Mock elements
-    let roomLoadedCallback: (() => void) | null = null;
-    let skyTextureCallback: (() => void) | null = null;
-
-    const mockRoomGroup = {
-      hasLoaded: false,
-      addEventListener: (evt: string, cb: () => void) => {
-        if (evt === "loaded") roomLoadedCallback = cb;
-      },
-      removeEventListener: () => {
-        roomLoadedCallback = null;
-      },
-    } as unknown as HTMLElement;
-
-    const mockSky = {
-      addEventListener: (evt: string, cb: () => void) => {
-        if (evt === "materialtextureloaded") skyTextureCallback = cb;
-      },
-      removeEventListener: () => {
-        skyTextureCallback = null;
-      },
-    } as unknown as HTMLElement;
-
-    // Simulate AFRAME presence
     (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
 
-    const promise = ExhibitRoomBuilder.waitForRoomReady(
-      mockRoomGroup,
-      mockSky,
-      500,
-    );
+    const roomGroup = document.createElement("a-entity") as HTMLElement & {
+      hasLoaded: boolean;
+    };
+    roomGroup.hasLoaded = false;
+    const sky = document.createElement("a-sky");
 
-    expect(roomLoadedCallback).not.toBeNull();
-    expect(skyTextureCallback).not.toBeNull();
+    const promise = ExhibitRoomBuilder.waitForRoomReady(roomGroup, sky, 500);
+    roomGroup.dispatchEvent(new Event("loaded"));
+    sky.dispatchEvent(new Event("materialtextureloaded"));
+    await vi.runAllTimersAsync();
 
-    // Trigger both readiness events
-    roomLoadedCallback!();
-    skyTextureCallback!();
-
-    const result = await promise;
-    expect(result).toBe(true);
-
-    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+    expect(await promise).toBe(true);
   });
 });

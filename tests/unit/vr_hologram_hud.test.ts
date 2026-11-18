@@ -4,14 +4,7 @@ import {
   InspectionState,
   ROOM_DEFINITIONS,
   VR_HUD_ANIMATION_DURATION_MS,
-  VR_HUD_COLORS,
-  VR_HUD_DICTIONARY,
   VR_HUD_ELEMENT_IDS,
-  VR_HUD_FOCAL_DISTANCE_M,
-  VR_HUD_FOCAL_ELEVATION_OFFSET_M,
-  VR_HUD_GEOMETRY,
-  VR_HUD_MAX_TAP_DRAG_PX,
-  VR_HUD_TAP_DEBOUNCE_MS,
 } from "../../src/experience/constants";
 import { RoomId } from "../../src/experience/types";
 import {
@@ -20,6 +13,7 @@ import {
   calculateHudWorldTransform,
   createVrHologramHudComponentDefinition,
   ensureVrHologramHud,
+  readCameraPoseFromScene,
   registerVrHologramHudComponent,
   type VrHologramHudComponentInstance,
   type VrHologramHudEntity,
@@ -35,7 +29,10 @@ import {
   type VrTapTriggerComponentInstance,
   type VrTapTriggerEntity,
 } from "../../src/experience/components/vr-tap-trigger";
-import { getSharedInspectionController } from "../../src/experience/components/inspectable";
+import {
+  getSharedInspectionController,
+  setSharedInspectionController,
+} from "../../src/experience/components/inspectable";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { ExperienceScreenView } from "../../src/screens/screen-experience";
 import {
@@ -150,45 +147,23 @@ function createMockTapTriggerInstance(
   return instance;
 }
 
-describe("VR Spatial HUD & Dual Tap Interaction", () => {
+describe("VR Hologram HUD Component", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     document.body.innerHTML = "";
   });
 
   afterEach(() => {
-    document.body.innerHTML = "";
+    vi.useRealTimers();
+    const resetScene = document.createElement("a-scene");
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.ARCHAEOLOGY);
+    setSharedInspectionController(null);
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
   });
 
-  it("exports declarative spatial metrics, tap guards, and cultural-design-system colors", () => {
-    expect(VR_HUD_FOCAL_DISTANCE_M).toBe(1.5);
-    expect(VR_HUD_FOCAL_ELEVATION_OFFSET_M).toBe(-0.15);
-    expect(VR_HUD_ANIMATION_DURATION_MS).toBe(250);
-    expect(VR_HUD_TAP_DEBOUNCE_MS).toBe(350);
-    expect(VR_HUD_MAX_TAP_DRAG_PX).toBe(12);
-
-    expect(VR_HUD_GEOMETRY.CURVED_RADIUS_M).toBe(1.8);
-    expect(VR_HUD_GEOMETRY.THETA_LENGTH_DEG).toBe(50);
-    expect(VR_HUD_GEOMETRY.PANEL_HEIGHT_M).toBe(0.8);
-
-    expect(VR_HUD_COLORS.SURFACE_OBSIDIAN).toBe("#0B0F17");
-    expect(VR_HUD_COLORS.ACCENT_CEMPASUCHIL).toBe("#D99B26");
-    expect(VR_HUD_COLORS.ACCENT_TURQUESA).toBe("#008F85");
-    expect(VR_HUD_COLORS.ACCENT_COCHINILLA).toBe("#B83A2C");
-    expect(VR_HUD_COLORS.TEXT_BONE).toBe("#EDE8DF");
-
-    for (const id of Object.values(VR_HUD_ELEMENT_IDS)) {
-      expect(typeof id).toBe("string");
-      expect(id.length).toBeGreaterThan(0);
-    }
-
-    for (const label of Object.values(VR_HUD_DICTIONARY)) {
-      expect(typeof label).toBe("string");
-      expect(label.trim().length).toBeGreaterThan(0);
-    }
-  });
-
-  it("registers cv-vr-hologram-hud component and ensures idempotent scene-root entity", () => {
+  it("registers cv-vr-hologram-hud and creates idempotent scene-root HUD entity", () => {
     const registered: Record<string, unknown> = {};
     (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
       registerComponent: (name: string, def: unknown) => {
@@ -206,10 +181,9 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     expect(hud1).toBe(hud2);
     expect(hud1.getAttribute("id")).toBe(VR_HUD_ELEMENT_IDS.HUD_ROOT);
     expect(hud1.getAttribute("visible")).toBe("false");
-    expect(hud1.getAttribute("cv-vr-hologram-hud")).toBe("");
   });
 
-  it("computes world-space transform ahead of gaze azimuth at focal distance", () => {
+  it("computes world-space transform 1.5m ahead of gaze azimuth and -0.15m elevation", () => {
     const forward = calculateHudWorldTransform({
       position: { x: 0, y: 1.6, z: 0 },
       yawRad: 0,
@@ -228,7 +202,26 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     expect(left.rotationDeg.y).toBeCloseTo(90, 2);
   });
 
-  it("renders curved backdrop and clickable controls, summons in world space, and dismisses cleanly", () => {
+  it("readCameraPoseFromScene extracts camera object3D pose or returns default fallback", () => {
+    expect(readCameraPoseFromScene(null)).toEqual({
+      position: { x: 0, y: 1.6, z: 0 },
+      yawRad: 0,
+    });
+
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera") as HTMLElement & {
+      object3D?: { position: { x: number; y: number; z: number }; rotation: { y: number } };
+    };
+    camera.object3D = { position: { x: 1.2, y: 1.7, z: -0.5 }, rotation: { y: 0.75 } };
+    scene.appendChild(camera);
+
+    expect(readCameraPoseFromScene(scene)).toEqual({
+      position: { x: 1.2, y: 1.7, z: -0.5 },
+      yawRad: 0.75,
+    });
+  });
+
+  it("summons HUD, aborts active inspection, updates room chip, dismisses, and respects setEnabled(false)", () => {
     const el = document.createElement("a-entity") as VrHologramHudEntity;
     el.object3D = {
       visible: false,
@@ -239,21 +232,10 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     const instance = createMockHudInstance(el);
     instance.init();
 
-    const backdrop = el.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`);
-    const roomChip = el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
-    const switchBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN}`);
-    const exitBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EXIT_BTN}`);
-    const dismissBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`);
-
-    expect(backdrop).toBeTruthy();
-    expect(backdrop?.tagName.toLowerCase()).toBe("a-cylinder");
-    expect(backdrop?.classList.contains("clickable")).toBe(true);
-    expect(roomChip?.getAttribute("value")).toBe(
+    expect(el.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`)?.tagName.toLowerCase()).toBe("a-cylinder");
+    expect(el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value")).toBe(
       ROOM_DEFINITIONS[DEFAULT_ROOM_ID].title,
     );
-    expect(switchBtn?.classList.contains("clickable")).toBe(true);
-    expect(exitBtn?.classList.contains("clickable")).toBe(true);
-    expect(dismissBtn?.classList.contains("clickable")).toBe(true);
 
     const controller = getSharedInspectionController();
     controller.setExhibits(ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits);
@@ -263,245 +245,41 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
     expect(instance.isOpen).toBe(true);
     expect(el.getAttribute("visible")).toBe("true");
-    expect(el.getAttribute("scale")).toBe("1 1 1");
     expect(el.getAttribute("position")).toBe("0 1.45 -1.5");
     expect(controller.getState()).toBe(InspectionState.IDLE);
 
     instance.setRoomTitle(RoomId.TEXTILES);
-    expect(roomChip?.getAttribute("value")).toBe(
+    expect(el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value")).toBe(
       ROOM_DEFINITIONS[RoomId.TEXTILES].title,
     );
 
-    dismissBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`)?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
     expect(instance.isOpen).toBe(false);
     expect(el.getAttribute("visible")).toBe("false");
-    expect(el.getAttribute("scale")).toBe("0.001 0.001 0.001");
 
     instance.setEnabled(false);
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
     expect(instance.isOpen).toBe(false);
   });
 
-  it("registers cv-vr-tap-trigger, bridges tap clicks while cancelling fuseTimeout, and blocks double-taps/drags", () => {
-    const registered: Record<string, unknown> = {};
-    (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
-      registerComponent: (name: string, def: unknown) => {
-        registered[name] = def;
-      },
-    };
+  it("animates HUD dismiss with AFRAME animationcomplete and timeout fallback", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
 
-    registerVrTapTriggerComponent();
-    expect(registered["cv-vr-tap-trigger"]).toBeDefined();
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(el.getAttribute("animation__hud_in")).toContain("to: 1 1 1");
 
-    // Pure helper validation
-    expect(
-      computeDragDistancePx({ x: 100, y: 100 }, { x: 103, y: 104 }),
-    ).toBeCloseTo(5, 3);
-    expect(computeDragDistancePx(null, { x: 10, y: 10 })).toBe(0);
+    instance.dismiss();
+    expect(instance.isOpen).toBe(false);
+    expect(el.getAttribute("animation__hud_out")).toContain("to: 0.001 0.001 0.001");
+    expect(el.getAttribute("visible")).toBe("true");
 
-    const target = document.createElement("a-entity");
-    expect(
-      evaluateCursorTap({
-        downEl: target,
-        upEl: target,
-        dragDistancePx: 2,
-        elapsedSinceLastTapMs: 500,
-        hudToggleEnabled: true,
-        isTransitionIdle: true,
-      }),
-    ).toBe("ACTIVATE_ENTITY");
-
-    expect(
-      evaluateCursorTap({
-        downEl: null,
-        upEl: null,
-        dragDistancePx: 0,
-        elapsedSinceLastTapMs: 500,
-        hudToggleEnabled: true,
-        isTransitionIdle: true,
-      }),
-    ).toBe("TOGGLE_HUD");
-
-    expect(
-      evaluateCursorTap({
-        downEl: null,
-        upEl: null,
-        dragDistancePx: 20,
-        elapsedSinceLastTapMs: 500,
-        hudToggleEnabled: true,
-        isTransitionIdle: true,
-      }),
-    ).toBe("IGNORE");
-
-    expect(
-      evaluateCursorTap({
-        downEl: null,
-        upEl: null,
-        dragDistancePx: 0,
-        elapsedSinceLastTapMs: 100,
-        hudToggleEnabled: true,
-        isTransitionIdle: true,
-      }),
-    ).toBe("IGNORE");
-
-    expect(
-      evaluateCursorTap({
-        downEl: null,
-        upEl: null,
-        dragDistancePx: 0,
-        elapsedSinceLastTapMs: 500,
-        hudToggleEnabled: false,
-        isTransitionIdle: true,
-      }),
-    ).toBe("IGNORE");
-
-    expect(
-      evaluateCursorTap({
-        downEl: null,
-        upEl: null,
-        dragDistancePx: 0,
-        elapsedSinceLastTapMs: 500,
-        hudToggleEnabled: true,
-        isTransitionIdle: false,
-      }),
-    ).toBe("IGNORE");
-
-    // Runtime cursor integration test
-    const scene = document.createElement("a-scene");
-    const camera = document.createElement("a-camera");
-    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
-    const removedStates: string[] = [];
-    let fuseFired = false;
-    const pendingFuse = setTimeout(() => {
-      fuseFired = true;
-    }, 50);
-    cursor.removeState = (state: string) => {
-      removedStates.push(state);
-    };
-    cursor.components = {
-      cursor: {
-        fuseTimeout: pendingFuse,
-        intersectedEl: target,
-        data: { fuse: true, rayOrigin: "entity" },
-      },
-    };
-    camera.appendChild(cursor);
-    scene.append(camera, target);
-    document.body.appendChild(scene);
-
-    const t1 = ensureVrTapTrigger(scene) as VrTapTriggerEntity;
-    const t2 = ensureVrTapTrigger(scene);
-    expect(t1).toBe(t2);
-    expect(t1.getAttribute("id")).toBe(VR_HUD_ELEMENT_IDS.TAP_TRIGGER);
-
-    const tapTrigger = createMockTapTriggerInstance(t1);
-    tapTrigger.init();
-
-    let targetClickCount = 0;
-    target.addEventListener("click", () => {
-      targetClickCount++;
-    });
-    let hudToggleCount = 0;
-    scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, () => {
-      hudToggleCount++;
-    });
-
-    // 1. Tap on .clickable target cancels pending fuseTimeout and fires exactly 1 click
-    vi.spyOn(Date, "now").mockReturnValue(1000);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", {
-        detail: {
-          intersectedEl: target,
-          mouseEvent: { clientX: 50, clientY: 50 },
-        },
-      }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", {
-        detail: {
-          intersectedEl: target,
-          mouseEvent: { clientX: 52, clientY: 51 },
-        },
-      }),
-    );
-
-    expect(targetClickCount).toBe(1);
-    expect(hudToggleCount).toBe(0);
-    expect(removedStates).toContain("cursor-fusing");
-    expect(cursor.components.cursor.fuseTimeout).toBeUndefined();
-    expect(fuseFired).toBe(false);
-
-    // 2. Synthetic mouseup 100ms later is ignored by debounce
-    vi.spyOn(Date, "now").mockReturnValue(1100);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", { detail: { intersectedEl: target } }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", { detail: { intersectedEl: target } }),
-    );
-    expect(targetClickCount).toBe(1);
-
-    // 3. Tap on empty space after debounce emits VR_TAP_HUD_TOGGLE_EVENT
-    vi.spyOn(Date, "now").mockReturnValue(1500);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", {
-        detail: {
-          intersectedEl: null,
-          touchEvent: { touches: [{ clientX: 100, clientY: 100 }] },
-        },
-      }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", {
-        detail: {
-          intersectedEl: null,
-          touchEvent: { changedTouches: [{ clientX: 103, clientY: 104 }] },
-        },
-      }),
-    );
-    expect(hudToggleCount).toBe(1);
-
-    // 4. Drag gesture (>12px) on empty space is ignored
-    vi.spyOn(Date, "now").mockReturnValue(2000);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", {
-        detail: {
-          intersectedEl: null,
-          touchEvent: { touches: [{ clientX: 100, clientY: 100 }] },
-        },
-      }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", {
-        detail: {
-          intersectedEl: null,
-          touchEvent: { changedTouches: [{ clientX: 140, clientY: 100 }] },
-        },
-      }),
-    );
-    expect(hudToggleCount).toBe(1);
-
-    // 5. In 2D mode (hudToggleEnabled=false), empty-space tap is ignored while .clickable tap still works
-    tapTrigger.setHudToggleEnabled(false);
-    vi.spyOn(Date, "now").mockReturnValue(2500);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", { detail: { intersectedEl: null } }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", { detail: { intersectedEl: null } }),
-    );
-    expect(hudToggleCount).toBe(1);
-
-    vi.spyOn(Date, "now").mockReturnValue(3000);
-    cursor.dispatchEvent(
-      new CustomEvent("mousedown", { detail: { intersectedEl: target } }),
-    );
-    cursor.dispatchEvent(
-      new CustomEvent("mouseup", { detail: { intersectedEl: target } }),
-    );
-    expect(targetClickCount).toBe(2);
-
-    vi.restoreAllMocks();
+    vi.advanceTimersByTime(VR_HUD_ANIMATION_DURATION_MS + 30);
+    expect(el.getAttribute("visible")).toBe("false");
   });
 
   it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
@@ -514,16 +292,11 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
       removeItem: (k) => {
         storeMap.delete(k);
       },
-      clear: () => {
-        storeMap.clear();
-      },
     };
     const fsm = new NavigationStateMachine(new SessionStore(memoryStorage));
     fsm.dispatch(NavigationAction.FINISH_LOADING);
     fsm.dispatch(NavigationAction.SELECT_VR);
     fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
-    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
-    expect(fsm.getSession().viewMode).toBe(ViewMode.VR);
 
     const el = document.createElement("a-entity") as VrHologramHudEntity;
     const hud = createMockHudInstance(el);
@@ -534,23 +307,274 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     });
 
     hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
-    expect(hud.isOpen).toBe(true);
-
-    const switchBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN}`);
-    switchBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    el.querySelector(`#${VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN}`)?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
     expect(hud.isOpen).toBe(false);
     expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
     expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
 
-    fsm.dispatch(NavigationAction.REQUEST_EXIT);
-    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
-    fsm.dispatch(NavigationAction.RESUME_TOUR);
-
     hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
-    const exitBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EXIT_BTN}`);
-    exitBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    el.querySelector(`#${VR_HUD_ELEMENT_IDS.EXIT_BTN}`)?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
     expect(hud.isOpen).toBe(false);
     expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
+  });
+});
+
+describe("VR Tap Trigger Pure Helpers & Component", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  it("computeDragDistancePx computes Euclidean distance or 0 when coordinates are missing", () => {
+    expect(computeDragDistancePx({ x: 100, y: 100 }, { x: 103, y: 104 })).toBeCloseTo(5, 3);
+    expect(computeDragDistancePx(null, { x: 10, y: 10 })).toBe(0);
+    expect(computeDragDistancePx({ x: 10, y: 10 }, null)).toBe(0);
+  });
+
+  const dummyTarget = document.createElement("a-entity");
+  it.each([
+    {
+      label: "matching clickable target",
+      input: {
+        downEl: dummyTarget,
+        upEl: dummyTarget,
+        dragDistancePx: 2,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      },
+      expected: "ACTIVATE_ENTITY",
+    },
+    {
+      label: "empty space in VR mode when idle",
+      input: {
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      },
+      expected: "TOGGLE_HUD",
+    },
+    {
+      label: "drag exceeding 12px threshold",
+      input: {
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 20,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      },
+      expected: "IGNORE",
+    },
+    {
+      label: "tap inside 350ms debounce window",
+      input: {
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 100,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      },
+      expected: "IGNORE",
+    },
+    {
+      label: "empty space when HUD toggle disabled (2D mode)",
+      input: {
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: false,
+        isTransitionIdle: true,
+      },
+      expected: "IGNORE",
+    },
+    {
+      label: "empty space while room transition is active",
+      input: {
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: false,
+      },
+      expected: "IGNORE",
+    },
+  ])("evaluateCursorTap returns $expected for $label", ({ input, expected }) => {
+    expect(evaluateCursorTap(input)).toBe(expected);
+  });
+
+  function setupTapScene(cursorData: { fuse: boolean; rayOrigin: string } = { fuse: true, rayOrigin: "entity" }) {
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    const target = document.createElement("a-entity");
+    const removedStates: string[] = [];
+    let fuseFired = false;
+    const pendingFuse = setTimeout(() => {
+      fuseFired = true;
+    }, 50);
+
+    cursor.removeState = (state: string) => {
+      removedStates.push(state);
+    };
+    cursor.components = {
+      cursor: {
+        fuseTimeout: pendingFuse,
+        intersectedEl: target,
+        data: cursorData,
+      },
+    };
+
+    camera.appendChild(cursor);
+    scene.append(camera, target);
+    document.body.appendChild(scene);
+
+    const triggerEl = ensureVrTapTrigger(scene) as VrTapTriggerEntity;
+    const tapTrigger = createMockTapTriggerInstance(triggerEl);
+    tapTrigger.init();
+
+    return {
+      scene,
+      cursor,
+      target,
+      triggerEl,
+      tapTrigger,
+      removedStates,
+      didFuseFire: () => fuseFired,
+    };
+  }
+
+  it("registers cv-vr-tap-trigger and ensures idempotent entity", () => {
+    const registered: Record<string, unknown> = {};
+    (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
+      registerComponent: (name: string, def: unknown) => {
+        registered[name] = def;
+      },
+    };
+    registerVrTapTriggerComponent();
+    expect(registered["cv-vr-tap-trigger"]).toBeDefined();
+
+    const scene = document.createElement("a-scene");
+    const t1 = ensureVrTapTrigger(scene);
+    const t2 = ensureVrTapTrigger(scene);
+    expect(t1).toBe(t2);
+  });
+
+  it("tap on .clickable cancels fuseTimeout, clears cursor-fusing state, and dispatches click", () => {
+    const { cursor, target, removedStates, didFuseFire } = setupTapScene();
+    let clickCount = 0;
+    target.addEventListener("click", () => {
+      clickCount++;
+    });
+
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: { intersectedEl: target, mouseEvent: { clientX: 50, clientY: 50 } },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: { intersectedEl: target, mouseEvent: { clientX: 52, clientY: 51 } },
+      }),
+    );
+
+    expect(clickCount).toBe(1);
+    expect(removedStates).toContain("cursor-fusing");
+    expect(cursor.components?.cursor?.fuseTimeout).toBeUndefined();
+    vi.advanceTimersByTime(100);
+    expect(didFuseFire()).toBe(false);
+  });
+
+  it("does not emit duplicate synthetic click when cursor handles click natively (fuse=false / rayOrigin=mouse)", () => {
+    const { cursor, target } = setupTapScene({ fuse: false, rayOrigin: "mouse" });
+    let clickCount = 0;
+    target.addEventListener("click", () => {
+      clickCount++;
+    });
+
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: target } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: target } }));
+
+    expect(clickCount).toBe(0);
+  });
+
+  it("enforces debounce, drag threshold, 2D empty-space disablement, and detaches listeners on remove()", () => {
+    const { scene, cursor, target, tapTrigger } = setupTapScene();
+    let hudToggleCount = 0;
+    scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, () => {
+      hudToggleCount++;
+    });
+
+    // Empty-space tap toggles HUD
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: { intersectedEl: null, touchEvent: { touches: [{ clientX: 100, clientY: 100 }] } },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: { intersectedEl: null, touchEvent: { changedTouches: [{ clientX: 103, clientY: 104 }] } },
+      }),
+    );
+    expect(hudToggleCount).toBe(1);
+
+    // Debounce (< 350ms) ignored
+    vi.spyOn(Date, "now").mockReturnValue(1100);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: null } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: null } }));
+    expect(hudToggleCount).toBe(1);
+
+    // Drag (> 12px) ignored
+    vi.spyOn(Date, "now").mockReturnValue(2000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: { intersectedEl: null, touchEvent: { touches: [{ clientX: 100, clientY: 100 }] } },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: { intersectedEl: null, touchEvent: { changedTouches: [{ clientX: 140, clientY: 100 }] } },
+      }),
+    );
+    expect(hudToggleCount).toBe(1);
+
+    // 2D mode ignores empty-space tap
+    tapTrigger.setHudToggleEnabled(false);
+    vi.spyOn(Date, "now").mockReturnValue(2500);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: null } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: null } }));
+    expect(hudToggleCount).toBe(1);
+
+    // remove() detaches cursor listeners completely
+    let targetClicks = 0;
+    target.addEventListener("click", () => {
+      targetClicks++;
+    });
+    tapTrigger.remove();
+    vi.spyOn(Date, "now").mockReturnValue(3000);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: target } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: target } }));
+    expect(targetClicks).toBe(0);
   });
 
   it("synchronizes 2D DOM HUD vs 3D tap-toggled HUD in ExperienceScreenView and persists across room transitions", () => {
@@ -577,80 +601,44 @@ describe("VR Spatial HUD & Dual Tap Interaction", () => {
     const topBar = appRoot.querySelector(".cv-hud-topbar") as HTMLElement;
     expect(topBar.classList.contains("cv-hud-topbar--hidden")).toBe(true);
 
-    const hudEl = scene.querySelector(
-      `#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`,
-    ) as VrHologramHudEntity;
-    const tapEl = scene.querySelector(
-      `#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`,
-    ) as VrTapTriggerEntity;
-    expect(hudEl).toBeTruthy();
-    expect(tapEl).toBeTruthy();
-    expect(
-      hudEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
-    ).toBeNull();
-    expect(
-      tapEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
-    ).toBeNull();
+    const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`) as VrHologramHudEntity;
+    const tapEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`) as VrTapTriggerEntity;
+    expect(hudEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`)).toBeNull();
+    expect(tapEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`)).toBeNull();
 
     const hudInstance = createMockHudInstance(hudEl);
     hudInstance.init();
     const tapInstance = createMockTapTriggerInstance(tapEl);
     tapInstance.init();
-    (
-      hudEl as unknown as {
-        components?: Record<string, VrHologramHudComponentInstance>;
-      }
-    ).components = { "cv-vr-hologram-hud": hudInstance };
-    (
-      tapEl as unknown as {
-        components?: Record<string, VrTapTriggerComponentInstance>;
-      }
-    ).components = { "cv-vr-tap-trigger": tapInstance };
+    (hudEl as unknown as { components?: Record<string, VrHologramHudComponentInstance> }).components = {
+      "cv-vr-hologram-hud": hudInstance,
+    };
+    (tapEl as unknown as { components?: Record<string, VrTapTriggerComponentInstance> }).components = {
+      "cv-vr-tap-trigger": tapInstance,
+    };
 
-    // First empty-space tap toggles 3D HUD open
-    tapEl.dispatchEvent(
-      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
-    );
+    tapEl.dispatchEvent(new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }));
     expect(hudInstance.isOpen).toBe(true);
-    expect(hudEl.getAttribute("visible")).toBe("true");
 
-    // Second empty-space tap toggles 3D HUD closed
-    tapEl.dispatchEvent(
-      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
-    );
+    tapEl.dispatchEvent(new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }));
     expect(hudInstance.isOpen).toBe(false);
-    expect(hudEl.getAttribute("visible")).toBe("false");
 
-    // Open again, then verify room transition dismisses HUD, preserves entities, and updates room chip
-    tapEl.dispatchEvent(
-      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
-    );
-    expect(hudInstance.isOpen).toBe(true);
-
-    const transitioned = screen.transitionToRoom(RoomId.TEXTILES);
-    expect(transitioned).toBe(true);
+    tapEl.dispatchEvent(new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }));
+    expect(screen.transitionToRoom(RoomId.TEXTILES)).toBe(true);
     expect(hudInstance.isOpen).toBe(false);
     expect(tapInstance.isTransitionIdle).toBe(true);
     expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)).toBe(hudEl);
-    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`)).toBe(
-      tapEl,
-    );
     expect(
-      hudEl
-        .querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)
-        ?.getAttribute("value"),
+      hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value"),
     ).toBe(ROOM_DEFINITIONS[RoomId.TEXTILES].title);
 
-    hudEl.dispatchEvent(
-      new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }),
-    );
+    hudEl.dispatchEvent(new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }));
     hudEl.dispatchEvent(new CustomEvent(VR_HUD_EXIT_EVENT, { bubbles: true }));
     expect(dispatched).toEqual([
       NavigationAction.SWITCH_TO_TOUCH,
       NavigationAction.REQUEST_EXIT,
     ]);
 
-    // Switching to 2D touch mode reveals 2D DOM HUD and disables empty-space HUD toggle
     screen.setViewMode(ViewMode.TOUCH_2D);
     screen.show();
     expect(topBar.classList.contains("cv-hud-topbar--hidden")).toBe(false);

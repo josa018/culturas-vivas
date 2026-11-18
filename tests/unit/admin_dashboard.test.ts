@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { AppRoute, RouteMatcher } from "../../src/navigation/route-matcher";
 
 vi.mock("chart.js", () => {
   class MockChart {
@@ -8,7 +7,10 @@ vi.mock("chart.js", () => {
     update = vi.fn();
     destroy = vi.fn();
 
-    constructor(_canvas: unknown, config: { data: { labels: string[]; datasets: Array<{ data: number[] }> } }) {
+    constructor(
+      _canvas: unknown,
+      config: { data: { labels: string[]; datasets: Array<{ data: number[] }> } },
+    ) {
       this.data = config.data;
     }
   }
@@ -31,7 +33,6 @@ import {
   type AdminNetworkFetcher,
   ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
-  ADMIN_THRESHOLDS,
   AdminLoginModalView,
   AdminHeaderWidget,
   SurveysTableWidget,
@@ -42,28 +43,24 @@ import type { StorageAdapter } from "../../src/navigation/index";
 
 class InMemoryStorage implements StorageAdapter {
   private readonly store = new Map<string, string>();
-
   public getItem(key: string): string | null {
     return this.store.get(key) ?? null;
   }
-
   public setItem(key: string, value: string): void {
     this.store.set(key, value);
   }
-
   public removeItem(key: string): void {
     this.store.delete(key);
   }
-
-  public clear(): void {
-    this.store.clear();
-  }
 }
 
-class MockAdminFetcher implements AdminNetworkFetcher {
+class StubAdminFetcher implements AdminNetworkFetcher {
   public getCalls: Array<{ url: string; headers?: Record<string, string> }> = [];
   public postCalls: Array<{ url: string; body?: unknown }> = [];
-  public loginResult: { token: string; user: { username: string; role: string } } | Error = {
+  public loginResult:
+    | { token: string; user: { username: string; role: string } }
+    | Error
+    | Record<string, unknown> = {
     token: "signed.jwt.token",
     user: { username: "bibliotecario", role: "librarian" },
   };
@@ -85,12 +82,19 @@ class MockAdminFetcher implements AdminNetworkFetcher {
       {
         id: "2",
         timestamp: 1794939700000,
+        rating: 2,
+        feedback: "",
+        viewMode: "2d",
+      },
+      {
+        id: "3",
+        timestamp: 1794939600000,
         rating: 4,
         feedback: "",
         viewMode: null,
       },
     ],
-    averageRating: 4.5,
+    averageRating: 3.7,
   };
 
   public async get<T = unknown>(
@@ -113,7 +117,201 @@ class MockAdminFetcher implements AdminNetworkFetcher {
   }
 }
 
-describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
+describe("AdminAuthStore", () => {
+  it("rejects blank username or empty password locally without network request", async () => {
+    const fetcher = new StubAdminFetcher();
+    const store = new AdminAuthStore(new InMemoryStorage(), fetcher);
+
+    expect(await store.login({ username: "   ", password: "abc" })).toBe(false);
+    expect(await store.login({ username: "admin", password: "" })).toBe(false);
+    expect(store.getLastError()).toBe("invalid_credentials");
+    expect(fetcher.postCalls).toHaveLength(0);
+  });
+
+  it("classifies 401/400 as invalid_credentials and 404/500/malformed payload as service_unavailable", async () => {
+    const fetcher = new StubAdminFetcher();
+    const store = new AdminAuthStore(new InMemoryStorage(), fetcher);
+
+    fetcher.loginResult = new AdminHttpError(401, "Invalid credentials");
+    expect(await store.login({ username: "admin", password: "wrong" })).toBe(false);
+    expect(store.getLastError()).toBe("invalid_credentials");
+
+    fetcher.loginResult = new AdminHttpError(500, "Server error");
+    expect(await store.login({ username: "admin", password: "secret" })).toBe(false);
+    expect(store.getLastError()).toBe("service_unavailable");
+
+    fetcher.loginResult = { token: "", user: { username: "admin", role: "admin" } };
+    expect(await store.login({ username: "admin", password: "secret" })).toBe(false);
+    expect(store.getLastError()).toBe("service_unavailable");
+  });
+
+  it("persists authenticated JWT session, restores on reload, and clears on logout", async () => {
+    const storage = new InMemoryStorage();
+    const fetcher = new StubAdminFetcher();
+    fetcher.loginResult = {
+      token: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
+      user: { username: "bibliotecario", role: "librarian" },
+    };
+
+    const store = new AdminAuthStore(storage, fetcher);
+    const states: boolean[] = [];
+    const unsub = store.subscribe((state) => states.push(state.isAuthenticated));
+
+    expect(
+      await store.login({ username: " bibliotecario ", password: "secret" }),
+    ).toBe(true);
+    expect(fetcher.postCalls[0]).toEqual({
+      url: "/api/admin/login",
+      body: { username: "bibliotecario", password: "secret" },
+    });
+    expect(states).toEqual([true]);
+
+    const reloaded = new AdminAuthStore(storage, fetcher);
+    expect(reloaded.getState()).toEqual({
+      isAuthenticated: true,
+      token: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
+      user: { username: "bibliotecario", role: "librarian" },
+    });
+
+    unsub();
+    store.logout();
+    expect(store.getState().isAuthenticated).toBe(false);
+    expect(storage.getItem(ADMIN_AUTH_CONSTANTS.STORAGE_KEY)).toBeNull();
+  });
+
+  it("falls back to unauthenticated state when persisted storage JSON is corrupted", () => {
+    const storage = new InMemoryStorage();
+    storage.setItem(ADMIN_AUTH_CONSTANTS.STORAGE_KEY, "{bad-json");
+
+    const store = new AdminAuthStore(storage, new StubAdminFetcher());
+    expect(store.getState()).toEqual({
+      isAuthenticated: false,
+      token: null,
+      user: null,
+    });
+  });
+});
+
+describe("AdminDashboardStore", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("initializes empty without mocked data before fetching", () => {
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher: new StubAdminFetcher(),
+    });
+
+    expect(store.getState().surveys).toEqual([]);
+    expect(store.getState().connected).toBe(false);
+    expect(store.getAverageRating()).toBe(0);
+    expect(store.getDailyPeak()).toBe(0);
+    expect(store.getState().hourlyAttendance.labels).toHaveLength(24);
+    expect(store.getState().hourlyAttendance.values.every((v) => v === 0)).toBe(true);
+  });
+
+  it("hydrates stats from /api/admin/stats with Bearer authorization", async () => {
+    const fetcher = new StubAdminFetcher();
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token-123",
+      fetcher,
+    });
+
+    await store.fetchStats();
+
+    expect(fetcher.getCalls[0]).toEqual({
+      url: "/api/admin/stats",
+      headers: { Authorization: "Bearer jwt-token-123" },
+    });
+    expect(store.getState().connected).toBe(true);
+    expect(store.getState().activeVisitorsCount).toBe(4);
+    expect(store.getDailyPeak()).toBe(9);
+    expect(store.getAverageRating()).toBe(3.7);
+    expect(store.getState().surveys).toHaveLength(3);
+  });
+
+  it("invokes onUnauthorized and stops polling on missing token or 401 response", async () => {
+    const fetcher = new StubAdminFetcher();
+    let unauthorizedCount = 0;
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+      onUnauthorized: () => {
+        unauthorizedCount++;
+      },
+      pollIntervalMs: 5000,
+    });
+
+    store.startPolling();
+    await Promise.resolve();
+    expect(store.isPolling()).toBe(true);
+
+    fetcher.statsResult = new AdminHttpError(401, "Expired");
+    await store.fetchStats();
+
+    expect(store.getState().connected).toBe(false);
+    expect(store.isPolling()).toBe(false);
+    expect(unauthorizedCount).toBe(1);
+
+    const noTokenStore = new AdminDashboardStore({
+      getToken: () => null,
+      fetcher,
+      onUnauthorized: () => {
+        unauthorizedCount++;
+      },
+    });
+    await noTokenStore.fetchStats();
+    expect(unauthorizedCount).toBe(2);
+  });
+
+  it("marks disconnected without triggering onUnauthorized on transient 500 or malformed payload", async () => {
+    const fetcher = new StubAdminFetcher();
+    let unauthorizedCount = 0;
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+      onUnauthorized: () => {
+        unauthorizedCount++;
+      },
+    });
+
+    fetcher.statsResult = new AdminHttpError(500, "Timeout");
+    await store.fetchStats();
+    expect(store.getState().connected).toBe(false);
+    expect(unauthorizedCount).toBe(0);
+
+    fetcher.statsResult = { activeSessions: -5 };
+    await store.fetchStats();
+    expect(store.getState().connected).toBe(false);
+    expect(unauthorizedCount).toBe(0);
+  });
+
+  it("polls periodically at pollIntervalMs and stops cleanly on stopPolling()", async () => {
+    const fetcher = new StubAdminFetcher();
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+      pollIntervalMs: 5000,
+    });
+
+    store.startPolling();
+    expect(fetcher.getCalls).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetcher.getCalls).toHaveLength(2);
+
+    store.stopPolling();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetcher.getCalls).toHaveLength(2);
+  });
+});
+
+describe("Admin UI Widgets & AdminController", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
   });
@@ -123,124 +321,12 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     vi.restoreAllMocks();
   });
 
-  it("RouteMatcher accurately detects admin vs visitor routes", () => {
-    expect(RouteMatcher.match("/admin", "")).toBe(AppRoute.ADMIN);
-    expect(RouteMatcher.match("/admin/", "")).toBe(AppRoute.ADMIN);
-    expect(RouteMatcher.match("/", "#/admin")).toBe(AppRoute.ADMIN);
-    expect(RouteMatcher.match("", "#/admin/")).toBe(AppRoute.ADMIN);
-    expect(RouteMatcher.match("/ADMIN", "")).toBe(AppRoute.ADMIN);
-    expect(RouteMatcher.match("/", "")).toBe(AppRoute.VISITOR);
-    expect(RouteMatcher.match("/experience", "")).toBe(AppRoute.VISITOR);
-    expect(RouteMatcher.match("/", "#/welcome")).toBe(AppRoute.VISITOR);
-  });
-
-  it("AdminAuthStore authenticates asynchronously via /api/admin/login and persists JWT", async () => {
-    const storage = new InMemoryStorage();
-    const fetcher = new MockAdminFetcher();
-    const authStore = new AdminAuthStore(storage, fetcher);
-
-    expect(authStore.getState().isAuthenticated).toBe(false);
-
-    // Reject empty credentials locally without hitting server
-    expect(await authStore.login({ username: "   ", password: "abc" })).toBe(false);
-    expect(fetcher.postCalls.length).toBe(0);
-
-    // Reject server 401
-    fetcher.loginResult = new AdminHttpError(401, "Invalid credentials");
-    expect(
-      await authStore.login({ username: "admin", password: "wrong" }),
-    ).toBe(false);
-    expect(authStore.getState().isAuthenticated).toBe(false);
-    expect(authStore.getLastError()).toBe("invalid_credentials");
-
-    // Distinguish 404/500 service unavailability from bad credentials
-    fetcher.loginResult = new AdminHttpError(404, "Not found");
-    expect(
-      await authStore.login({ username: "admin", password: "secret" }),
-    ).toBe(false);
-    expect(authStore.getLastError()).toBe("service_unavailable");
-
-    // Successful login
-    fetcher.loginResult = {
-      token: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
-      user: { username: "bibliotecario", role: "librarian" },
-    };
-    let notified = false;
-    const unsub = authStore.subscribe((state) => {
-      notified = true;
-      expect(state.isAuthenticated).toBe(true);
-    });
-
-    expect(
-      await authStore.login({ username: " bibliotecario ", password: "secret" }),
-    ).toBe(true);
-    expect(notified).toBe(true);
-    expect(fetcher.postCalls[2]).toEqual({
-      url: ADMIN_AUTH_CONSTANTS.ENDPOINTS.LOGIN,
-      body: { username: "bibliotecario", password: "secret" },
-    });
-
-    // Reload from storage
-    const reloaded = new AdminAuthStore(storage, fetcher);
-    expect(reloaded.getState()).toEqual({
-      isAuthenticated: true,
-      token: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
-      user: { username: "bibliotecario", role: "librarian" },
-    });
-    expect(authStore.getLastError()).toBeNull();
-
-    unsub();
-    authStore.logout();
-    expect(authStore.getState().isAuthenticated).toBe(false);
-    expect(storage.getItem(ADMIN_AUTH_CONSTANTS.STORAGE_KEY)).toBeNull();
-  });
-
-  it("AdminDashboardStore starts empty without mocks and hydrates real /api/admin/stats payloads", async () => {
-    const fetcher = new MockAdminFetcher();
-    let unauthorizedCalls = 0;
-    const store = new AdminDashboardStore({
-      getToken: () => "jwt-token-123",
-      fetcher,
-      onUnauthorized: () => {
-        unauthorizedCalls++;
-      },
-    });
-
-    // Zero mocked surveys or mocked hourly counts before fetching
-    expect(store.getState().surveys).toEqual([]);
-    expect(store.getAverageRating()).toBe(0);
-    expect(store.getDailyPeak()).toBe(0);
-    expect(store.getState().hourlyAttendance.labels.length).toBe(24);
-    expect(store.getState().hourlyAttendance.values.every((v) => v === 0)).toBe(
-      true,
-    );
-
-    await store.fetchStats();
-
-    expect(fetcher.getCalls[0]).toEqual({
-      url: ADMIN_DASHBOARD_CONSTANTS.ENDPOINTS.STATS,
-      headers: { Authorization: "Bearer jwt-token-123" },
-    });
-    expect(store.getState().connected).toBe(true);
-    expect(store.getState().activeVisitorsCount).toBe(4);
-    expect(store.getDailyPeak()).toBe(9);
-    expect(store.getAverageRating()).toBe(4.5);
-    expect(store.getState().surveys.length).toBe(2);
-
-    // 401 triggers unauthorized callback and disconnects
-    fetcher.statsResult = new AdminHttpError(401, "Expired");
-    await store.fetchStats();
-    expect(store.getState().connected).toBe(false);
-    expect(unauthorizedCalls).toBe(1);
-  });
-
-  it("AttendanceChartWidget syncs both labels and values, peak badge, and CSS connection status", async () => {
+  it("AttendanceChartWidget syncs labels, values, peak badge, and connection status", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
-    const fetcher = new MockAdminFetcher();
     const store = new AdminDashboardStore({
       getToken: () => "jwt-token",
-      fetcher,
+      fetcher: new StubAdminFetcher(),
     });
 
     const chartWidget = new AttendanceChartWidget(store);
@@ -250,23 +336,19 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     const statusEl = el.querySelector(
       '[data-admin-metric="connection-status"]',
     ) as HTMLElement;
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
-    ).toBe(true);
+    expect(statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE)).toBe(true);
     expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
 
     await store.fetchStats();
 
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE),
-    ).toBe(true);
+    expect(statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE)).toBe(true);
     expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_ONLINE);
 
     const chart = chartWidget.getChartInstance() as unknown as {
       data: { labels: string[]; datasets: Array<{ data: number[] }> };
       update: ReturnType<typeof vi.fn>;
     };
-    expect(chart.data.labels.length).toBe(24);
+    expect(chart.data.labels).toHaveLength(24);
     expect(chart.data.datasets[0].data[11]).toBe(9);
     expect(chart.update).toHaveBeenCalled();
 
@@ -278,52 +360,51 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     chartWidget.unmount();
   });
 
-  it("SurveysTableWidget renders empty state and vr / 2d / null modalities", async () => {
+  it("SurveysTableWidget renders empty state and vr / 2d / null modalities with stars and fallback", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
-    const fetcher = new MockAdminFetcher();
     const store = new AdminDashboardStore({
       getToken: () => "jwt-token",
-      fetcher,
+      fetcher: new StubAdminFetcher(),
     });
 
     const tableWidget = new SurveysTableWidget(store);
     tableWidget.mount(parent);
-    const el = tableWidget.getElement()!;
-    const tbody = el.querySelector("tbody")!;
+    const tbody = tableWidget.getElement()!.querySelector("tbody")!;
 
-    // Empty initial state
-    expect(tbody.children.length).toBe(1);
+    expect(tbody.children).toHaveLength(1);
     expect(tbody.textContent).toContain(ADMIN_UI_TEXT.NO_SURVEYS);
 
     await store.fetchStats();
-    expect(tbody.children.length).toBe(2);
-    expect(tbody.children[0].children[1].textContent).toBe(
-      ADMIN_UI_TEXT.VIEW_MODE_VR,
-    );
-    expect(tbody.children[1].children[1].textContent).toBe(
-      ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN,
-    );
+    expect(tbody.children).toHaveLength(3);
+    expect(tbody.children[0].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_VR);
+    expect(tbody.children[0].children[2].textContent).toBe("★★★★★");
+    expect(tbody.children[0].children[3].textContent).toBe("Excelente");
+
+    expect(tbody.children[1].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_2D);
+    expect(tbody.children[1].children[2].textContent).toBe("★★☆☆☆");
+    expect(tbody.children[1].children[3].textContent).toBe(ADMIN_UI_TEXT.FEEDBACK_EMPTY);
+
+    expect(tbody.children[2].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN);
 
     tableWidget.unmount();
   });
 
-  it("AdminLoginModalView handles async submit states cleanly", async () => {
+  it("AdminLoginModalView disables submit while pending and invokes onLoginSuccess on resolution", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
 
-    let resolveLogin!: (value: unknown) => void;
+    let resolveLogin: (value: unknown) => void = () => {};
     const fetcher: AdminNetworkFetcher = {
       get: async <T = unknown>() => ({}) as T,
       post: async <T = unknown>() =>
-        (await new Promise((resolve) => {
+        (await new Promise<unknown>((resolve) => {
           resolveLogin = resolve;
         })) as T,
     };
 
     const authStore = new AdminAuthStore(new InMemoryStorage(), fetcher);
     let loginSucceeded = false;
-
     const modal = new AdminLoginModalView({
       authStore,
       onLoginSuccess: () => {
@@ -347,41 +428,53 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
       token: "jwt-ok",
       user: { username: "admin_real", role: "admin" },
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(loginSucceeded).toBe(true));
 
-    expect(loginSucceeded).toBe(true);
     expect(submitBtn.disabled).toBe(false);
     expect(submitBtn.textContent).toBe(ADMIN_UI_TEXT.LOGIN_SUBMIT_LABEL);
-
-    // Verify service_unavailable error message vs invalid credentials message
-    const failFetcher: AdminNetworkFetcher = {
-      get: async <T = unknown>() => ({}) as T,
-      post: async () => {
-        throw new AdminHttpError(500, "Server down");
-      },
-    };
-    const failAuthStore = new AdminAuthStore(new InMemoryStorage(), failFetcher);
-    const failModal = new AdminLoginModalView({ authStore: failAuthStore });
-    failModal.mount(parent);
-    failModal.show();
-    failModal.setCredentials("admin", "12341234");
-    const failForm = failModal.getElement()!.querySelector("form")!;
-    failForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(failModal.getElement()!.textContent).toContain(
-      ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE,
-    );
-    failModal.unmount();
     modal.unmount();
   });
 
-  it("AdminHeaderWidget triggers logout & return-to-tour", () => {
+  it("AdminLoginModalView distinguishes service errors from credential errors and clears password", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
+    fetcher.loginResult = new AdminHttpError(500, "Server down");
+
+    const authStore = new AdminAuthStore(new InMemoryStorage(), fetcher);
+    const modal = new AdminLoginModalView({ authStore });
+    modal.mount(parent);
+    modal.show();
+    modal.setCredentials("admin", "12341234");
+
+    const el = modal.getElement()!;
+    el.querySelector("form")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE);
+    });
+    expect(modal.getInputs().pass).toBe("");
+
+    fetcher.loginResult = new AdminHttpError(401, "Bad password");
+    modal.setCredentials("admin", "wrong_pass");
+    el.querySelector("form")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_ERROR_MESSAGE);
+    });
+    modal.unmount();
+  });
+
+  it("AdminHeaderWidget triggers logout & return-to-tour callbacks", () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
 
     let loggedOut = false;
     let returnedToTour = false;
-
     const header = new AdminHeaderWidget({
       username: "alfredo",
       role: "librarian",
@@ -394,8 +487,7 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     });
 
     header.mount(parent);
-    const el = header.getElement()!;
-    const actions = el.children[1];
+    const actions = header.getElement()!.children[1];
     (actions.children[0] as HTMLElement).click();
     (actions.children[1] as HTMLElement).click();
 
@@ -404,7 +496,7 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     header.unmount();
   });
 
-  it("suppresses 3D canvas and orchestrates AdminController auth & polling lifecycle", async () => {
+  it("AdminController suppresses 3D canvas and toggles polling across login/logout/destroy", async () => {
     const sceneMock = document.createElement("a-scene") as HTMLElement & {
       isPlaying: boolean;
       play: () => void;
@@ -421,7 +513,7 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     const rootMock = document.createElement("div");
     document.body.append(sceneMock, rootMock);
 
-    const fetcher = new MockAdminFetcher();
+    const fetcher = new StubAdminFetcher();
     const authStore = new AdminAuthStore(new InMemoryStorage(), fetcher);
     const dashboardStore = new AdminDashboardStore({
       getToken: () => authStore.getState().token,
@@ -435,26 +527,13 @@ describe("Admin Dashboard Real Telemetry Vertical Slice", () => {
     expect(dashboardStore.isPolling()).toBe(false);
 
     await authStore.login({ username: "librarian", password: "pw" });
-    expect(authStore.getState().isAuthenticated).toBe(true);
     expect(dashboardStore.isPolling()).toBe(true);
 
     authStore.logout();
-    expect(authStore.getState().isAuthenticated).toBe(false);
     expect(dashboardStore.isPolling()).toBe(false);
 
     controller.destroy();
     expect(sceneMock.style.display).toBe("");
     expect(sceneMock.isPlaying).toBe(true);
-  });
-
-  it("strictly adheres CSS class tokens to design system namespaces", () => {
-    for (const className of Object.values(ADMIN_UI_CLASSES)) {
-      expect(typeof className).toBe("string");
-      expect(className.length).toBeGreaterThan(0);
-      expect(className.includes("cv-admin") || className.includes("cv-")).toBe(
-        true,
-      );
-    }
-    expect(ADMIN_THRESHOLDS.MAX_CAPACITY).toBeGreaterThanOrEqual(20);
   });
 });

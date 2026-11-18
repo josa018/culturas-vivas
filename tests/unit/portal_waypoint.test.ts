@@ -67,8 +67,16 @@ describe("PortalWaypoint Component", () => {
 
     instance.init();
 
-    // Trigger synthetic click
-    el.dispatchEvent(new Event("click"));
+    // Trigger synthetic click and verify propagation is stopped
+    const clickEvent = new Event("click", { bubbles: true, cancelable: true });
+    let propagatedToParent = false;
+    const parent = document.createElement("a-entity");
+    parent.appendChild(el);
+    parent.addEventListener("click", () => {
+      propagatedToParent = true;
+    });
+    el.dispatchEvent(clickEvent);
+    expect(propagatedToParent).toBe(false);
 
     expect(dispatchedEvent).not.toBeNull();
     expect(

@@ -7,7 +7,7 @@ import type {
 import { SURVEY_CONSTANTS } from "../../src/survey/constants";
 import { SurveySubmissionService } from "../../src/survey/survey-submission-service";
 
-class MockStorage implements SessionStorageAdapter {
+class InMemorySessionStorage implements SessionStorageAdapter {
   private readonly store = new Map<string, string>();
   public getItem(key: string): string | null {
     return this.store.get(key) ?? null;
@@ -20,7 +20,7 @@ class MockStorage implements SessionStorageAdapter {
   }
 }
 
-class MockFetcher implements SessionNetworkFetcher {
+class StubSurveyFetcher implements SessionNetworkFetcher {
   public readonly calls: Array<{ url: string; body?: unknown }> = [];
   public errorToThrow: Error | null = null;
 
@@ -38,9 +38,9 @@ const VALID_LOWERCASE_UUID = VALID_UPPERCASE_UUID.toLowerCase();
 
 describe("SurveySubmissionService", () => {
   it("submits normalized sessionId, integer rating, and trimmed feedback", async () => {
-    const storage = new MockStorage();
+    const storage = new InMemorySessionStorage();
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, ` ${VALID_UPPERCASE_UUID} `);
-    const fetcher = new MockFetcher();
+    const fetcher = new StubSurveyFetcher();
     const service = new SurveySubmissionService(storage, fetcher);
 
     const result = await service.submit({
@@ -50,11 +50,11 @@ describe("SurveySubmissionService", () => {
 
     expect(result).toEqual({
       status: "submitted",
-      httpStatus: SURVEY_CONSTANTS.HTTP_STATUS.CREATED,
+      httpStatus: 201,
     });
     expect(fetcher.calls).toEqual([
       {
-        url: SURVEY_CONSTANTS.ENDPOINTS.SUBMIT,
+        url: "/api/survey/submit",
         body: {
           sessionId: VALID_LOWERCASE_UUID,
           rating: 4,
@@ -65,9 +65,9 @@ describe("SurveySubmissionService", () => {
   });
 
   it("omits feedback when whitespace-only or undefined", async () => {
-    const storage = new MockStorage();
+    const storage = new InMemorySessionStorage();
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, VALID_LOWERCASE_UUID);
-    const fetcher = new MockFetcher();
+    const fetcher = new StubSurveyFetcher();
     const service = new SurveySubmissionService(storage, fetcher);
 
     const result = await service.submit({ rating: 5, feedback: "   \n\t  " });
@@ -80,47 +80,58 @@ describe("SurveySubmissionService", () => {
   });
 
   it("skips network request when sessionId is missing or malformed", async () => {
-    const storage = new MockStorage();
-    const fetcher = new MockFetcher();
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSurveyFetcher();
     const service = new SurveySubmissionService(storage, fetcher);
 
-    const missingResult = await service.submit({ rating: 5 });
-    expect(missingResult).toEqual({ status: "skipped_no_session" });
+    expect(await service.submit({ rating: 5 })).toEqual({
+      status: "skipped_no_session",
+    });
 
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, "not-a-uuid-v4");
-    const invalidResult = await service.submit({ rating: 5 });
-    expect(invalidResult).toEqual({ status: "skipped_no_session" });
-    expect(fetcher.calls.length).toBe(0);
+    expect(await service.submit({ rating: 5 })).toEqual({
+      status: "skipped_no_session",
+    });
+    expect(fetcher.calls).toHaveLength(0);
   });
 
-  it("rejects out-of-bounds ratings and oversized feedback locally", async () => {
-    const storage = new MockStorage();
-    storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, VALID_LOWERCASE_UUID);
-    const fetcher = new MockFetcher();
-    const service = new SurveySubmissionService(storage, fetcher);
-
-    expect(await service.submit({ rating: 0 })).toEqual({ status: "failed" });
-    expect(await service.submit({ rating: 6 })).toEqual({ status: "failed" });
-    expect(await service.submit({ rating: 3.5 })).toEqual({ status: "failed" });
-    expect(
-      await service.submit({
+  it.each([
+    { label: "rating 0", input: { rating: 0 } },
+    { label: "rating 6", input: { rating: 6 } },
+    { label: "fractional rating 3.5", input: { rating: 3.5 } },
+    {
+      label: "oversized feedback",
+      input: {
         rating: 4,
         feedback: "a".repeat(SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH + 1),
-      }),
-    ).toEqual({ status: "failed" });
-    expect(fetcher.calls.length).toBe(0);
-  });
-
-  it("suppresses network errors and captures HTTP status when available", async () => {
-    const storage = new MockStorage();
+      },
+    },
+  ])("rejects $label locally without calling network", async ({ input }) => {
+    const storage = new InMemorySessionStorage();
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, VALID_LOWERCASE_UUID);
-    const fetcher = new MockFetcher();
-    fetcher.errorToThrow = new Error(
-      `HTTP error 409 from ${SURVEY_CONSTANTS.ENDPOINTS.SUBMIT}`,
-    );
+    const fetcher = new StubSurveyFetcher();
     const service = new SurveySubmissionService(storage, fetcher);
 
-    const result = await service.submit({ rating: 5 });
-    expect(result).toEqual({ status: "failed", httpStatus: 409 });
+    expect(await service.submit(input)).toEqual({ status: "failed" });
+    expect(fetcher.calls).toHaveLength(0);
+  });
+
+  it("captures HTTP status when fetcher throws HTTP error and omits it on generic network errors", async () => {
+    const storage = new InMemorySessionStorage();
+    storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, VALID_LOWERCASE_UUID);
+    const fetcher = new StubSurveyFetcher();
+    const service = new SurveySubmissionService(storage, fetcher);
+
+    fetcher.errorToThrow = new Error("HTTP error 409 from /api/survey/submit");
+    expect(await service.submit({ rating: 5 })).toEqual({
+      status: "failed",
+      httpStatus: 409,
+    });
+
+    fetcher.errorToThrow = new Error("Failed to fetch");
+    expect(await service.submit({ rating: 5 })).toEqual({
+      status: "failed",
+      httpStatus: undefined,
+    });
   });
 });

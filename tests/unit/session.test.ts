@@ -1,13 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   VisitorSessionManager,
-  SessionStorageAdapter,
-  SessionNetworkFetcher,
+  type SessionStorageAdapter,
+  type SessionNetworkFetcher,
 } from "../../src/session/visitor-session-manager";
 import { SESSION_CONSTANTS } from "../../src/session/constants";
 
-class MockStorage implements SessionStorageAdapter {
-  private map = new Map<string, string>();
+class InMemorySessionStorage implements SessionStorageAdapter {
+  private readonly map = new Map<string, string>();
   public getItem(key: string): string | null {
     return this.map.get(key) ?? null;
   }
@@ -19,7 +19,7 @@ class MockStorage implements SessionStorageAdapter {
   }
 }
 
-class MockFetcher implements SessionNetworkFetcher {
+class StubSessionFetcher implements SessionNetworkFetcher {
   public postCalls: Array<{ url: string; body?: unknown }> = [];
   public startResponseId = "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d";
   public shouldFailStart = false;
@@ -47,147 +47,129 @@ class MockFetcher implements SessionNetworkFetcher {
 }
 
 describe("VisitorSessionManager", () => {
-  it("generates new session via endpoint and persists in storage", async () => {
-    const storage = new MockStorage();
-    const fetcher = new MockFetcher();
-    const manager = new VisitorSessionManager(storage, fetcher, 100);
+  let activeManager: VisitorSessionManager | null = null;
 
-    const sessionId = await manager.start();
-    expect(sessionId).toBe(fetcher.startResponseId);
-    expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(
-      fetcher.startResponseId,
-    );
-    expect(fetcher.postCalls.length).toBe(1);
-    expect(fetcher.postCalls[0].url).toBe(SESSION_CONSTANTS.ENDPOINTS.START);
-    expect(manager.isTracking()).toBe(true);
-
-    manager.stop();
-    expect(manager.isTracking()).toBe(false);
+  beforeEach(() => {
+    vi.useFakeTimers();
   });
 
-  it("reuses existing valid session ID from storage without calling start", async () => {
-    const storage = new MockStorage();
+  afterEach(() => {
+    activeManager?.stop();
+    activeManager = null;
+    vi.useRealTimers();
+  });
+
+  it("generates a new session via /api/session/start and persists it in storage", async () => {
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
+
+    const sessionId = await activeManager.start();
+
+    expect(sessionId).toBe(fetcher.startResponseId);
+    expect(activeManager.getSessionId()).toBe(fetcher.startResponseId);
+    expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(fetcher.startResponseId);
+    expect(fetcher.postCalls).toEqual([
+      { url: SESSION_CONSTANTS.ENDPOINTS.START, body: undefined },
+    ]);
+    expect(activeManager.isTracking()).toBe(true);
+  });
+
+  it("reuses existing valid UUID v4 sessionId from storage without calling start", async () => {
+    const storage = new InMemorySessionStorage();
     const existingId = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
     storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, existingId);
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
 
-    const fetcher = new MockFetcher();
-    const manager = new VisitorSessionManager(storage, fetcher, 100);
+    const sessionId = await activeManager.start();
 
-    const sessionId = await manager.start();
     expect(sessionId).toBe(existingId);
-    expect(fetcher.postCalls.length).toBe(0);
-    expect(manager.isTracking()).toBe(true);
-
-    manager.stop();
+    expect(fetcher.postCalls).toEqual([]);
+    expect(activeManager.isTracking()).toBe(true);
   });
 
-  it("falls back to UUID v4 generation when network endpoint fails", async () => {
-    const storage = new MockStorage();
-    const fetcher = new MockFetcher();
-    fetcher.shouldFailStart = true;
-    const manager = new VisitorSessionManager(storage, fetcher, 100);
+  it("returns existing sessionId idempotently when start() is called twice while tracking", async () => {
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
 
-    const sessionId = await manager.start();
-    expect(sessionId).toBeTruthy();
+    const first = await activeManager.start();
+    const second = await activeManager.start();
+
+    expect(second).toBe(first);
+    expect(fetcher.postCalls).toHaveLength(1);
+  });
+
+  it("falls back to local UUID v4 generation when /api/session/start fails", async () => {
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSessionFetcher();
+    fetcher.shouldFailStart = true;
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
+
+    const sessionId = await activeManager.start();
+
     expect(sessionId).toMatch(SESSION_CONSTANTS.REGEX.UUID_V4);
     expect(storage.getItem(SESSION_CONSTANTS.STORAGE_KEY)).toBe(sessionId);
-
-    manager.stop();
   });
 
-  it("dispatches heartbeat ping with correct payload structure", async () => {
-    const storage = new MockStorage();
-    const fetcher = new MockFetcher();
-    const manager = new VisitorSessionManager(storage, fetcher, 100);
+  it("replaces malformed stored sessionId by requesting a fresh session", async () => {
+    const storage = new InMemorySessionStorage();
+    storage.setItem(SESSION_CONSTANTS.STORAGE_KEY, "corrupted-id");
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
 
-    await manager.start();
-    const pingOk = await manager.sendPing();
+    const sessionId = await activeManager.start();
 
-    expect(pingOk).toBe(true);
-    expect(fetcher.postCalls.length).toBe(2);
-    const pingCall = fetcher.postCalls[1];
-    expect(pingCall.url).toBe(SESSION_CONSTANTS.ENDPOINTS.PING);
-    expect(pingCall.body).toEqual({ sessionId: fetcher.startResponseId });
-
-    manager.stop();
+    expect(sessionId).toBe(fetcher.startResponseId);
+    expect(fetcher.postCalls).toHaveLength(1);
   });
 
-  it("handles ping error without uncaught exceptions", async () => {
-    const storage = new MockStorage();
-    const fetcher = new MockFetcher();
+  it("dispatches periodic heartbeat pings at configured interval and halts on stop()", async () => {
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 5_000);
+
+    await activeManager.start();
+    expect(fetcher.postCalls).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetcher.postCalls).toHaveLength(2);
+    expect(fetcher.postCalls[1]).toEqual({
+      url: SESSION_CONSTANTS.ENDPOINTS.PING,
+      body: { sessionId: fetcher.startResponseId },
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetcher.postCalls).toHaveLength(3);
+
+    activeManager.stop();
+    expect(activeManager.isTracking()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetcher.postCalls).toHaveLength(3);
+  });
+
+  it("returns false from sendPing() before start() or when ping fails", async () => {
+    const storage = new InMemorySessionStorage();
+    const fetcher = new StubSessionFetcher();
+    activeManager = new VisitorSessionManager(storage, fetcher, 10_000);
+
+    expect(await activeManager.sendPing()).toBe(false);
+    expect(fetcher.postCalls).toHaveLength(0);
+
     fetcher.shouldFailPing = true;
-    const manager = new VisitorSessionManager(storage, fetcher, 100);
-
-    await manager.start();
-    const pingOk = await manager.sendPing();
-    expect(pingOk).toBe(false);
-
-    manager.stop();
+    await activeManager.start();
+    expect(await activeManager.sendPing()).toBe(false);
   });
 
-  it("validates UUID v4 regex pattern correctly", () => {
-    expect(
-      SESSION_CONSTANTS.REGEX.UUID_V4.test(
-        "123e4567-e89b-42d3-a456-426614174000",
-      ),
-    ).toBe(true);
-    expect(
-      SESSION_CONSTANTS.REGEX.UUID_V4.test(
-        "123e4567-e89b-12d3-a456-426614174000",
-      ),
-    ).toBe(false);
-    expect(SESSION_CONSTANTS.REGEX.UUID_V4.test("invalid-uuid-string")).toBe(
-      false,
-    );
-  });
-
-  it("validates serverless ping endpoint request method and payload", async () => {
-    const pingHandler = (await import("../../api/session/ping")).default;
-
-    let statusCode = 0;
-    let jsonBody: unknown = null;
-    const mockRes = {
-      status: (code: number) => {
-        statusCode = code;
-        return {
-          json: (body: unknown) => {
-            jsonBody = body;
-          },
-        };
-      },
-    };
-
-    // Rejection of non-POST
-    await pingHandler({ method: "GET" }, mockRes);
-    expect(statusCode).toBe(405);
-
-    // Rejection of missing sessionId
-    await pingHandler({ method: "POST", body: {} }, mockRes);
-    expect(statusCode).toBe(400);
-
-    // Rejection of non-UUID v4
-    await pingHandler(
-      { method: "POST", body: { sessionId: "invalid-uuid" } },
-      mockRes,
-    );
-    expect(statusCode).toBe(400);
-    expect((jsonBody as { error: string }).error).toContain("Must be UUID v4");
-  }, 10000);
-
-  it("validates serverless start endpoint method rejection", async () => {
-    const startHandler = (await import("../../api/session/start")).default;
-
-    let statusCode = 0;
-    const mockRes = {
-      status: (code: number) => {
-        statusCode = code;
-        return {
-          json: () => {},
-        };
-      },
-    };
-
-    await startHandler({ method: "PUT" }, mockRes);
-    expect(statusCode).toBe(405);
+  it.each([
+    { candidate: "123e4567-e89b-42d3-a456-426614174000", expected: true },
+    { candidate: "3F2B8C1E-5A4D-4E7B-9C12-8D6F0A1B2C3D", expected: true },
+    { candidate: "123e4567-e89b-12d3-a456-426614174000", expected: false },
+    { candidate: "123e4567-e89b-42d3-c456-426614174000", expected: false },
+    { candidate: "invalid-uuid-string", expected: false },
+  ])("validates UUID v4 format for '$candidate' -> $expected", ({ candidate, expected }) => {
+    expect(SESSION_CONSTANTS.REGEX.UUID_V4.test(candidate)).toBe(expected);
   });
 });

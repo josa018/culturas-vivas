@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+// @ts-expect-error ESM utility script without generated .d.ts
 import { runMigrations } from "../../scripts/db-migrate.mjs";
 
 describe("scripts/db-migrate.mjs", () => {
