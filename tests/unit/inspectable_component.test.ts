@@ -325,4 +325,165 @@ describe("A-Frame Inspectable Component", () => {
     expect(instance.billboardEl).toBeNull();
     expect(instance.unsubscribeController).toBeNull();
   });
+
+  it("retains billboard and controller sync when re-focusing after preemption and aborts if controller rejects focus", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const dedicatedController = new ExhibitInspectionController([
+      {
+        id: "exhibit-a",
+        title: "Exhibit A",
+        description: "Desc A",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        galleryPosition: { x: 0, y: 1.4, z: -2.8 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+      {
+        id: "exhibit-b",
+        title: "Exhibit B",
+        description: "Desc B",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        galleryPosition: { x: 2, y: 1.6, z: -2 },
+        galleryRotation: { x: 0, y: -45, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+    setSharedInspectionController(dedicatedController);
+
+    const def = createInspectableComponentDefinition();
+    const createInst = (id: string, pos: { x: number; y: number; z: number }) => {
+      const el = createMockEntity(pos);
+      const inst: InspectableComponentInstance = Object.create(def);
+      inst.el = el as unknown as InspectableComponentInstance["el"];
+      inst.data = {
+        id,
+        focalDistance: FOCAL_INSPECTION_DISTANCE,
+        autoRotate: false,
+        rotationSpeed: 0,
+        title: id,
+        description: "Desc",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+      };
+      inst.init();
+      return inst;
+    };
+
+    const instA = createInst("exhibit-a", { x: 0, y: 1.4, z: -2.8 });
+    const instB = createInst("exhibit-b", { x: 2, y: 1.6, z: -2 });
+
+    // Preempt A with B, close B, then re-focus A
+    instA.inspect();
+    instB.inspect();
+    instB.returnToGallery();
+    vi.advanceTimersByTime(300);
+
+    instA.inspect();
+    vi.advanceTimersByTime(450);
+    instA.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_in"));
+
+    expect(instA.state).toBe(InspectionState.INSPECTING);
+    expect(dedicatedController.getActiveExhibit()?.id).toBe("exhibit-a");
+    expect(instA.billboardEl?.getAttribute("visible")).toBe("true");
+    expect(instA.billboardEl?.getAttribute("scale")).toBe("1 1 1");
+
+    // A desynchronized IDLE instance for an already-active registered exhibit aborts inspect()
+    const duplicateA = createInst("exhibit-a", { x: 0, y: 1.4, z: -2.8 });
+    duplicateA.inspect();
+    expect(duplicateA.state).toBe(InspectionState.IDLE);
+    expect(duplicateA.billboardEl?.getAttribute("visible")).toBe("false");
+  });
+
+  it("cancels pending hide timer and orphaned panel_out listener on rapid close -> reopen, and gates .clickable on return button", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const def = createInspectableComponentDefinition();
+    const mockEl = createMockEntity({ x: 0, y: 1.4, z: -2.8 });
+    const instance: InspectableComponentInstance = Object.create(def);
+    instance.el = mockEl as unknown as InspectableComponentInstance["el"];
+    instance.data = {
+      id: "exhibit-statue-3d",
+      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      autoRotate: false,
+      rotationSpeed: 0,
+      title: "Estatua",
+      description: "Desc",
+      mediaType: ExhibitMediaType.MODEL_3D,
+    };
+
+    instance.init();
+    const returnBtn = instance.billboardEl?.querySelector(
+      '[data-action="return-exhibit"]',
+    ) as HTMLElement;
+    expect(returnBtn.classList.contains("clickable")).toBe(false);
+
+    // First inspection -> panel opens after entrance delay
+    instance.inspect();
+    vi.advanceTimersByTime(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS);
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
+    expect(returnBtn.classList.contains("clickable")).toBe(true);
+    instance.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_in"));
+
+    // Close at t = 0ms -> immediately drops .clickable
+    instance.returnToGallery();
+    expect(returnBtn.classList.contains("clickable")).toBe(false);
+
+    // Re-open at t = 100ms (< 260ms hide timer)
+    vi.advanceTimersByTime(100);
+    instance.inspect();
+
+    // Advance past entrance delay (150ms) and old hide timer (160ms remaining) -> total 450ms
+    vi.advanceTimersByTime(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS);
+    expect(instance.billboardEl?.getAttribute("animation__panel_in")).not.toContain(
+      "delay:",
+    );
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
+    expect(returnBtn.classList.contains("clickable")).toBe(true);
+
+    vi.advanceTimersByTime(300);
+    instance.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_in"));
+    // Even a stray animationcomplete__panel_out event must not hide the reopened billboard
+    instance.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_out"));
+
+    expect(instance.state).toBe(InspectionState.INSPECTING);
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
+    expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
+    expect(returnBtn.classList.contains("clickable")).toBe(true);
+  });
+
+  it("cancels panelDelayTimer when interrupted before entrance delay and clears timers on remove()", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const def = createInspectableComponentDefinition();
+    const mockEl = createMockEntity({ x: 0, y: 1.4, z: -2.8 });
+    const instance: InspectableComponentInstance = Object.create(def);
+    instance.el = mockEl as unknown as InspectableComponentInstance["el"];
+    instance.data = {
+      id: "exhibit-statue-3d",
+      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      autoRotate: false,
+      rotationSpeed: 0,
+      title: "Estatua",
+      description: "Desc",
+      mediaType: ExhibitMediaType.MODEL_3D,
+    };
+
+    instance.init();
+    instance.inspect();
+
+    // Interrupt before 150ms entrance delay elapses
+    vi.advanceTimersByTime(50);
+    instance.returnToGallery();
+
+    // Advancing past entrance delay must NOT apply animation__panel_in or show billboard
+    vi.advanceTimersByTime(200);
+    expect(instance.billboardEl?.getAttribute("animation__panel_in")).toBeNull();
+    vi.advanceTimersByTime(100);
+    expect(instance.billboardEl?.getAttribute("visible")).toBe("false");
+
+    // Start inspection and remove() before timers fire -> no pending timer leaks
+    instance.inspect();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    instance.remove();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

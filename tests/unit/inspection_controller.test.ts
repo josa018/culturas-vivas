@@ -158,4 +158,37 @@ describe("ExhibitInspectionController", () => {
     ]);
     expect(errorSpy).toHaveBeenCalled();
   });
+
+  it("clears previousExhibitId on completeReturn and when focusing from IDLE after prior preemption", () => {
+    const controller = new ExhibitInspectionController();
+
+    // Preempt A with B so previousExhibit becomes A
+    controller.focus("exhibit-statue-3d");
+    controller.focus("exhibit-painting-2d");
+    expect(controller.getPreviousExhibit()?.id).toBe("exhibit-statue-3d");
+
+    // Completing B's return must clear previousExhibitId
+    controller.completeFocus();
+    controller.return();
+    controller.completeReturn();
+    expect(controller.getPreviousExhibit()).toBeNull();
+
+    // Even if aborted into IDLE, focusing from IDLE clears stale previousExhibitId before notifying
+    controller.focus("exhibit-statue-3d");
+    controller.abortActiveInspection();
+    expect(controller.getPreviousExhibit()?.id).toBe("exhibit-statue-3d");
+
+    const observedPrevOnFocus: Array<string | null> = [];
+    const unsubscribe = controller.subscribe((state, _active, prev) => {
+      if (state === InspectionState.FOCUSING) {
+        observedPrevOnFocus.push(prev?.id ?? null);
+      }
+    });
+
+    controller.focus("exhibit-statue-3d");
+    unsubscribe();
+
+    expect(observedPrevOnFocus).toEqual([null]);
+    expect(controller.getPreviousExhibit()).toBeNull();
+  });
 });

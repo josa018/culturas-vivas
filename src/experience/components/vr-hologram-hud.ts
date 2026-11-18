@@ -4,10 +4,13 @@ import {
   VR_HUD_ANIMATION_DURATION_MS,
   VR_HUD_COLORS,
   VR_HUD_DICTIONARY,
+  VR_HUD_DISMISS_BUFFER_MS,
   VR_HUD_ELEMENT_IDS,
   VR_HUD_FOCAL_DISTANCE_M,
   VR_HUD_FOCAL_ELEVATION_OFFSET_M,
   VR_HUD_GEOMETRY,
+  VR_HUD_HIDDEN_SCALE,
+  VR_HUD_VISIBLE_SCALE,
   type Vector3D,
 } from "../constants";
 import type { RoomId } from "../types";
@@ -53,6 +56,10 @@ export interface VrHologramHudComponentInstance {
   activeRoomId: RoomId;
   callbacks: VrHudActionCallbacks;
   roomChipEl: HTMLElement | null;
+  hudEpoch?: number;
+  dismissTimer?: ReturnType<typeof setTimeout> | null;
+  hudOutCompleteHandler?: (() => void) | null;
+  interactiveEls?: HTMLElement[];
   init: () => void;
   setCallbacks: (callbacks: VrHudActionCallbacks) => void;
   setEnabled: (enabled: boolean) => void;
@@ -60,6 +67,45 @@ export interface VrHologramHudComponentInstance {
   summon: (pose?: VrHudCameraPose) => void;
   dismiss: () => void;
   remove: () => void;
+}
+
+function setElementClickable(el: HTMLElement, enabled: boolean): void {
+  const current = el.getAttribute("class") ?? "";
+  const filtered = current
+    .split(/\s+/)
+    .filter((cls) => cls.length > 0 && cls !== "clickable");
+  if (enabled) {
+    filtered.push("clickable");
+  }
+  el.setAttribute("class", filtered.join(" "));
+}
+
+function setHudInteractiveClickable(
+  instance: VrHologramHudComponentInstance,
+  enabled: boolean,
+): void {
+  if (!instance.interactiveEls) {
+    return;
+  }
+  for (const el of instance.interactiveEls) {
+    setElementClickable(el, enabled);
+  }
+}
+
+function clearPendingHudDismiss(
+  instance: VrHologramHudComponentInstance,
+): void {
+  if (instance.dismissTimer !== null && instance.dismissTimer !== undefined) {
+    clearTimeout(instance.dismissTimer);
+    instance.dismissTimer = null;
+  }
+  if (instance.hudOutCompleteHandler) {
+    instance.el.removeEventListener?.(
+      "animationcomplete__hud_out",
+      instance.hudOutCompleteHandler,
+    );
+    instance.hudOutCompleteHandler = null;
+  }
 }
 
 /**
@@ -148,7 +194,7 @@ function createHudButtonEntity(options: {
 
   const btn = document.createElement("a-entity");
   btn.setAttribute("id", options.id);
-  btn.setAttribute("class", "cv-hud-control clickable");
+  btn.setAttribute("class", "cv-hud-control");
   btn.setAttribute("data-action", options.action);
   btn.setAttribute("position", options.position);
   if (options.rotation) {
@@ -192,9 +238,12 @@ export function createVrHologramHudComponentDefinition() {
         (this.data?.roomId as RoomId) || DEFAULT_ROOM_ID;
       this.callbacks = this.callbacks ?? {};
       this.roomChipEl = null;
+      this.hudEpoch = 0;
+      this.dismissTimer = null;
+      this.hudOutCompleteHandler = null;
 
       this.el.setAttribute("visible", "false");
-      this.el.setAttribute("scale", "0.001 0.001 0.001");
+      this.el.setAttribute("scale", VR_HUD_HIDDEN_SCALE);
       if (this.el.object3D) {
         this.el.object3D.visible = false;
       }
@@ -203,7 +252,7 @@ export function createVrHologramHudComponentDefinition() {
       const thetaStart = 180 - VR_HUD_GEOMETRY.THETA_LENGTH_DEG / 2;
       const backdrop = document.createElement("a-cylinder");
       backdrop.setAttribute("id", VR_HUD_ELEMENT_IDS.PANEL_BACKDROP);
-      backdrop.setAttribute("class", "cv-hud-backdrop clickable");
+      backdrop.setAttribute("class", "cv-hud-backdrop");
       backdrop.setAttribute("radius", String(VR_HUD_GEOMETRY.CURVED_RADIUS_M));
       backdrop.setAttribute("height", String(VR_HUD_GEOMETRY.PANEL_HEIGHT_M));
       backdrop.setAttribute("theta-start", String(thetaStart));
@@ -292,7 +341,7 @@ export function createVrHologramHudComponentDefinition() {
       // Top-right circular dismiss button
       const dismissBtn = document.createElement("a-entity");
       dismissBtn.setAttribute("id", VR_HUD_ELEMENT_IDS.DISMISS_BTN);
-      dismissBtn.setAttribute("class", "cv-hud-control clickable");
+      dismissBtn.setAttribute("class", "cv-hud-control");
       dismissBtn.setAttribute("data-action", "dismiss-hud");
       dismissBtn.setAttribute("position", "0.60 0.24 0.08");
       dismissBtn.setAttribute("rotation", "0 -14 0");
@@ -318,6 +367,7 @@ export function createVrHologramHudComponentDefinition() {
         this.dismiss();
       });
 
+      this.interactiveEls = [backdrop, switch2dBtn, exitBtn, dismissBtn];
       this.el.append(backdrop, topTrim, roomChip, switch2dBtn, exitBtn, dismissBtn);
     },
 
@@ -358,6 +408,9 @@ export function createVrHologramHudComponentDefinition() {
         return;
       }
 
+      clearPendingHudDismiss(this);
+      this.hudEpoch = (this.hudEpoch ?? 0) + 1;
+
       // Abort any active exhibit inspection to avoid spatial overlap
       getSharedInspectionController().abortActiveInspection();
 
@@ -393,23 +446,25 @@ export function createVrHologramHudComponentDefinition() {
         this.el.object3D.visible = true;
       }
       this.isOpen = true;
+      setHudInteractiveClickable(this, true);
 
       const hasAFrame =
         typeof globalThis !== "undefined" &&
         Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
 
       if (!hasAFrame) {
-        this.el.setAttribute("scale", "1 1 1");
+        this.el.setAttribute("scale", VR_HUD_VISIBLE_SCALE);
       } else {
-        this.el.setAttribute("scale", "0.001 0.001 0.001");
+        this.el.setAttribute("scale", VR_HUD_HIDDEN_SCALE);
         this.el.setAttribute(
           "animation__hud_in",
-          `property: scale; from: 0.001 0.001 0.001; to: 1 1 1; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeOutCubic`,
+          `property: scale; from: ${VR_HUD_HIDDEN_SCALE}; to: ${VR_HUD_VISIBLE_SCALE}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeOutCubic`,
         );
       }
     },
 
     dismiss: function (this: VrHologramHudComponentInstance) {
+      setHudInteractiveClickable(this, false);
       if (!this.isOpen) {
         this.el.setAttribute("visible", "false");
         if (this.el.object3D) {
@@ -418,6 +473,9 @@ export function createVrHologramHudComponentDefinition() {
         return;
       }
 
+      clearPendingHudDismiss(this);
+      const epoch = (this.hudEpoch ?? 0) + 1;
+      this.hudEpoch = epoch;
       this.isOpen = false;
       this.el.removeAttribute("animation__hud_in");
 
@@ -426,7 +484,11 @@ export function createVrHologramHudComponentDefinition() {
         Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
 
       const finalizeHide = () => {
-        this.el.setAttribute("scale", "0.001 0.001 0.001");
+        if (this.hudEpoch !== epoch || this.isOpen) {
+          return;
+        }
+        clearPendingHudDismiss(this);
+        this.el.setAttribute("scale", VR_HUD_HIDDEN_SCALE);
         this.el.setAttribute("visible", "false");
         if (this.el.object3D) {
           this.el.object3D.visible = false;
@@ -438,14 +500,18 @@ export function createVrHologramHudComponentDefinition() {
       } else {
         this.el.setAttribute(
           "animation__hud_out",
-          `property: scale; from: 1 1 1; to: 0.001 0.001 0.001; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeInCubic`,
+          `property: scale; from: ${VR_HUD_VISIBLE_SCALE}; to: ${VR_HUD_HIDDEN_SCALE}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeInCubic`,
         );
         if (typeof this.el.addEventListener === "function") {
+          this.hudOutCompleteHandler = finalizeHide;
           this.el.addEventListener("animationcomplete__hud_out", finalizeHide, {
             once: true,
           });
         }
-        setTimeout(finalizeHide, VR_HUD_ANIMATION_DURATION_MS + 30);
+        this.dismissTimer = setTimeout(
+          finalizeHide,
+          VR_HUD_ANIMATION_DURATION_MS + VR_HUD_DISMISS_BUFFER_MS,
+        );
       }
 
       if (this.callbacks.onDismiss) {
@@ -457,8 +523,12 @@ export function createVrHologramHudComponentDefinition() {
     },
 
     remove: function (this: VrHologramHudComponentInstance) {
+      this.hudEpoch = (this.hudEpoch ?? 0) + 1;
+      clearPendingHudDismiss(this);
+      setHudInteractiveClickable(this, false);
       this.isOpen = false;
       this.roomChipEl = null;
+      this.interactiveEls = [];
     },
   };
 }

@@ -70,6 +70,7 @@ describe("ExhibitInspectionController abortActiveInspection", () => {
     controller.setExhibits(newExhibits);
     expect(controller.getState()).toBe(InspectionState.IDLE);
     expect(controller.getActiveExhibit()).toBeNull();
+    expect(controller.getPreviousExhibit()).toBeNull();
     expect(controller.getAllExhibits()).toHaveLength(1);
     expect(controller.getExhibit("new-exhibit-1")?.title).toBe("New Exhibit");
   });

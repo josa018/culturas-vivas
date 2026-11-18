@@ -103,6 +103,7 @@ function createMockTapTriggerInstance(
     cursorEl: null,
     cursorDownHandler: null,
     cursorUpHandler: null,
+    cursorClickHandler: null,
     init: function (this: VrTapTriggerComponentInstance) {
       def.init.call(this);
     },
@@ -280,6 +281,60 @@ describe("VR Hologram HUD Component", () => {
 
     vi.advanceTimersByTime(VR_HUD_ANIMATION_DURATION_MS + 30);
     expect(el.getAttribute("visible")).toBe("false");
+  });
+
+  it("cancels pending dismissTimer/hud_out listener on rapid re-summon and gates .clickable on HUD controls", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+
+    const interactiveIds = [
+      VR_HUD_ELEMENT_IDS.PANEL_BACKDROP,
+      VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
+      VR_HUD_ELEMENT_IDS.EXIT_BTN,
+      VR_HUD_ELEMENT_IDS.DISMISS_BTN,
+    ];
+    for (const id of interactiveIds) {
+      expect(el.querySelector(`#${id}`)?.classList.contains("clickable")).toBe(
+        false,
+      );
+    }
+
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    for (const id of interactiveIds) {
+      expect(el.querySelector(`#${id}`)?.classList.contains("clickable")).toBe(
+        true,
+      );
+    }
+
+    // Dismiss at t = 0ms -> controls immediately drop .clickable
+    instance.dismiss();
+    for (const id of interactiveIds) {
+      expect(el.querySelector(`#${id}`)?.classList.contains("clickable")).toBe(
+        false,
+      );
+    }
+
+    // Re-summon at t = 100ms (< 280ms) and advance past dismiss buffer
+    vi.advanceTimersByTime(100);
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    vi.advanceTimersByTime(VR_HUD_ANIMATION_DURATION_MS + 50);
+    el.dispatchEvent(new Event("animationcomplete__hud_out"));
+
+    expect(instance.isOpen).toBe(true);
+    expect(el.getAttribute("visible")).toBe("true");
+    for (const id of interactiveIds) {
+      expect(el.querySelector(`#${id}`)?.classList.contains("clickable")).toBe(
+        true,
+      );
+    }
+
+    // Clean up timers on remove()
+    instance.dismiss();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    instance.remove();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
@@ -575,6 +630,42 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: target } }));
     cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: target } }));
     expect(targetClicks).toBe(0);
+  });
+
+  it("records gaze-fuse cursor click timestamp to debounce immediate follow-up tap and detaches click listener on remove()", () => {
+    const { scene, cursor, target, tapTrigger } = setupTapScene();
+    let targetClicks = 0;
+    let hudToggleCount = 0;
+    target.addEventListener("click", () => {
+      targetClicks++;
+    });
+    scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, () => {
+      hudToggleCount++;
+    });
+
+    // Gaze-fuse click fires on cursor at t0 = 1000
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(new CustomEvent("click", { detail: { intersectedEl: target } }));
+    expect(tapTrigger.lastActivationTimestampMs).toBe(1000);
+
+    // Follow-up tap within 350ms (at t = 1120) must be suppressed as IGNORE
+    vi.spyOn(Date, "now").mockReturnValue(1120);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: target } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: target } }));
+    expect(targetClicks).toBe(0);
+    expect(hudToggleCount).toBe(0);
+
+    // Tap after debounce window (>= 350ms) succeeds
+    vi.spyOn(Date, "now").mockReturnValue(1400);
+    cursor.dispatchEvent(new CustomEvent("mousedown", { detail: { intersectedEl: target } }));
+    cursor.dispatchEvent(new CustomEvent("mouseup", { detail: { intersectedEl: target } }));
+    expect(targetClicks).toBe(1);
+
+    // remove() detaches click listener so cursor clicks no longer mutate lastActivationTimestampMs
+    tapTrigger.remove();
+    vi.spyOn(Date, "now").mockReturnValue(5000);
+    cursor.dispatchEvent(new CustomEvent("click", { detail: { intersectedEl: target } }));
+    expect(tapTrigger.lastActivationTimestampMs).toBe(1400);
   });
 
   it("synchronizes 2D DOM HUD vs 3D tap-toggled HUD in ExperienceScreenView and persists across room transitions", () => {

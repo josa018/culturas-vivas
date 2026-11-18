@@ -198,4 +198,38 @@ describe("CameraCurtain Component", () => {
     instance.fadeOut();
     expect(mockObject3D.renderOrder).toBe(CURTAIN_RENDER_ORDER);
   });
+
+  it("cancels fallback timeout when animationcomplete resolves first so onComplete fires once per phase and cleans up on remove()", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
+    el.setAttribute("material", "shader: flat; side: back; opacity: 0");
+
+    const instance = createMockCurtainInstance(el);
+    instance.init();
+
+    let fadeOutCount = 0;
+    instance.fadeOut(() => {
+      fadeOutCount++;
+    });
+    el.dispatchEvent(new Event("animationcomplete__curtain_out"));
+    vi.advanceTimersByTime(TRANSITION_TIMINGS.FADE_DURATION_MS + 100);
+    expect(fadeOutCount).toBe(1);
+
+    let fadeInCount = 0;
+    instance.fadeIn(() => {
+      fadeInCount++;
+    });
+    el.dispatchEvent(new Event("animationcomplete__curtain_in"));
+    vi.advanceTimersByTime(TRANSITION_TIMINGS.FADE_DURATION_MS + 100);
+    expect(fadeInCount).toBe(1);
+
+    // Calling remove() while animating clears pending fallback timer
+    instance.fadeOut();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    instance.remove();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

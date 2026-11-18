@@ -58,6 +58,7 @@ export interface VrTapTriggerComponentInstance {
   cursorEl: AFrameCursorElement | null;
   cursorDownHandler: ((evt: Event) => void) | null;
   cursorUpHandler: ((evt: Event) => void) | null;
+  cursorClickHandler: (() => void) | null;
   init: () => void;
   setHudToggleEnabled: (enabled: boolean) => void;
   setTransitionIdle: (isIdle: boolean) => void;
@@ -169,6 +170,7 @@ export function createVrTapTriggerComponentDefinition() {
       this.cursorEl = null;
       this.cursorDownHandler = null;
       this.cursorUpHandler = null;
+      this.cursorClickHandler = null;
 
       const sceneEl =
         this.el.sceneEl ??
@@ -210,8 +212,12 @@ export function createVrTapTriggerComponentDefinition() {
       this.cursorUpHandler = (evt: Event) => {
         this.handleCursorUp(evt);
       };
+      this.cursorClickHandler = () => {
+        this.lastActivationTimestampMs = Date.now();
+      };
       cursorEl.addEventListener("mousedown", this.cursorDownHandler);
       cursorEl.addEventListener("mouseup", this.cursorUpHandler);
+      cursorEl.addEventListener("click", this.cursorClickHandler);
     },
 
     detachCursorListeners: function (this: VrTapTriggerComponentInstance) {
@@ -228,10 +234,14 @@ export function createVrTapTriggerComponentDefinition() {
         if (this.cursorUpHandler) {
           this.cursorEl.removeEventListener("mouseup", this.cursorUpHandler);
         }
+        if (this.cursorClickHandler) {
+          this.cursorEl.removeEventListener("click", this.cursorClickHandler);
+        }
       }
       this.cursorEl = null;
       this.cursorDownHandler = null;
       this.cursorUpHandler = null;
+      this.cursorClickHandler = null;
     },
 
     handleCursorDown: function (
