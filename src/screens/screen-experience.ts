@@ -3,7 +3,7 @@ import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
 import { RoomTransitionStateMachine } from "../experience/room-transition-state-machine";
-import { RoomId } from "../experience/types";
+import { RoomId, RoomTransitionState } from "../experience/types";
 import {
   ensureCameraCurtain,
   type CameraCurtainComponentInstance,
@@ -25,10 +25,10 @@ import {
   type VrHologramHudComponentInstance,
 } from "../experience/components/vr-hologram-hud";
 import {
-  ensureNadirTrigger,
-  NADIR_SUMMON_EVENT,
-  type NadirTriggerComponentInstance,
-} from "../experience/components/nadir-trigger";
+  ensureVrTapTrigger,
+  VR_TAP_HUD_TOGGLE_EVENT,
+  type VrTapTriggerComponentInstance,
+} from "../experience/components/vr-tap-trigger";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -61,7 +61,7 @@ export class ExperienceScreenView implements ScreenView {
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
   private portalHandler: ((evt: Event) => void) | null = null;
-  private nadirSummonHandler: (() => void) | null = null;
+  private tapHudToggleHandler: (() => void) | null = null;
   private hudSwitch2dHandler: (() => void) | null = null;
   private hudExitHandler: (() => void) | null = null;
   private readonly transitionStateMachine: RoomTransitionStateMachine;
@@ -263,6 +263,13 @@ export class ExperienceScreenView implements ScreenView {
       ).components?.["cv-vr-hologram-hud"];
       hudComp?.dismiss();
     }
+    const tapEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`);
+    const tapComp = (
+      tapEl as unknown as {
+        components?: Record<string, VrTapTriggerComponentInstance>;
+      } | null
+    )?.components?.["cv-vr-tap-trigger"];
+    tapComp?.setTransitionIdle(false);
 
     // 2. Lock cursor raycaster during transition to prevent interaction glitches
     const cursor = scene.querySelector("a-cursor");
@@ -287,6 +294,7 @@ export class ExperienceScreenView implements ScreenView {
         // 5. Fade curtain back in to reveal target room
         curtain.fadeIn(() => {
           this.transitionStateMachine.notifyFadeInComplete();
+          tapComp?.setTransitionIdle(true);
           if (cursor) {
             cursor.setAttribute("raycaster", "objects: .clickable");
           }
@@ -323,6 +331,7 @@ export class ExperienceScreenView implements ScreenView {
       this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
+      tapComp?.setTransitionIdle(true);
       if (cursor) {
         cursor.setAttribute("raycaster", "objects: .clickable");
       }
@@ -487,9 +496,12 @@ export class ExperienceScreenView implements ScreenView {
       scene.addEventListener(PORTAL_ACTIVATED_EVENT, this.portalHandler);
     }
 
-    if (!this.nadirSummonHandler) {
-      this.nadirSummonHandler = () => {
-        if (this.viewMode !== "vr") {
+    if (!this.tapHudToggleHandler) {
+      this.tapHudToggleHandler = () => {
+        if (
+          this.viewMode !== "vr" ||
+          this.transitionStateMachine.getState() !== RoomTransitionState.IDLE
+        ) {
           return;
         }
         const hudEl = ensureVrHologramHud(scene);
@@ -498,13 +510,21 @@ export class ExperienceScreenView implements ScreenView {
             components?: Record<string, VrHologramHudComponentInstance>;
           }
         ).components?.["cv-vr-hologram-hud"];
-        if (hudComp && typeof hudComp.summon === "function") {
-          hudComp.summon();
+        if (hudComp) {
+          if (hudComp.isOpen) {
+            hudComp.dismiss();
+          } else {
+            hudComp.summon();
+          }
         } else {
-          hudEl.setAttribute("visible", "true");
+          const isVisible = hudEl.getAttribute("visible") === "true";
+          hudEl.setAttribute("visible", isVisible ? "false" : "true");
         }
       };
-      scene.addEventListener(NADIR_SUMMON_EVENT, this.nadirSummonHandler);
+      scene.addEventListener(
+        VR_TAP_HUD_TOGGLE_EVENT,
+        this.tapHudToggleHandler,
+      );
     }
 
     if (!this.hudSwitch2dHandler) {
@@ -545,9 +565,12 @@ export class ExperienceScreenView implements ScreenView {
       this.portalHandler = null;
     }
 
-    if (this.nadirSummonHandler) {
-      scene.removeEventListener(NADIR_SUMMON_EVENT, this.nadirSummonHandler);
-      this.nadirSummonHandler = null;
+    if (this.tapHudToggleHandler) {
+      scene.removeEventListener(
+        VR_TAP_HUD_TOGGLE_EVENT,
+        this.tapHudToggleHandler,
+      );
+      this.tapHudToggleHandler = null;
     }
 
     if (this.hudSwitch2dHandler) {
@@ -599,17 +622,18 @@ export class ExperienceScreenView implements ScreenView {
       hudEl.setAttribute("visible", "false");
     }
 
-    const nadirEl = ensureNadirTrigger(scene);
-    nadirEl.setAttribute("cv-nadir-trigger", `enabled: ${isVr}`);
-    const nadirComp = (
-      nadirEl as unknown as {
-        components?: Record<string, NadirTriggerComponentInstance>;
+    const tapEl = ensureVrTapTrigger(scene);
+    tapEl.setAttribute("cv-vr-tap-trigger", `hudToggleEnabled: ${isVr}`);
+    const tapComp = (
+      tapEl as unknown as {
+        components?: Record<string, VrTapTriggerComponentInstance>;
       }
-    ).components?.["cv-nadir-trigger"];
-    if (nadirComp) {
-      nadirComp.setEnabled(isVr);
-    } else if (!isVr) {
-      nadirEl.setAttribute("visible", "false");
+    ).components?.["cv-vr-tap-trigger"];
+    if (tapComp) {
+      tapComp.setHudToggleEnabled(isVr);
+      tapComp.setTransitionIdle(
+        this.transitionStateMachine.getState() === RoomTransitionState.IDLE,
+      );
     }
   }
 
@@ -629,19 +653,15 @@ export class ExperienceScreenView implements ScreenView {
       }
     }
 
-    const nadirEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`);
-    if (nadirEl) {
-      nadirEl.setAttribute("cv-nadir-trigger", "enabled: false");
-      const nadirComp = (
-        nadirEl as unknown as {
-          components?: Record<string, NadirTriggerComponentInstance>;
+    const tapEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`);
+    if (tapEl) {
+      tapEl.setAttribute("cv-vr-tap-trigger", "hudToggleEnabled: false");
+      const tapComp = (
+        tapEl as unknown as {
+          components?: Record<string, VrTapTriggerComponentInstance>;
         }
-      ).components?.["cv-nadir-trigger"];
-      if (nadirComp) {
-        nadirComp.setEnabled(false);
-      } else {
-        nadirEl.setAttribute("visible", "false");
-      }
+      ).components?.["cv-vr-tap-trigger"];
+      tapComp?.setHudToggleEnabled(false);
     }
   }
 

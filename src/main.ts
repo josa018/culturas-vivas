@@ -2,7 +2,7 @@ import "aframe";
 import "./experience/components/inspectable";
 import "./experience/components/stereo-media";
 import "./experience/components/vr-hologram-hud";
-import "./experience/components/nadir-trigger";
+import "./experience/components/vr-tap-trigger";
 import "./style.css";
 import { AppRouter } from "./app";
 import { AppRoute, RouteMatcher } from "./navigation/route-matcher";

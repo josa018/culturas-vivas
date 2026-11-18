@@ -259,20 +259,17 @@ export const ROOM_DEFINITIONS: Record<RoomId, RoomDefinition> = {
   },
 };
 
-export const VR_HUD_SUMMON_PITCH_THRESHOLD_DEG = -60;
 export const VR_HUD_FOCAL_DISTANCE_M = 1.5;
 export const VR_HUD_FOCAL_ELEVATION_OFFSET_M = -0.15;
-export const VR_HUD_SUMMON_TIMEOUT_MS = 1000;
 export const VR_HUD_ANIMATION_DURATION_MS = 250;
+export const VR_HUD_TAP_DEBOUNCE_MS = 350;
+export const VR_HUD_MAX_TAP_DRAG_PX = 12;
 
 export const VR_HUD_GEOMETRY = {
   CURVED_RADIUS_M: 1.8,
   THETA_LENGTH_DEG: 50,
   PANEL_HEIGHT_M: 0.8,
   PANEL_WIDTH_M: 1.45,
-  RUNE_RADIUS_M: 0.35,
-  RUNE_INNER_RADIUS_M: 0.24,
-  RUNE_FLOOR_Y_OFFSET_M: 0.02,
   BUTTON_WIDTH_M: 0.56,
   BUTTON_HEIGHT_M: 0.22,
   DISMISS_RADIUS_M: 0.075,
@@ -294,14 +291,11 @@ export const VR_HUD_ELEMENT_IDS = {
   SWITCH_2D_BTN: "cv-vr-hud-switch-2d",
   EXIT_BTN: "cv-vr-hud-exit",
   DISMISS_BTN: "cv-vr-hud-dismiss",
-  NADIR_TRIGGER: "cv-nadir-trigger",
-  NADIR_RUNE: "cv-nadir-rune",
-  NADIR_PROGRESS_RING: "cv-nadir-progress-ring",
+  TAP_TRIGGER: "cv-vr-tap-trigger",
 } as const;
 
 export const VR_HUD_DICTIONARY = {
   SWITCH_TO_2D_LABEL: "Modo Tactil 2D",
   EXIT_TOUR_LABEL: "Salir del Recorrido",
   DISMISS_LABEL: "✕",
-  SUMMON_HINT_LABEL: "MENU VR",
 } as const;

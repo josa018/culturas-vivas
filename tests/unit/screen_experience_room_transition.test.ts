@@ -48,7 +48,7 @@ describe("ScreenExperience Room Transition", () => {
       scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`),
     ).toBeTruthy();
     expect(
-      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`),
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`),
     ).toBeTruthy();
 
     // Focus an exhibit
@@ -103,7 +103,7 @@ describe("ScreenExperience Room Transition", () => {
       scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`),
     ).toBeTruthy();
     expect(
-      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`),
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`),
     ).toBeTruthy();
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
 

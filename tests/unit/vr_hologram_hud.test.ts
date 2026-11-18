@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   DEFAULT_ROOM_ID,
   InspectionState,
@@ -10,11 +10,13 @@ import {
   VR_HUD_FOCAL_DISTANCE_M,
   VR_HUD_FOCAL_ELEVATION_OFFSET_M,
   VR_HUD_GEOMETRY,
-  VR_HUD_SUMMON_PITCH_THRESHOLD_DEG,
-  VR_HUD_SUMMON_TIMEOUT_MS,
+  VR_HUD_MAX_TAP_DRAG_PX,
+  VR_HUD_TAP_DEBOUNCE_MS,
 } from "../../src/experience/constants";
 import { RoomId } from "../../src/experience/types";
 import {
+  VR_HUD_EXIT_EVENT,
+  VR_HUD_SWITCH_2D_EVENT,
   calculateHudWorldTransform,
   createVrHologramHudComponentDefinition,
   ensureVrHologramHud,
@@ -23,19 +25,16 @@ import {
   type VrHologramHudEntity,
 } from "../../src/experience/components/vr-hologram-hud";
 import {
-  NADIR_SUMMON_EVENT,
-  createNadirTriggerComponentDefinition,
-  ensureNadirTrigger,
-  extractCameraPitchDeg,
-  isNadirPitchReached,
-  registerNadirTriggerComponent,
-  type NadirTriggerComponentInstance,
-  type NadirTriggerEntity,
-} from "../../src/experience/components/nadir-trigger";
-import {
-  VR_HUD_EXIT_EVENT,
-  VR_HUD_SWITCH_2D_EVENT,
-} from "../../src/experience/components/vr-hologram-hud";
+  VR_TAP_HUD_TOGGLE_EVENT,
+  computeDragDistancePx,
+  createVrTapTriggerComponentDefinition,
+  ensureVrTapTrigger,
+  evaluateCursorTap,
+  registerVrTapTriggerComponent,
+  type AFrameCursorElement,
+  type VrTapTriggerComponentInstance,
+  type VrTapTriggerEntity,
+} from "../../src/experience/components/vr-tap-trigger";
 import { getSharedInspectionController } from "../../src/experience/components/inspectable";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { ExperienceScreenView } from "../../src/screens/screen-experience";
@@ -93,58 +92,65 @@ function createMockHudInstance(
   return instance;
 }
 
-function createMockNadirInstance(
-  el: NadirTriggerEntity,
-): NadirTriggerComponentInstance {
-  const def = createNadirTriggerComponentDefinition();
-  const instance: NadirTriggerComponentInstance = {
+function createMockTapTriggerInstance(
+  el: VrTapTriggerEntity,
+): VrTapTriggerComponentInstance {
+  const def = createVrTapTriggerComponentDefinition();
+  const instance: VrTapTriggerComponentInstance = {
     el,
-    enabled: true,
-    isGlyphVisible: false,
-    isGazingAtGlyph: false,
-    dwellElapsedMs: 0,
-    hasSummonedInCurrentDwell: false,
-    progressRingEl: null,
-    init: function (this: NadirTriggerComponentInstance) {
+    hudToggleEnabled: true,
+    isTransitionIdle: true,
+    downEl: null,
+    downPoint: null,
+    lastActivationTimestampMs: -Infinity,
+    cursorEl: null,
+    cursorDownHandler: null,
+    cursorUpHandler: null,
+    init: function (this: VrTapTriggerComponentInstance) {
       def.init.call(this);
     },
-    setEnabled: function (
-      this: NadirTriggerComponentInstance,
+    setHudToggleEnabled: function (
+      this: VrTapTriggerComponentInstance,
       enabled: boolean,
     ) {
-      def.setEnabled.call(this, enabled);
+      def.setHudToggleEnabled.call(this, enabled);
     },
-    setSummonHandler: function (
-      this: NadirTriggerComponentInstance,
-      handler?: () => void,
+    setTransitionIdle: function (
+      this: VrTapTriggerComponentInstance,
+      isIdle: boolean,
     ) {
-      def.setSummonHandler.call(this, handler);
+      def.setTransitionIdle.call(this, isIdle);
     },
-    evaluatePitchAndDwell: function (
-      this: NadirTriggerComponentInstance,
-      pitchDeg: number,
-      timeDeltaMs: number,
+    handleCursorDown: function (
+      this: VrTapTriggerComponentInstance,
+      evt: Event,
     ) {
-      def.evaluatePitchAndDwell.call(this, pitchDeg, timeDeltaMs);
+      def.handleCursorDown.call(this, evt);
     },
-    triggerSummon: function (this: NadirTriggerComponentInstance) {
-      def.triggerSummon.call(this);
-    },
-    tick: function (
-      this: NadirTriggerComponentInstance,
-      time: number,
-      timeDelta: number,
+    handleCursorUp: function (
+      this: VrTapTriggerComponentInstance,
+      evt: Event,
+      nowMs?: number,
     ) {
-      def.tick.call(this, time, timeDelta);
+      return def.handleCursorUp.call(this, evt, nowMs);
     },
-    remove: function (this: NadirTriggerComponentInstance) {
+    attachCursorListeners: function (
+      this: VrTapTriggerComponentInstance,
+      cursorEl: AFrameCursorElement | null,
+    ) {
+      def.attachCursorListeners.call(this, cursorEl);
+    },
+    detachCursorListeners: function (this: VrTapTriggerComponentInstance) {
+      def.detachCursorListeners.call(this);
+    },
+    remove: function (this: VrTapTriggerComponentInstance) {
       def.remove.call(this);
     },
   };
   return instance;
 }
 
-describe("VR Spatial HUD Constants & Component", () => {
+describe("VR Spatial HUD & Dual Tap Interaction", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
   });
@@ -154,12 +160,12 @@ describe("VR Spatial HUD Constants & Component", () => {
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
-  it("exports declarative spatial metrics and cultural-design-system colors", () => {
-    expect(VR_HUD_SUMMON_PITCH_THRESHOLD_DEG).toBe(-60);
+  it("exports declarative spatial metrics, tap guards, and cultural-design-system colors", () => {
     expect(VR_HUD_FOCAL_DISTANCE_M).toBe(1.5);
     expect(VR_HUD_FOCAL_ELEVATION_OFFSET_M).toBe(-0.15);
-    expect(VR_HUD_SUMMON_TIMEOUT_MS).toBe(1000);
     expect(VR_HUD_ANIMATION_DURATION_MS).toBe(250);
+    expect(VR_HUD_TAP_DEBOUNCE_MS).toBe(350);
+    expect(VR_HUD_MAX_TAP_DRAG_PX).toBe(12);
 
     expect(VR_HUD_GEOMETRY.CURVED_RADIUS_M).toBe(1.8);
     expect(VR_HUD_GEOMETRY.THETA_LENGTH_DEG).toBe(50);
@@ -204,7 +210,6 @@ describe("VR Spatial HUD Constants & Component", () => {
   });
 
   it("computes world-space transform ahead of gaze azimuth at focal distance", () => {
-    // Facing -Z (yaw = 0)
     const forward = calculateHudWorldTransform({
       position: { x: 0, y: 1.6, z: 0 },
       yawRad: 0,
@@ -214,7 +219,6 @@ describe("VR Spatial HUD Constants & Component", () => {
     expect(forward.position.z).toBeCloseTo(-1.5, 3);
     expect(forward.rotationDeg.y).toBeCloseTo(0, 3);
 
-    // Facing -X (yaw = +PI/2)
     const left = calculateHudWorldTransform({
       position: { x: 0, y: 1.6, z: 0 },
       yawRad: Math.PI / 2,
@@ -243,6 +247,7 @@ describe("VR Spatial HUD Constants & Component", () => {
 
     expect(backdrop).toBeTruthy();
     expect(backdrop?.tagName.toLowerCase()).toBe("a-cylinder");
+    expect(backdrop?.classList.contains("clickable")).toBe(true);
     expect(roomChip?.getAttribute("value")).toBe(
       ROOM_DEFINITIONS[DEFAULT_ROOM_ID].title,
     );
@@ -250,7 +255,6 @@ describe("VR Spatial HUD Constants & Component", () => {
     expect(exitBtn?.classList.contains("clickable")).toBe(true);
     expect(dismissBtn?.classList.contains("clickable")).toBe(true);
 
-    // Focus an exhibit and verify summon aborts it
     const controller = getSharedInspectionController();
     controller.setExhibits(ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits);
     controller.focus("exhibit-statue-3d");
@@ -263,25 +267,22 @@ describe("VR Spatial HUD Constants & Component", () => {
     expect(el.getAttribute("position")).toBe("0 1.45 -1.5");
     expect(controller.getState()).toBe(InspectionState.IDLE);
 
-    // Update room title dynamically
     instance.setRoomTitle(RoomId.TEXTILES);
     expect(roomChip?.getAttribute("value")).toBe(
       ROOM_DEFINITIONS[RoomId.TEXTILES].title,
     );
 
-    // Dismiss via button click
     dismissBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(instance.isOpen).toBe(false);
     expect(el.getAttribute("visible")).toBe("false");
     expect(el.getAttribute("scale")).toBe("0.001 0.001 0.001");
 
-    // Disabled HUD ignores summon
     instance.setEnabled(false);
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
     expect(instance.isOpen).toBe(false);
   });
 
-  it("registers cv-nadir-trigger, validates pitch bounds, enforces gaze dwell, and suppresses 2D mode", () => {
+  it("registers cv-vr-tap-trigger, bridges tap clicks while cancelling fuseTimeout, and blocks double-taps/drags", () => {
     const registered: Record<string, unknown> = {};
     (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
       registerComponent: (name: string, def: unknown) => {
@@ -289,80 +290,218 @@ describe("VR Spatial HUD Constants & Component", () => {
       },
     };
 
-    registerNadirTriggerComponent();
-    expect(registered["cv-nadir-trigger"]).toBeDefined();
+    registerVrTapTriggerComponent();
+    expect(registered["cv-vr-tap-trigger"]).toBeDefined();
 
-    expect(isNadirPitchReached(-59.9)).toBe(false);
-    expect(isNadirPitchReached(-60)).toBe(true);
-    expect(isNadirPitchReached(-75)).toBe(true);
+    // Pure helper validation
+    expect(
+      computeDragDistancePx({ x: 100, y: 100 }, { x: 103, y: 104 }),
+    ).toBeCloseTo(5, 3);
+    expect(computeDragDistancePx(null, { x: 10, y: 10 })).toBe(0);
 
+    const target = document.createElement("a-entity");
+    expect(
+      evaluateCursorTap({
+        downEl: target,
+        upEl: target,
+        dragDistancePx: 2,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      }),
+    ).toBe("ACTIVATE_ENTITY");
+
+    expect(
+      evaluateCursorTap({
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      }),
+    ).toBe("TOGGLE_HUD");
+
+    expect(
+      evaluateCursorTap({
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 20,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      }),
+    ).toBe("IGNORE");
+
+    expect(
+      evaluateCursorTap({
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 100,
+        hudToggleEnabled: true,
+        isTransitionIdle: true,
+      }),
+    ).toBe("IGNORE");
+
+    expect(
+      evaluateCursorTap({
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: false,
+        isTransitionIdle: true,
+      }),
+    ).toBe("IGNORE");
+
+    expect(
+      evaluateCursorTap({
+        downEl: null,
+        upEl: null,
+        dragDistancePx: 0,
+        elapsedSinceLastTapMs: 500,
+        hudToggleEnabled: true,
+        isTransitionIdle: false,
+      }),
+    ).toBe("IGNORE");
+
+    // Runtime cursor integration test
     const scene = document.createElement("a-scene");
-    const cam = document.createElement("a-camera") as HTMLElement & {
-      object3D?: {
-        position?: { x: number; y: number; z: number };
-        rotation?: { x: number; y: number; z: number };
-      };
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    const removedStates: string[] = [];
+    let fuseFired = false;
+    const pendingFuse = setTimeout(() => {
+      fuseFired = true;
+    }, 50);
+    cursor.removeState = (state: string) => {
+      removedStates.push(state);
     };
-    cam.object3D = {
-      position: { x: 1, y: 1.6, z: -2 },
-      rotation: { x: (-65 * Math.PI) / 180, y: 0, z: 0 },
+    cursor.components = {
+      cursor: {
+        fuseTimeout: pendingFuse,
+        intersectedEl: target,
+        data: { fuse: true, rayOrigin: "entity" },
+      },
     };
-    scene.appendChild(cam);
+    camera.appendChild(cursor);
+    scene.append(camera, target);
     document.body.appendChild(scene);
 
-    expect(extractCameraPitchDeg(cam)).toBeCloseTo(-65, 2);
-
-    const t1 = ensureNadirTrigger(scene) as NadirTriggerEntity;
-    const t2 = ensureNadirTrigger(scene);
+    const t1 = ensureVrTapTrigger(scene) as VrTapTriggerEntity;
+    const t2 = ensureVrTapTrigger(scene);
     expect(t1).toBe(t2);
-    expect(t1.getAttribute("id")).toBe(VR_HUD_ELEMENT_IDS.NADIR_TRIGGER);
+    expect(t1.getAttribute("id")).toBe(VR_HUD_ELEMENT_IDS.TAP_TRIGGER);
 
-    const nadir = createMockNadirInstance(t1);
-    nadir.init();
+    const tapTrigger = createMockTapTriggerInstance(t1);
+    tapTrigger.init();
 
-    let summonCount = 0;
-    let eventCount = 0;
-    nadir.setSummonHandler(() => {
-      summonCount++;
+    let targetClickCount = 0;
+    target.addEventListener("click", () => {
+      targetClickCount++;
     });
-    t1.addEventListener(NADIR_SUMMON_EVENT, () => {
-      eventCount++;
+    let hudToggleCount = 0;
+    scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, () => {
+      hudToggleCount++;
     });
 
-    // Above threshold: remains hidden
-    nadir.evaluatePitchAndDwell(-30, 500);
-    expect(nadir.isGlyphVisible).toBe(false);
-    expect(t1.getAttribute("visible")).toBe("false");
-
-    // Tick reveals rune and tracks camera XZ pivot
-    nadir.tick(0, 16);
-    expect(nadir.isGlyphVisible).toBe(true);
-    expect(t1.getAttribute("visible")).toBe("true");
-    expect(t1.getAttribute("position")).toBe(
-      `1 ${VR_HUD_GEOMETRY.RUNE_FLOOR_Y_OFFSET_M} -2`,
+    // 1. Tap on .clickable target cancels pending fuseTimeout and fires exactly 1 click
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: {
+          intersectedEl: target,
+          mouseEvent: { clientX: 50, clientY: 50 },
+        },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: {
+          intersectedEl: target,
+          mouseEvent: { clientX: 52, clientY: 51 },
+        },
+      }),
     );
 
-    // Gaze enters rune and accumulates dwell up to VR_HUD_SUMMON_TIMEOUT_MS
-    const hitDisc = t1.querySelector(".cv-nadir-hit");
-    expect(hitDisc).toBeTruthy();
-    hitDisc?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    expect(targetClickCount).toBe(1);
+    expect(hudToggleCount).toBe(0);
+    expect(removedStates).toContain("cursor-fusing");
+    expect(cursor.components.cursor.fuseTimeout).toBeUndefined();
+    expect(fuseFired).toBe(false);
 
-    nadir.evaluatePitchAndDwell(-65, 500);
-    expect(summonCount).toBe(0);
-    nadir.evaluatePitchAndDwell(-65, 500);
-    expect(summonCount).toBe(1);
-    expect(eventCount).toBe(1);
+    // 2. Synthetic mouseup 100ms later is ignored by debounce
+    vi.spyOn(Date, "now").mockReturnValue(1100);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", { detail: { intersectedEl: target } }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", { detail: { intersectedEl: target } }),
+    );
+    expect(targetClickCount).toBe(1);
 
-    // Looking back up hides rune and resets dwell
-    nadir.evaluatePitchAndDwell(-10, 16);
-    expect(nadir.isGlyphVisible).toBe(false);
-    expect(nadir.dwellElapsedMs).toBe(0);
+    // 3. Tap on empty space after debounce emits VR_TAP_HUD_TOGGLE_EVENT
+    vi.spyOn(Date, "now").mockReturnValue(1500);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: {
+          intersectedEl: null,
+          touchEvent: { touches: [{ clientX: 100, clientY: 100 }] },
+        },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: {
+          intersectedEl: null,
+          touchEvent: { changedTouches: [{ clientX: 103, clientY: 104 }] },
+        },
+      }),
+    );
+    expect(hudToggleCount).toBe(1);
 
-    // Disabled (2D touch mode) suppresses trigger even below -60 deg
-    nadir.setEnabled(false);
-    nadir.evaluatePitchAndDwell(-75, 1200);
-    expect(nadir.isGlyphVisible).toBe(false);
-    expect(summonCount).toBe(1);
+    // 4. Drag gesture (>12px) on empty space is ignored
+    vi.spyOn(Date, "now").mockReturnValue(2000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: {
+          intersectedEl: null,
+          touchEvent: { touches: [{ clientX: 100, clientY: 100 }] },
+        },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: {
+          intersectedEl: null,
+          touchEvent: { changedTouches: [{ clientX: 140, clientY: 100 }] },
+        },
+      }),
+    );
+    expect(hudToggleCount).toBe(1);
+
+    // 5. In 2D mode (hudToggleEnabled=false), empty-space tap is ignored while .clickable tap still works
+    tapTrigger.setHudToggleEnabled(false);
+    vi.spyOn(Date, "now").mockReturnValue(2500);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", { detail: { intersectedEl: null } }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", { detail: { intersectedEl: null } }),
+    );
+    expect(hudToggleCount).toBe(1);
+
+    vi.spyOn(Date, "now").mockReturnValue(3000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", { detail: { intersectedEl: target } }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", { detail: { intersectedEl: target } }),
+    );
+    expect(targetClickCount).toBe(2);
+
+    vi.restoreAllMocks();
   });
 
   it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
@@ -394,7 +533,6 @@ describe("VR Spatial HUD Constants & Component", () => {
       onRequestExit: () => fsm.dispatch(NavigationAction.REQUEST_EXIT),
     });
 
-    // Summon and trigger Switch to 2D
     hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
     expect(hud.isOpen).toBe(true);
 
@@ -404,7 +542,6 @@ describe("VR Spatial HUD Constants & Component", () => {
     expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
     expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
 
-    // Re-enter VR scenario and test Exit Tour button
     fsm.dispatch(NavigationAction.REQUEST_EXIT);
     expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
     fsm.dispatch(NavigationAction.RESUME_TOUR);
@@ -416,10 +553,10 @@ describe("VR Spatial HUD Constants & Component", () => {
     expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
   });
 
-  it("synchronizes 2D DOM HUD vs 3D spatial HUD in ExperienceScreenView and persists across room transitions", () => {
+  it("synchronizes 2D DOM HUD vs 3D tap-toggled HUD in ExperienceScreenView and persists across room transitions", () => {
     const scene = document.createElement("a-scene");
     const camera = document.createElement("a-camera");
-    const cursor = document.createElement("a-cursor");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
     cursor.setAttribute("raycaster", "objects: .clickable");
     const sky = document.createElement("a-sky");
     camera.appendChild(cursor);
@@ -443,46 +580,60 @@ describe("VR Spatial HUD Constants & Component", () => {
     const hudEl = scene.querySelector(
       `#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`,
     ) as VrHologramHudEntity;
-    const nadirEl = scene.querySelector(
-      `#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`,
-    ) as NadirTriggerEntity;
+    const tapEl = scene.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`,
+    ) as VrTapTriggerEntity;
     expect(hudEl).toBeTruthy();
-    expect(nadirEl).toBeTruthy();
+    expect(tapEl).toBeTruthy();
     expect(
       hudEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
     ).toBeNull();
     expect(
-      nadirEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
+      tapEl.closest(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
     ).toBeNull();
 
-    // Attach mock A-Frame component instances so lifecycle calls propagate cleanly
     const hudInstance = createMockHudInstance(hudEl);
     hudInstance.init();
-    const nadirInstance = createMockNadirInstance(nadirEl);
-    nadirInstance.init();
+    const tapInstance = createMockTapTriggerInstance(tapEl);
+    tapInstance.init();
     (
       hudEl as unknown as {
         components?: Record<string, VrHologramHudComponentInstance>;
       }
     ).components = { "cv-vr-hologram-hud": hudInstance };
     (
-      nadirEl as unknown as {
-        components?: Record<string, NadirTriggerComponentInstance>;
+      tapEl as unknown as {
+        components?: Record<string, VrTapTriggerComponentInstance>;
       }
-    ).components = { "cv-nadir-trigger": nadirInstance };
+    ).components = { "cv-vr-tap-trigger": tapInstance };
 
-    // Nadir summon event opens the 3D HUD in VR mode
-    nadirEl.dispatchEvent(new CustomEvent(NADIR_SUMMON_EVENT, { bubbles: true }));
+    // First empty-space tap toggles 3D HUD open
+    tapEl.dispatchEvent(
+      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
+    );
     expect(hudInstance.isOpen).toBe(true);
     expect(hudEl.getAttribute("visible")).toBe("true");
 
-    // Room transition dismisses active HUD, preserves persistent HUD/nadir entities, and updates room chip
+    // Second empty-space tap toggles 3D HUD closed
+    tapEl.dispatchEvent(
+      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
+    );
+    expect(hudInstance.isOpen).toBe(false);
+    expect(hudEl.getAttribute("visible")).toBe("false");
+
+    // Open again, then verify room transition dismisses HUD, preserves entities, and updates room chip
+    tapEl.dispatchEvent(
+      new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }),
+    );
+    expect(hudInstance.isOpen).toBe(true);
+
     const transitioned = screen.transitionToRoom(RoomId.TEXTILES);
     expect(transitioned).toBe(true);
     expect(hudInstance.isOpen).toBe(false);
+    expect(tapInstance.isTransitionIdle).toBe(true);
     expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)).toBe(hudEl);
-    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.NADIR_TRIGGER}`)).toBe(
-      nadirEl,
+    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`)).toBe(
+      tapEl,
     );
     expect(
       hudEl
@@ -490,7 +641,6 @@ describe("VR Spatial HUD Constants & Component", () => {
         ?.getAttribute("value"),
     ).toBe(ROOM_DEFINITIONS[RoomId.TEXTILES].title);
 
-    // 3D HUD events dispatch NavigationActions in VR mode
     hudEl.dispatchEvent(
       new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }),
     );
@@ -500,11 +650,11 @@ describe("VR Spatial HUD Constants & Component", () => {
       NavigationAction.REQUEST_EXIT,
     ]);
 
-    // Switching to 2D touch mode reveals 2D DOM HUD and disables spatial HUD/nadir
+    // Switching to 2D touch mode reveals 2D DOM HUD and disables empty-space HUD toggle
     screen.setViewMode(ViewMode.TOUCH_2D);
     screen.show();
     expect(topBar.classList.contains("cv-hud-topbar--hidden")).toBe(false);
-    expect(nadirInstance.enabled).toBe(false);
+    expect(tapInstance.hudToggleEnabled).toBe(false);
     expect(hudInstance.enabled).toBe(false);
 
     screen.unmount();
