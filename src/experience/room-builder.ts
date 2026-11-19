@@ -2,7 +2,6 @@ import {
   DEFAULT_ROOM_ID,
   EXHIBIT_ASSET_IDS,
   EXHIBIT_DIMENSIONS,
-  EXHIBIT_DICTIONARY,
   ExhibitMediaType,
   GLB_FALLBACK_COLORS,
   ROOM_DEFINITIONS,
@@ -12,12 +11,9 @@ import {
 import type { RoomId, RoomStandSlotConfig } from "./types";
 import { createPortalEntity } from "./components/portal-waypoint";
 import { getSharedInspectionController } from "./components/inspectable";
+import { emptyRoomMediaProvider, type RoomMediaProvider, type StandMediaItem } from "./media-types";
+import { getSharedVideoController } from "./shared-video-controller";
 import { disposeObject3DResources } from "./three-disposal";
-
-const STAND_PLACEHOLDER_COLORS = {
-  SURFACE: "#0f172a",
-  TEXT: "#EDE8DF",
-} as const;
 
 export class ExhibitRoomBuilder {
   public static readonly ROOM_CONTAINER_ID = "cv-prototype-room-group";
@@ -28,6 +24,8 @@ export class ExhibitRoomBuilder {
   }
 
   public static teardownRoom(sceneEl: HTMLElement): void {
+    getSharedVideoController().stopAndRelease();
+
     const roomGroup = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
     if (!roomGroup) {
       return;
@@ -399,11 +397,16 @@ export class ExhibitRoomBuilder {
     return exhibitRoot;
   }
 
-  private static createStandPlaceholderEntity(
+  private static createMediaStandEntity(
     stand: RoomStandSlotConfig,
     accentColor: string,
+    viewMode: string,
+    items: readonly StandMediaItem[],
   ): HTMLElement {
-    const standRoot = document.createElement("a-entity");
+    const standRoot = document.createElement("a-entity") as HTMLElement & {
+      standItems?: StandMediaItem[];
+    };
+    standRoot.standItems = [...items];
     standRoot.setAttribute("id", stand.id);
     standRoot.setAttribute("class", "cv-stand-slot");
     standRoot.setAttribute("data-room-id", stand.roomId);
@@ -416,36 +419,11 @@ export class ExhibitRoomBuilder {
       "rotation",
       `${stand.rotation.x} ${stand.rotation.y} ${stand.rotation.z}`,
     );
+    standRoot.setAttribute(
+      "cv-media-stand",
+      `roomId: ${stand.roomId}; standId: ${stand.standId}; label: ${stand.label}; accentColor: ${accentColor}; viewMode: ${viewMode}; galleryPosition: ${stand.position.x} ${stand.position.y} ${stand.position.z}; galleryRotation: ${stand.rotation.x} ${stand.rotation.y} ${stand.rotation.z}`,
+    );
 
-    const frame = document.createElement("a-plane");
-    frame.setAttribute("width", String(EXHIBIT_DIMENSIONS.PLANE_WIDTH + 0.08));
-    frame.setAttribute("height", String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT + 0.08));
-    frame.setAttribute("position", "0 0 -0.01");
-    frame.setAttribute("color", accentColor);
-    frame.setAttribute("material", "shader: flat");
-
-    const backdrop = document.createElement("a-plane");
-    backdrop.setAttribute("width", String(EXHIBIT_DIMENSIONS.PLANE_WIDTH));
-    backdrop.setAttribute("height", String(EXHIBIT_DIMENSIONS.PLANE_HEIGHT));
-    backdrop.setAttribute("color", STAND_PLACEHOLDER_COLORS.SURFACE);
-    backdrop.setAttribute("material", "shader: flat");
-
-    const title = document.createElement("a-text");
-    title.setAttribute("value", stand.label);
-    title.setAttribute("align", "center");
-    title.setAttribute("color", accentColor);
-    title.setAttribute("width", "2.1");
-    title.setAttribute("position", "0 0.14 0.02");
-
-    const subtitle = document.createElement("a-text");
-    subtitle.setAttribute("value", EXHIBIT_DICTIONARY.STAND_PLACEHOLDER_DESC);
-    subtitle.setAttribute("align", "center");
-    subtitle.setAttribute("color", STAND_PLACEHOLDER_COLORS.TEXT);
-    subtitle.setAttribute("width", "1.35");
-    subtitle.setAttribute("wrap-count", "32");
-    subtitle.setAttribute("position", "0 -0.1 0.02");
-
-    standRoot.append(frame, backdrop, title, subtitle);
     return standRoot;
   }
 
@@ -453,6 +431,7 @@ export class ExhibitRoomBuilder {
     sceneEl: HTMLElement,
     roomId: RoomId = DEFAULT_ROOM_ID,
     viewMode: string = "vr",
+    mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
   ): HTMLElement {
     this.teardownRoom(sceneEl);
 
@@ -460,7 +439,34 @@ export class ExhibitRoomBuilder {
       ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
     this.activeRoomId = roomDef.id;
 
-    getSharedInspectionController().setExhibits(roomDef.exhibits);
+    const standItemsBySlot = roomDef.stands.map((stand) => ({
+      stand,
+      items: mediaProvider.getStandItems(roomDef.id, stand.standId),
+    }));
+
+    const standExhibits: ExhibitItemConfig[] = standItemsBySlot
+      .filter(({ items }) => items.length > 0)
+      .map(({ stand, items }) => {
+        const firstItem = items[0]!;
+        return {
+          id: `${stand.roomId}:${stand.standId}`,
+          title: firstItem.title,
+          description: firstItem.description,
+          creatorName: firstItem.creatorName,
+          mediaType: firstItem.mediaType,
+          galleryPosition: stand.position,
+          galleryRotation: stand.rotation,
+          autoRotate: false,
+          rotationSpeed: 0,
+          mediaUrl: firstItem.mediaUrl,
+          posterUrl: firstItem.posterUrl,
+        };
+      });
+
+    getSharedInspectionController().setExhibits([
+      ...roomDef.exhibits,
+      ...standExhibits,
+    ]);
 
     const skyEl = sceneEl.querySelector("a-sky");
     if (skyEl) {
@@ -475,9 +481,9 @@ export class ExhibitRoomBuilder {
       roomGroup.appendChild(this.createExhibitEntity(exhibit, viewMode));
     }
 
-    for (const stand of roomDef.stands) {
+    for (const { stand, items } of standItemsBySlot) {
       roomGroup.appendChild(
-        this.createStandPlaceholderEntity(stand, roomDef.accentColor),
+        this.createMediaStandEntity(stand, roomDef.accentColor, viewMode, items),
       );
     }
 
@@ -492,27 +498,32 @@ export class ExhibitRoomBuilder {
   public static ensureRoom(
     sceneEl: HTMLElement,
     viewMode: string = "vr",
+    mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
   ): HTMLElement {
     const existing = sceneEl.querySelector(`#${this.ROOM_CONTAINER_ID}`);
     if (existing) {
-      const stereoEntities = existing.querySelectorAll("[cv-stereo-media]");
-      stereoEntities.forEach((el) => {
-        const currentAttr = el.getAttribute("cv-stereo-media");
-        if (typeof currentAttr === "string") {
-          el.setAttribute(
-            "cv-stereo-media",
-            currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
-          );
-        } else if (currentAttr && typeof currentAttr === "object") {
-          const aframeEl = el as unknown as {
-            setAttribute: (attr: string, prop: string, val: unknown) => void;
-          };
-          aframeEl.setAttribute("cv-stereo-media", "viewMode", viewMode);
-        }
-      });
+      const propagateViewMode = (selector: string, attrName: string): void => {
+        existing.querySelectorAll(selector).forEach((el) => {
+          const currentAttr = el.getAttribute(attrName);
+          if (typeof currentAttr === "string") {
+            el.setAttribute(
+              attrName,
+              currentAttr.replace(/viewMode:\s*[^;]+/, `viewMode: ${viewMode}`),
+            );
+          } else if (currentAttr && typeof currentAttr === "object") {
+            const aframeEl = el as unknown as {
+              setAttribute: (attr: string, prop: string, val: unknown) => void;
+            };
+            aframeEl.setAttribute(attrName, "viewMode", viewMode);
+          }
+        });
+      };
+
+      propagateViewMode("[cv-stereo-media]", "cv-stereo-media");
+      propagateViewMode("[cv-media-stand]", "cv-media-stand");
       return existing as HTMLElement;
     }
 
-    return this.mountRoom(sceneEl, this.activeRoomId, viewMode);
+    return this.mountRoom(sceneEl, this.activeRoomId, viewMode, mediaProvider);
   }
 }

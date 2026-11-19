@@ -140,6 +140,32 @@ export const EXHIBIT_DICTIONARY = {
     "Secuencia de video con doble flujo Side-By-Side. Ofrece sensacion inmersiva de presencia en VR y recorte monoscopico en 2D.",
 } as const;
 
+export const SHARED_VIDEO_ELEMENT_ID = "cv-shared-stand-video";
+
+export const STAND_DIMENSIONS = {
+  MAX_MEDIA_WIDTH_M: 1.5,
+  MAX_MEDIA_HEIGHT_M: 0.95,
+  FRAME_PADDING_M: 0.08,
+  HEADER_HEIGHT_M: 0.18,
+  CONTROL_BTN_SIZE_M: 0.16,
+  CONTROL_BAR_OFFSET_Y: -0.58,
+  BILLBOARD_OFFSET_Y: -1.02,
+} as const;
+
+export const STAND_DICTIONARY = {
+  EMPTY_PLACEHOLDER: "Contenido próximamente",
+  ITEM_COUNT_SINGULAR: "elemento",
+  ITEM_COUNT_PLURAL: "elementos",
+  PREV_ICON: "◀",
+  NEXT_ICON: "▶",
+  PLAY_ICON: "▶",
+  PAUSE_ICON: "⏸",
+  MUTE_ICON: "🔇",
+  UNMUTE_ICON: "🔊",
+  VIDEO_BADGE: "VIDEO",
+  COUNTER_SEPARATOR: " / ",
+} as const;
+
 export const GLB_FALLBACK_COLORS = {
   PEDESTAL: "#334155",
   PRIMARY: "#D99B26",

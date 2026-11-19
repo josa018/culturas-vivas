@@ -12,6 +12,7 @@ import {
   ScenePreloadManager,
   getCriticalRoomAssets,
 } from "../experience/preload-manager";
+import { getSharedVideoController } from "../experience/shared-video-controller";
 
 export class SplashScreenView implements ScreenView {
   public readonly id = ScreenId.SPLASH;
@@ -109,6 +110,7 @@ export class SplashScreenView implements ScreenView {
 
     enterBtn.addEventListener("click", (evt: Event) => {
       evt.stopPropagation();
+      void getSharedVideoController().unlockFromUserGesture();
       this.dispatch(NavigationAction.FINISH_LOADING);
     });
 

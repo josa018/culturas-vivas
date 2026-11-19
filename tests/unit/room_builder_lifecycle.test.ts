@@ -3,9 +3,17 @@ import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
 import {
   DISPOSABLE_TEXTURE_SLOTS,
+  ExhibitMediaType,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
 } from "../../src/experience/constants";
+import { StandId } from "../../src/shared/room-catalog";
+import type { RoomMediaProvider, StandMediaItem } from "../../src/experience/media-types";
+import {
+  getSharedVideoController,
+  setSharedVideoController,
+  SharedVideoController,
+} from "../../src/experience/shared-video-controller";
 import {
   getSharedInspectionController,
   setSharedInspectionController,
@@ -56,6 +64,7 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     const resetScene = document.createElement("a-scene");
     ExhibitRoomBuilder.mountRoom(resetScene, RoomId.LOBBY);
     setSharedInspectionController(null);
+    setSharedVideoController(new SharedVideoController());
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
@@ -194,5 +203,70 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     await vi.runAllTimersAsync();
 
     expect(await promise).toBe(true);
+  });
+
+  it("mounts cv-media-stand entities from injected RoomMediaProvider and releases SharedVideoController on teardown", () => {
+    const sampleItems: StandMediaItem[] = [
+      {
+        id: "gastro-1",
+        roomId: RoomId.NAAYERI,
+        standId: StandId.GASTRONOMIA,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Platillo Tradicional",
+        creatorName: "Elena",
+        description: "Gastronomía Náayeri.",
+        mediaUrl: "https://cdn.example.com/gastro-1.jpg",
+        sortOrder: 0,
+      },
+      {
+        id: "gastro-2",
+        roomId: RoomId.NAAYERI,
+        standId: StandId.GASTRONOMIA,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Preparación",
+        creatorName: "Elena",
+        description: "Video de preparación.",
+        mediaUrl: "https://cdn.example.com/gastro-2.mp4",
+        posterUrl: "https://cdn.example.com/gastro-2.jpg",
+        sortOrder: 1,
+      },
+    ];
+
+    const mediaProvider: RoomMediaProvider = {
+      getStandItems: (roomId, standId) =>
+        roomId === RoomId.NAAYERI && standId === StandId.GASTRONOMIA ? sampleItems : [],
+    };
+
+    const videoController = new SharedVideoController();
+    const stopSpy = vi.spyOn(videoController, "stopAndRelease");
+    setSharedVideoController(videoController);
+
+    const scene = document.createElement("a-scene");
+    const roomEl = (ExhibitRoomBuilder.mountRoom as unknown as (
+      sceneEl: HTMLElement,
+      roomId: RoomId,
+      viewMode: string,
+      provider: RoomMediaProvider,
+    ) => HTMLElement)(scene, RoomId.NAAYERI, "vr", mediaProvider);
+
+    const standNodes = roomEl.querySelectorAll("[cv-media-stand]");
+    expect(standNodes).toHaveLength(5);
+
+    const gastroStand = roomEl.querySelector("#stand-naayeri-gastronomia") as
+      | (HTMLElement & { standItems?: StandMediaItem[] })
+      | null;
+    const arteStand = roomEl.querySelector("#stand-naayeri-arte") as
+      | (HTMLElement & { standItems?: StandMediaItem[] })
+      | null;
+
+    expect(gastroStand?.standItems).toHaveLength(2);
+    expect(arteStand?.standItems).toEqual([]);
+    expect(getSharedInspectionController().getAllExhibits()).toHaveLength(
+      ROOM_DEFINITIONS[RoomId.NAAYERI].exhibits.length + 1,
+    );
+
+    ExhibitRoomBuilder.teardownRoom(scene);
+    expect(stopSpy).toHaveBeenCalled();
+    expect(getSharedVideoController()).toBe(videoController);
   });
 });

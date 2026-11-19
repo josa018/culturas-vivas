@@ -5,20 +5,49 @@ import {
   type StereoMediaEntity,
 } from "../../src/experience/components/stereo-media";
 
+interface MockUVAttribute {
+  array: Float32Array;
+  needsUpdate: boolean;
+}
+
 interface MockObject3DWithLayers {
   layers: {
     currentLayer: number;
     set: (ch: number) => void;
   };
   visible: boolean;
+  traverse?: (cb: (node: unknown) => void) => void;
 }
 
-function createMockStereoEntity(): HTMLElement & {
+function createMockStereoEntity(withMeshUVs = false): HTMLElement & {
   object3D: MockObject3DWithLayers;
+  uvAttr?: MockUVAttribute;
+  textureOffset?: { x: number; y: number };
 } {
   const el = document.createElement("a-plane") as unknown as HTMLElement & {
     object3D: MockObject3DWithLayers;
+    uvAttr?: MockUVAttribute;
+    textureOffset?: { x: number; y: number };
   };
+  const uvAttr: MockUVAttribute = {
+    array: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+    needsUpdate: false,
+  };
+  const textureOffset = { x: 0, y: 0 };
+  const meshNode = {
+    geometry: {
+      attributes: {
+        uv: uvAttr,
+      },
+    },
+    material: {
+      map: {
+        offset: textureOffset,
+        repeat: { x: 1, y: 1 },
+      },
+    },
+  };
+
   el.object3D = {
     layers: {
       currentLayer: 0,
@@ -27,7 +56,19 @@ function createMockStereoEntity(): HTMLElement & {
       },
     },
     visible: true,
+    ...(withMeshUVs
+      ? {
+          traverse: (cb: (node: unknown) => void) => {
+            cb(el.object3D);
+            cb(meshNode);
+          },
+        }
+      : {}),
   };
+  if (withMeshUVs) {
+    el.uvAttr = uvAttr;
+    el.textureOffset = textureOffset;
+  }
   return el;
 }
 
@@ -120,5 +161,52 @@ describe("A-Frame Stereo Media Component", () => {
     instance.data = { eye: "LEFT", isHalfSBS: true, viewMode: "vr" };
 
     expect(() => instance.init()).not.toThrow();
+  });
+
+  it("remaps per-plane BufferGeometry UVs for Half-SBS VR without mutating shared texture.offset", () => {
+    const def = createStereoMediaComponentDefinition();
+
+    const leftEl = createMockStereoEntity(true);
+    const leftInstance: StereoMediaComponentInstance = Object.create(def);
+    leftInstance.el = leftEl as unknown as StereoMediaEntity;
+    leftInstance.data = { eye: "LEFT", isHalfSBS: true, viewMode: "vr" };
+    leftInstance.init();
+
+    expect(Array.from(leftEl.uvAttr!.array)).toEqual([0, 0, 0.5, 0, 0, 1, 0.5, 1]);
+    expect(leftEl.uvAttr!.needsUpdate).toBe(true);
+    expect(leftEl.textureOffset).toEqual({ x: 0, y: 0 });
+    expect(leftEl.object3D.layers.currentLayer).toBe(1);
+
+    const rightEl = createMockStereoEntity(true);
+    const rightInstance: StereoMediaComponentInstance = Object.create(def);
+    rightInstance.el = rightEl as unknown as StereoMediaEntity;
+    rightInstance.data = { eye: "RIGHT", isHalfSBS: true, viewMode: "vr" };
+    rightInstance.init();
+
+    expect(Array.from(rightEl.uvAttr!.array)).toEqual([0.5, 0, 1, 0, 0.5, 1, 1, 1]);
+    expect(rightEl.uvAttr!.needsUpdate).toBe(true);
+    expect(rightEl.textureOffset).toEqual({ x: 0, y: 0 });
+    expect(rightEl.object3D.layers.currentLayer).toBe(2);
+  });
+
+  it("maps monoscopic left crop UVs in 2D mode and restores full UVs when toggling isHalfSBS false", () => {
+    const def = createStereoMediaComponentDefinition();
+
+    const leftEl = createMockStereoEntity(true);
+    const leftInstance: StereoMediaComponentInstance = Object.create(def);
+    leftInstance.el = leftEl as unknown as StereoMediaEntity;
+    leftInstance.data = { eye: "LEFT", isHalfSBS: true, viewMode: "2d" };
+    leftInstance.init();
+
+    expect(leftEl.object3D.layers.currentLayer).toBe(0);
+    expect(Array.from(leftEl.uvAttr!.array)).toEqual([0, 0, 0.5, 0, 0, 1, 0.5, 1]);
+
+    // Switch live back to non-stereo 2D asset in VR mode
+    leftInstance.data = { eye: "LEFT", isHalfSBS: false, viewMode: "vr" };
+    leftInstance.update({ eye: "LEFT", isHalfSBS: true, viewMode: "2d" });
+
+    expect(leftEl.object3D.layers.currentLayer).toBe(0);
+    expect(Array.from(leftEl.uvAttr!.array)).toEqual([0, 0, 1, 0, 0, 1, 1, 1]);
+    expect(leftEl.uvAttr!.needsUpdate).toBe(true);
   });
 });
