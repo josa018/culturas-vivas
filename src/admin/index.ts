@@ -9,9 +9,31 @@ export type {
 } from "./admin-auth-store";
 
 export { AdminHttpError, createDefaultAdminFetcher } from "./admin-http-client";
-export type { AdminNetworkFetcher } from "./admin-http-client";
+export type {
+  AdminMediaFetcher,
+  AdminNetworkFetcher,
+} from "./admin-http-client";
 
-export { ADMIN_UI_CLASSES, ADMIN_UI_TEXT, ADMIN_THRESHOLDS } from "./constants";
+export {
+  ADMIN_MEDIA_ENDPOINTS,
+  ADMIN_MEDIA_LIMITS,
+  ADMIN_UI_CLASSES,
+  ADMIN_UI_TEXT,
+  ADMIN_THRESHOLDS,
+} from "./constants";
+
+export {
+  AdminMediaProcessor,
+  computeScaledDimensions,
+} from "./media-processor";
+export { AdminMediaStore } from "./media-store";
+export type {
+  AdminMediaItemRecord,
+  AdminMediaState,
+  AdminMediaStoreOptions,
+  UploadMediaInput,
+  UpdateMediaMetadataInput,
+} from "./media-store";
 
 export {
   ADMIN_DASHBOARD_CONSTANTS,
@@ -36,7 +58,12 @@ export { AttendanceChartWidget } from "./views/attendance-chart";
 
 export { SurveysTableWidget } from "./views/surveys-table";
 
+export { MediaManagerWidget } from "./views/media-manager-widget";
+
 export { AdminDashboardView } from "./views/admin-dashboard-view";
-export type { AdminDashboardViewOptions } from "./views/admin-dashboard-view";
+export type {
+  AdminDashboardTab,
+  AdminDashboardViewOptions,
+} from "./views/admin-dashboard-view";
 
 export { AdminController } from "./admin-controller";

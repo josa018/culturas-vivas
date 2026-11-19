@@ -32,6 +32,8 @@ import {
   type VrTapTriggerComponentInstance,
 } from "../experience/components/vr-tap-trigger";
 import { RoomAssetCache } from "../experience/room-asset-cache";
+import { getSharedMediaCatalogClient } from "../experience/media-catalog-client";
+import type { RoomMediaProvider } from "../experience/media-types";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -72,18 +74,21 @@ export class ExperienceScreenView implements ScreenView {
   private hudExitHandler: (() => void) | null = null;
   private readonly transitionStateMachine: RoomTransitionStateMachine;
   private readonly roomAssetCache: RoomAssetCache;
+  private readonly mediaProvider: RoomMediaProvider;
 
   constructor(
     dispatch: NavigationDispatcher,
     viewMode: string = "vr",
     transitionStateMachine?: RoomTransitionStateMachine,
     roomAssetCache?: RoomAssetCache,
+    mediaProvider?: RoomMediaProvider,
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
     this.transitionStateMachine =
       transitionStateMachine ?? new RoomTransitionStateMachine();
     this.roomAssetCache = roomAssetCache ?? new RoomAssetCache();
+    this.mediaProvider = mediaProvider ?? getSharedMediaCatalogClient();
   }
 
   public getTransitionStateMachine(): RoomTransitionStateMachine {
@@ -128,7 +133,9 @@ export class ExperienceScreenView implements ScreenView {
         if (hudComp && typeof hudComp.setRoomTitle === "function") {
           hudComp.setRoomTitle(roomId);
         }
-        const roomChip = hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
+        const roomChip = hudEl.querySelector(
+          `#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`,
+        );
         if (roomChip) {
           roomChip.setAttribute("value", roomDef.title);
         }
@@ -244,7 +251,7 @@ export class ExperienceScreenView implements ScreenView {
     if (scene.classList && typeof scene.classList.add === "function") {
       scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
     }
-    ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+    ExhibitRoomBuilder.ensureRoom(scene, this.viewMode, this.mediaProvider);
     this.safeProgrammaticExitVR(scene, () => {
       this.sanitize2DViewport(scene);
       if (typeof scene.pause === "function") {
@@ -343,6 +350,7 @@ export class ExperienceScreenView implements ScreenView {
             scene,
             targetRoomId,
             this.viewMode,
+            this.mediaProvider,
           );
           const skyEl = scene.querySelector("a-sky");
 
@@ -366,7 +374,12 @@ export class ExperienceScreenView implements ScreenView {
     } else {
       // Direct synchronous execution fallback (headless or no animation support)
       this.transitionStateMachine.notifyFadeOutComplete();
-      ExhibitRoomBuilder.mountRoom(scene, targetRoomId, this.viewMode);
+      ExhibitRoomBuilder.mountRoom(
+        scene,
+        targetRoomId,
+        this.viewMode,
+        this.mediaProvider,
+      );
       this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
@@ -393,7 +406,11 @@ export class ExperienceScreenView implements ScreenView {
       if (scene.classList && typeof scene.classList.add === "function") {
         scene.classList.add(UI_CLASSES.SCENE_ACTIVE);
       }
-      const roomGroup = ExhibitRoomBuilder.ensureRoom(scene, this.viewMode);
+      const roomGroup = ExhibitRoomBuilder.ensureRoom(
+        scene,
+        this.viewMode,
+        this.mediaProvider,
+      );
 
       // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =
@@ -560,10 +577,7 @@ export class ExperienceScreenView implements ScreenView {
           hudEl.setAttribute("visible", isVisible ? "false" : "true");
         }
       };
-      scene.addEventListener(
-        VR_TAP_HUD_TOGGLE_EVENT,
-        this.tapHudToggleHandler,
-      );
+      scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, this.tapHudToggleHandler);
     }
 
     if (!this.tapOutsideHudHandler) {

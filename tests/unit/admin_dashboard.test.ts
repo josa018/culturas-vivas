@@ -9,7 +9,9 @@ vi.mock("chart.js", () => {
 
     constructor(
       _canvas: unknown,
-      config: { data: { labels: string[]; datasets: Array<{ data: number[] }> } },
+      config: {
+        data: { labels: string[]; datasets: Array<{ data: number[] }> };
+      },
     ) {
       this.data = config.data;
     }
@@ -37,8 +39,13 @@ import {
   AdminHeaderWidget,
   SurveysTableWidget,
   AttendanceChartWidget,
+  AdminDashboardView,
+  AdminMediaStore,
   AdminController,
 } from "../../src/admin/index";
+import type { AdminMediaProcessor } from "../../src/admin/media-processor";
+import { ExhibitMediaType } from "../../src/experience/constants";
+import { RoomId, StandId } from "../../src/shared/room-catalog";
 import type { StorageAdapter } from "../../src/navigation/index";
 
 class InMemoryStorage implements StorageAdapter {
@@ -55,7 +62,8 @@ class InMemoryStorage implements StorageAdapter {
 }
 
 class StubAdminFetcher implements AdminNetworkFetcher {
-  public getCalls: Array<{ url: string; headers?: Record<string, string> }> = [];
+  public getCalls: Array<{ url: string; headers?: Record<string, string> }> =
+    [];
   public postCalls: Array<{ url: string; body?: unknown }> = [];
   public loginResult:
     | { token: string; user: { username: string; role: string } }
@@ -133,15 +141,24 @@ describe("AdminAuthStore", () => {
     const store = new AdminAuthStore(new InMemoryStorage(), fetcher);
 
     fetcher.loginResult = new AdminHttpError(401, "Invalid credentials");
-    expect(await store.login({ username: "admin", password: "wrong" })).toBe(false);
+    expect(await store.login({ username: "admin", password: "wrong" })).toBe(
+      false,
+    );
     expect(store.getLastError()).toBe("invalid_credentials");
 
     fetcher.loginResult = new AdminHttpError(500, "Server error");
-    expect(await store.login({ username: "admin", password: "secret" })).toBe(false);
+    expect(await store.login({ username: "admin", password: "secret" })).toBe(
+      false,
+    );
     expect(store.getLastError()).toBe("service_unavailable");
 
-    fetcher.loginResult = { token: "", user: { username: "admin", role: "admin" } };
-    expect(await store.login({ username: "admin", password: "secret" })).toBe(false);
+    fetcher.loginResult = {
+      token: "",
+      user: { username: "admin", role: "admin" },
+    };
+    expect(await store.login({ username: "admin", password: "secret" })).toBe(
+      false,
+    );
     expect(store.getLastError()).toBe("service_unavailable");
   });
 
@@ -155,7 +172,9 @@ describe("AdminAuthStore", () => {
 
     const store = new AdminAuthStore(storage, fetcher);
     const states: boolean[] = [];
-    const unsub = store.subscribe((state) => states.push(state.isAuthenticated));
+    const unsub = store.subscribe((state) =>
+      states.push(state.isAuthenticated),
+    );
 
     expect(
       await store.login({ username: " bibliotecario ", password: "secret" }),
@@ -212,7 +231,9 @@ describe("AdminDashboardStore", () => {
     expect(store.getAverageRating()).toBe(0);
     expect(store.getDailyPeak()).toBe(0);
     expect(store.getState().hourlyAttendance.labels).toHaveLength(24);
-    expect(store.getState().hourlyAttendance.values.every((v) => v === 0)).toBe(true);
+    expect(store.getState().hourlyAttendance.values.every((v) => v === 0)).toBe(
+      true,
+    );
   });
 
   it("hydrates stats from /api/admin/stats with Bearer authorization", async () => {
@@ -336,12 +357,16 @@ describe("Admin UI Widgets & AdminController", () => {
     const statusEl = el.querySelector(
       '[data-admin-metric="connection-status"]',
     ) as HTMLElement;
-    expect(statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE)).toBe(true);
+    expect(
+      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
+    ).toBe(true);
     expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
 
     await store.fetchStats();
 
-    expect(statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE)).toBe(true);
+    expect(
+      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE),
+    ).toBe(true);
     expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_ONLINE);
 
     const chart = chartWidget.getChartInstance() as unknown as {
@@ -377,15 +402,23 @@ describe("Admin UI Widgets & AdminController", () => {
 
     await store.fetchStats();
     expect(tbody.children).toHaveLength(3);
-    expect(tbody.children[0].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_VR);
+    expect(tbody.children[0].children[1].textContent).toBe(
+      ADMIN_UI_TEXT.VIEW_MODE_VR,
+    );
     expect(tbody.children[0].children[2].textContent).toBe("★★★★★");
     expect(tbody.children[0].children[3].textContent).toBe("Excelente");
 
-    expect(tbody.children[1].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_2D);
+    expect(tbody.children[1].children[1].textContent).toBe(
+      ADMIN_UI_TEXT.VIEW_MODE_2D,
+    );
     expect(tbody.children[1].children[2].textContent).toBe("★★☆☆☆");
-    expect(tbody.children[1].children[3].textContent).toBe(ADMIN_UI_TEXT.FEEDBACK_EMPTY);
+    expect(tbody.children[1].children[3].textContent).toBe(
+      ADMIN_UI_TEXT.FEEDBACK_EMPTY,
+    );
 
-    expect(tbody.children[2].children[1].textContent).toBe(ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN);
+    expect(tbody.children[2].children[1].textContent).toBe(
+      ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN,
+    );
 
     tableWidget.unmount();
   });
@@ -418,9 +451,13 @@ describe("Admin UI Widgets & AdminController", () => {
 
     const el = modal.getElement()!;
     const form = el.querySelector("form")!;
-    const submitBtn = el.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const submitBtn = el.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement;
 
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
     expect(submitBtn.disabled).toBe(true);
     expect(submitBtn.textContent).toBe(ADMIN_UI_TEXT.LOGIN_SUBMITTING_LABEL);
 
@@ -453,7 +490,9 @@ describe("Admin UI Widgets & AdminController", () => {
     );
 
     await vi.waitFor(() => {
-      expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE);
+      expect(el.textContent).toContain(
+        ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE,
+      );
     });
     expect(modal.getInputs().pass).toBe("");
 
@@ -535,5 +574,289 @@ describe("Admin UI Widgets & AdminController", () => {
     controller.destroy();
     expect(sceneMock.style.display).toBe("");
     expect(sceneMock.isPlaying).toBe(true);
+  });
+
+  it("AdminDashboardView switches tabs between telemetry and MediaManagerWidget while keeping telemetry polling active", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+
+    const authStore = new AdminAuthStore(
+      new InMemoryStorage(),
+      new StubAdminFetcher(),
+    );
+    await authStore.login({ username: "librarian", password: "pw" });
+
+    const statsFetcher = new StubAdminFetcher();
+    const dashboardStore = new AdminDashboardStore({
+      getToken: () => authStore.getState().token,
+      fetcher: statsFetcher,
+      onUnauthorized: () => authStore.logout(),
+    });
+    dashboardStore.startPolling();
+
+    const mediaFetcher: AdminNetworkFetcher = {
+      get: vi.fn(async () => ({
+        items: [
+          {
+            id: "w-1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_2D,
+            title: "Estambre Ceremonial",
+            creatorName: "María Cruz",
+            description: "Tabla de estambre.",
+            mediaUrl: "https://pub.r2.dev/rooms/wixarika/arte/w-1.webp",
+            sortOrder: 0,
+          },
+          {
+            id: "w-2",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_STEREO_SBS,
+            title: "Templo SBS",
+            creatorName: "",
+            description: "Vista estéreo.",
+            mediaUrl: "https://pub.r2.dev/rooms/wixarika/arte/w-2.webp",
+            sortOrder: 1,
+          },
+        ],
+        storageUsageBytes: 1_048_576,
+        maxStorageBytes: 8_589_934_592,
+      })),
+      post: vi.fn(async (url: string) => {
+        if (url.includes("presign")) {
+          return {
+            media: {
+              key: "rooms/wixarika/arte/w-3.webp",
+              uploadUrl: "https://r2.example.com/w-3.webp",
+              headers: { "Content-Type": "image/webp" },
+            },
+            storageUsageBytes: 1_048_576,
+            maxStorageBytes: 8_589_934_592,
+          };
+        }
+        return {
+          item: {
+            id: "w-3",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_STEREO_SBS,
+            title: "Nuevo Cuadro",
+            creatorName: "Pedro",
+            description: "Alta resolución.",
+            mediaUrl: "https://pub.r2.dev/rooms/wixarika/arte/w-3.webp",
+            sortOrder: 2,
+          },
+          storageUsageBytes: 1_049_600,
+          maxStorageBytes: 8_589_934_592,
+        };
+      }),
+      patch: vi.fn(async (_url: string, body: unknown) => {
+        const record = body as {
+          id?: string;
+          title?: string;
+          creatorName?: string;
+        };
+        if (record.id) {
+          return {
+            item: {
+              id: record.id,
+              roomId: RoomId.WIXARIKA,
+              standId: StandId.ARTE,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: record.title ?? "Editado",
+              creatorName: record.creatorName ?? "",
+              description: "Tabla de estambre.",
+              mediaUrl: "https://pub.r2.dev/rooms/wixarika/arte/w-1.webp",
+              sortOrder: 0,
+            },
+          };
+        }
+        return { ok: true };
+      }),
+      delete: vi.fn(async () => ({ ok: true, storageUsageBytes: 512_000 })),
+      putBinary: vi.fn(async () => {}),
+    };
+
+    const mockProcessor = {
+      optimizeImage: vi.fn(async () => ({
+        blob: new Blob(["webp"], { type: "image/webp" }),
+        width: 1200,
+        height: 900,
+        mimeType: "image/webp" as const,
+      })),
+      extractVideoPoster: vi.fn(),
+    } as unknown as AdminMediaProcessor;
+
+    const mediaStore = new AdminMediaStore({
+      getToken: () => authStore.getState().token,
+      onUnauthorized: () => authStore.logout(),
+      fetcher: mediaFetcher,
+      processor: mockProcessor,
+    });
+
+    const dashboardView = new AdminDashboardView({
+      authStore,
+      dashboardStore,
+      mediaStore,
+      onLogout: () => authStore.logout(),
+    });
+
+    dashboardView.mount(parent);
+    const rootEl = dashboardView.getElement()!;
+
+    const telemetryTab = rootEl.querySelector(
+      '[data-admin-tab="telemetry"]',
+    ) as HTMLButtonElement;
+    const mediaTab = rootEl.querySelector(
+      '[data-admin-tab="media"]',
+    ) as HTMLButtonElement;
+    const telemetryPanel = rootEl.querySelector(
+      '[data-admin-panel="telemetry"]',
+    ) as HTMLElement;
+    const mediaPanel = rootEl.querySelector(
+      '[data-admin-panel="media"]',
+    ) as HTMLElement;
+
+    expect(telemetryTab).not.toBeNull();
+    expect(mediaTab).not.toBeNull();
+    expect(
+      telemetryPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(false);
+    expect(
+      mediaPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(true);
+
+    // Switch to Multimedia tab; polling stays running
+    mediaTab.click();
+    expect(
+      telemetryPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(true);
+    expect(
+      mediaPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(false);
+    expect(dashboardStore.isPolling()).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(mediaFetcher.get).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mediaPanel.textContent).toContain("8192 MB");
+
+    // Filter to WIXARIKA -> ARTE
+    const roomSelect = mediaPanel.querySelector(
+      '[data-media-filter="room"]',
+    ) as HTMLSelectElement;
+    const standSelect = mediaPanel.querySelector(
+      '[data-media-filter="stand"]',
+    ) as HTMLSelectElement;
+    roomSelect.value = RoomId.WIXARIKA;
+    roomSelect.dispatchEvent(new Event("change"));
+    standSelect.value = StandId.ARTE;
+    standSelect.dispatchEvent(new Event("change"));
+
+    const itemCards = mediaPanel.querySelectorAll(
+      `.${ADMIN_UI_CLASSES.MEDIA_ITEM_CARD}`,
+    );
+    expect(itemCards).toHaveLength(2);
+    expect(itemCards[0]?.textContent).toContain("Crédito: María Cruz");
+
+    // Trigger reorder down on first item
+    const moveDownBtn = itemCards[0]!.querySelector(
+      '[data-action="move-down"]',
+    ) as HTMLButtonElement;
+    moveDownBtn.click();
+    await vi.waitFor(() => {
+      expect(mediaFetcher.patch).toHaveBeenCalledWith(
+        expect.any(String),
+        {
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          orderedIds: ["w-2", "w-1"],
+        },
+        expect.any(Object),
+      );
+    });
+
+    // Inline edit on item w-1
+    const editBtn = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [data-action="edit"]',
+    ) as HTMLButtonElement;
+    editBtn.click();
+    const editTitleInput = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [data-edit-field="title"]',
+    ) as HTMLInputElement;
+    editTitleInput.value = "Estambre Editado";
+    const saveEditBtn = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [data-action="save-edit"]',
+    ) as HTMLButtonElement;
+    saveEditBtn.click();
+    await vi.waitFor(() => {
+      expect(mediaFetcher.patch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ id: "w-1", title: "Estambre Editado" }),
+        expect.any(Object),
+      );
+    });
+
+    // Delete item w-2
+    const deleteBtn = mediaPanel.querySelector(
+      '[data-item-id="w-2"] [data-action="delete"]',
+    ) as HTMLButtonElement;
+    deleteBtn.click();
+    await vi.waitFor(() => {
+      expect(mediaFetcher.delete).toHaveBeenCalledWith(
+        expect.stringContaining("id=w-2"),
+        expect.any(Object),
+      );
+    });
+
+    // Upload new item via form
+    const fileInput = mediaPanel.querySelector(
+      '[data-upload-field="file"]',
+    ) as HTMLInputElement;
+    const titleInput = mediaPanel.querySelector(
+      '[data-upload-field="title"]',
+    ) as HTMLInputElement;
+    const creatorInput = mediaPanel.querySelector(
+      '[data-upload-field="creatorName"]',
+    ) as HTMLInputElement;
+    const descInput = mediaPanel.querySelector(
+      '[data-upload-field="description"]',
+    ) as HTMLInputElement;
+    const formatSelect = mediaPanel.querySelector(
+      '[data-upload-field="format"]',
+    ) as HTMLSelectElement;
+    const uploadForm = mediaPanel.querySelector("form") as HTMLFormElement;
+
+    const testFile = new File(["img"], "nuevo.jpg", { type: "image/jpeg" });
+    Object.defineProperty(fileInput, "files", {
+      value: [testFile],
+      configurable: true,
+    });
+    titleInput.value = "Nuevo Cuadro";
+    creatorInput.value = "Pedro";
+    descInput.value = "Alta resolución.";
+    formatSelect.value = "SBS";
+    uploadForm.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(mediaFetcher.putBinary).toHaveBeenCalledTimes(1);
+    });
+
+    // Switch back to telemetry tab cleanly
+    telemetryTab.click();
+    expect(
+      telemetryPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(false);
+    expect(
+      mediaPanel.classList.contains(ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN),
+    ).toBe(true);
+    expect(dashboardStore.isPolling()).toBe(true);
+
+    dashboardStore.stopPolling();
+    dashboardView.unmount();
   });
 });

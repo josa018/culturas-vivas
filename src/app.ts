@@ -15,6 +15,7 @@ import {
 import type { ScreenView } from "./screens/index";
 import { syncCulturalAssetsToCSS } from "./screens/constants";
 import { AccessModeTracker } from "./session/access-mode-tracker";
+import { getSharedMediaCatalogClient } from "./experience/media-catalog-client";
 
 export class AppRouter {
   private readonly rootContainer: HTMLElement;
@@ -71,11 +72,18 @@ export class AppRouter {
       }
     };
 
+    const mediaCatalogClient = getSharedMediaCatalogClient();
     const views: ScreenView[] = [
-      new SplashScreenView(dispatch),
+      new SplashScreenView(dispatch, undefined, mediaCatalogClient),
       new WelcomeScreenView(dispatch),
       new TutorialScreenView(dispatch),
-      new ExperienceScreenView(dispatch),
+      new ExperienceScreenView(
+        dispatch,
+        undefined,
+        undefined,
+        undefined,
+        mediaCatalogClient,
+      ),
       new ExitModalScreenView(dispatch),
       new SurveyScreenView(dispatch),
     ];

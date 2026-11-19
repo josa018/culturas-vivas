@@ -71,7 +71,11 @@ function readRawBody(req: IncomingMessage): Promise<string | undefined> {
   });
 }
 
-function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+function sendJson(
+  res: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+): void {
   if (res.headersSent) {
     return;
   }
@@ -125,10 +129,16 @@ function localApiServerlessPlugin(): Plugin {
           await mod.default(
             {
               method: req.method,
+              url: rawUrl,
               body,
               headers: req.headers,
             },
             {
+              setHeader: (name: string, value: string) => {
+                if (!res.headersSent) {
+                  res.setHeader(name, value);
+                }
+              },
               status: (statusCode: number) => ({
                 json: (payload: unknown) => {
                   sendJson(res, statusCode, payload);

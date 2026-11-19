@@ -122,7 +122,8 @@ export const EXHIBIT_DICTIONARY = {
   INSPECT_BUTTON_LABEL: "Inspeccionar",
   CLOSE_ICON: "✕",
   CREATOR_PREFIX: "Crédito: ",
-  STAND_PLACEHOLDER_DESC: "Espacio reservado para colección cultural interactiva.",
+  STAND_PLACEHOLDER_DESC:
+    "Espacio reservado para colección cultural interactiva.",
   MODEL_3D_TITLE: "Modelo 3D Interactivo",
   MODEL_3D_DESC:
     "Objeto tridimensional con soporte para rotacion axial automatica o manual. Ideal para esculturas, vasijas e instrumentos.",
@@ -141,6 +142,11 @@ export const EXHIBIT_DICTIONARY = {
 } as const;
 
 export const SHARED_VIDEO_ELEMENT_ID = "cv-shared-stand-video";
+
+export const MEDIA_CLIENT_CONSTANTS = {
+  CATALOG_ENDPOINT: "/api/media",
+  FETCH_TIMEOUT_MS: 3000,
+} as const;
 
 export const STAND_DIMENSIONS = {
   MAX_MEDIA_WIDTH_M: 1.5,

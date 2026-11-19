@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { ExhibitMediaType } from "../../src/experience/constants";
+import type { RoomMediaProvider } from "../../src/experience/media-types";
 import {
   ScenePreloadManager,
   getCriticalRoomAssets,
   type PreloadProgress,
 } from "../../src/experience/preload-manager";
+import { RoomId, StandId } from "../../src/shared/room-catalog";
 
 class MockImage {
   public static behavior: "load" | "decode-reject" | "error" | "hang" = "load";
@@ -232,5 +235,63 @@ describe("ScenePreloadManager", () => {
     const assets = getCriticalRoomAssets();
     expect(assets).toEqual(["/scenes/lobby.webp"]);
     expect(assets).toHaveLength(1);
+  });
+
+  it("includes unique Lobby stand cover images and video posters while excluding cultural room assets", () => {
+    const provider: RoomMediaProvider = {
+      getStandItems: (roomId, standId) => {
+        if (roomId === RoomId.LOBBY && standId === StandId.BIENVENIDA) {
+          return [
+            {
+              id: "lobby-1",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Bienvenida",
+              creatorName: "Museo",
+              description: "Portada",
+              mediaUrl: "https://pub-demo.r2.dev/rooms/lobby/bienvenida/cover.webp",
+              sortOrder: 0,
+            },
+          ];
+        }
+        if (roomId === RoomId.LOBBY && standId === StandId.NAYARIT) {
+          return [
+            {
+              id: "lobby-2",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.VIDEO_2D,
+              title: "Intro Video",
+              creatorName: "",
+              description: "Video",
+              mediaUrl: "https://pub-demo.r2.dev/rooms/lobby/nayarit/intro.mp4",
+              posterUrl: "https://pub-demo.r2.dev/rooms/lobby/nayarit/poster.webp",
+              sortOrder: 0,
+            },
+          ];
+        }
+        return [
+          {
+            id: "wix-1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_2D,
+            title: "Wixarika Arte",
+            creatorName: "",
+            description: "Excluded",
+            mediaUrl: "https://pub-demo.r2.dev/rooms/wixarika/arte/excluded.webp",
+            sortOrder: 0,
+          },
+        ];
+      },
+    };
+
+    const assets = getCriticalRoomAssets(provider);
+    expect(assets).toEqual([
+      "/scenes/lobby.webp",
+      "https://pub-demo.r2.dev/rooms/lobby/bienvenida/cover.webp",
+      "https://pub-demo.r2.dev/rooms/lobby/nayarit/poster.webp",
+    ]);
   });
 });

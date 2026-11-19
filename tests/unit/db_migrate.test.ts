@@ -51,11 +51,12 @@ describe("scripts/db-migrate.mjs", () => {
       log: (msg: string) => firstLogs.push(msg),
     });
 
-    expect(first.appliedCount).toBeGreaterThanOrEqual(6);
+    expect(first.appliedCount).toBeGreaterThanOrEqual(7);
     expect(first.skippedCount).toBe(0);
     expect(first.tables).toContain("_migrations");
     expect(first.tables).toContain("visitor_sessions");
     expect(first.tables).toContain("surveys");
+    expect(first.tables).toContain("room_media_items");
 
     const secondLogs: string[] = [];
     const second = await runMigrations({

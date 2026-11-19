@@ -1,5 +1,6 @@
 import { AdminAuthStore } from "./admin-auth-store";
 import { AdminDashboardStore } from "./admin-dashboard-store";
+import { AdminMediaStore } from "./media-store";
 import { AdminLoginModalView } from "./views/admin-login-modal";
 import { AdminDashboardView } from "./views/admin-dashboard-view";
 
@@ -7,6 +8,7 @@ export class AdminController {
   private readonly rootContainer: HTMLElement;
   private readonly authStore: AdminAuthStore;
   private readonly dashboardStore: AdminDashboardStore;
+  private readonly mediaStore: AdminMediaStore;
   private loginModal: AdminLoginModalView | null = null;
   private dashboardView: AdminDashboardView | null = null;
   private unsubscribeAuth: (() => void) | null = null;
@@ -15,12 +17,19 @@ export class AdminController {
     rootContainer: HTMLElement,
     authStore: AdminAuthStore = new AdminAuthStore(),
     dashboardStore?: AdminDashboardStore,
+    mediaStore?: AdminMediaStore,
   ) {
     this.rootContainer = rootContainer;
     this.authStore = authStore;
     this.dashboardStore =
       dashboardStore ??
       new AdminDashboardStore({
+        getToken: () => this.authStore.getState().token,
+        onUnauthorized: () => this.authStore.logout(),
+      });
+    this.mediaStore =
+      mediaStore ??
+      new AdminMediaStore({
         getToken: () => this.authStore.getState().token,
         onUnauthorized: () => this.authStore.logout(),
       });
@@ -58,7 +67,9 @@ export class AdminController {
     if (typeof document === "undefined") {
       return;
     }
-    const scene = document.querySelector("a-scene") as (HTMLElement & { pause?: () => void }) | null;
+    const scene = document.querySelector("a-scene") as
+      | (HTMLElement & { pause?: () => void })
+      | null;
     if (scene) {
       scene.style.display = "none";
       scene.setAttribute("style", "display: none !important;");
@@ -72,7 +83,9 @@ export class AdminController {
     if (typeof document === "undefined") {
       return;
     }
-    const scene = document.querySelector("a-scene") as (HTMLElement & { play?: () => void }) | null;
+    const scene = document.querySelector("a-scene") as
+      | (HTMLElement & { play?: () => void })
+      | null;
     if (scene) {
       scene.style.display = "";
       if (typeof scene.removeAttribute === "function") {
@@ -124,6 +137,7 @@ export class AdminController {
         this.dashboardView = new AdminDashboardView({
           authStore: this.authStore,
           dashboardStore: this.dashboardStore,
+          mediaStore: this.mediaStore,
           onLogout: () => {
             this.authStore.logout();
           },
@@ -134,7 +148,7 @@ export class AdminController {
         this.dashboardView.mount(this.rootContainer);
       }
       this.dashboardView.show();
-     this.dashboardStore.startPolling();
+      this.dashboardStore.startPolling();
     } else {
       this.dashboardStore.stopPolling();
       if (this.dashboardView) {

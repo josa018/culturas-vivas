@@ -4,9 +4,39 @@
  */
 
 import { DEFAULT_ROOM_ID, ROOM_CATALOG } from "../shared/room-catalog";
+import {
+  emptyRoomMediaProvider,
+  isVideoMediaType,
+  type RoomMediaProvider,
+} from "./media-types";
 
-export function getCriticalRoomAssets(): string[] {
-  return [ROOM_CATALOG[DEFAULT_ROOM_ID].skyboxUrl];
+/**
+ * Resolves only the active Lobby skybox and Lobby cover/poster assets needed for Splash preload.
+ */
+export function getCriticalRoomAssets(
+  mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
+): string[] {
+  const lobbyEntry = ROOM_CATALOG[DEFAULT_ROOM_ID];
+  const uniqueAssets = new Set<string>([lobbyEntry.skyboxUrl]);
+
+  for (const stand of lobbyEntry.stands) {
+    const items = mediaProvider.getStandItems(DEFAULT_ROOM_ID, stand.standId);
+    const coverItem = items[0];
+    if (!coverItem) {
+      continue;
+    }
+    const coverUrl =
+      coverItem.posterUrl && coverItem.posterUrl.trim().length > 0
+        ? coverItem.posterUrl.trim()
+        : !isVideoMediaType(coverItem.mediaType)
+          ? coverItem.mediaUrl.trim()
+          : "";
+    if (coverUrl) {
+      uniqueAssets.add(coverUrl);
+    }
+  }
+
+  return Array.from(uniqueAssets);
 }
 
 export const PRELOAD_CONSTANTS = {

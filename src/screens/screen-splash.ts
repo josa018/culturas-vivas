@@ -12,6 +12,10 @@ import {
   ScenePreloadManager,
   getCriticalRoomAssets,
 } from "../experience/preload-manager";
+import {
+  getSharedMediaCatalogClient,
+  type MediaCatalogClient,
+} from "../experience/media-catalog-client";
 import { getSharedVideoController } from "../experience/shared-video-controller";
 
 export class SplashScreenView implements ScreenView {
@@ -24,12 +28,16 @@ export class SplashScreenView implements ScreenView {
   private isReady = false;
   private readonly dispatch: NavigationDispatcher;
   private readonly preloadManager: ScenePreloadManager;
+  private readonly mediaCatalogClient: MediaCatalogClient;
 
   constructor(
     dispatch: NavigationDispatcher,
     preloadManager?: ScenePreloadManager,
+    mediaCatalogClient?: MediaCatalogClient,
   ) {
     this.dispatch = dispatch;
+    this.mediaCatalogClient =
+      mediaCatalogClient ?? getSharedMediaCatalogClient();
     this.preloadManager =
       preloadManager ??
       new ScenePreloadManager({
@@ -230,7 +238,8 @@ export class SplashScreenView implements ScreenView {
         ? (document.querySelector("a-scene") as HTMLElement | null)
         : null;
 
-    const roomAssets = getCriticalRoomAssets();
+    await this.mediaCatalogClient.load();
+    const roomAssets = getCriticalRoomAssets(this.mediaCatalogClient);
     await this.preloadManager.preloadAll(roomAssets);
 
     if (sceneEl) {
