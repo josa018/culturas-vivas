@@ -76,6 +76,8 @@ export class ExhibitInspectionController {
     }
     if (this.activeExhibitId && this.activeExhibitId !== exhibitId) {
       this.previousExhibitId = this.activeExhibitId;
+    } else {
+      this.previousExhibitId = null;
     }
     this.activeExhibitId = exhibitId;
     this.state = InspectionState.FOCUSING;
@@ -113,6 +115,7 @@ export class ExhibitInspectionController {
       return false;
     }
     this.activeExhibitId = null;
+    this.previousExhibitId = null;
     this.state = InspectionState.IDLE;
     this.notifyListeners();
     return true;
@@ -131,6 +134,7 @@ export class ExhibitInspectionController {
 
   public setExhibits(exhibits: readonly ExhibitItemConfig[]): void {
     this.abortActiveInspection();
+    this.previousExhibitId = null;
     this.exhibits.clear();
     for (const e of exhibits) {
       this.exhibits.set(e.id, e);

@@ -51,29 +51,68 @@ export const UI_CLASSES = {
   RATING_GROUP: "cv-rating-group",
   RATING_BUTTON: "cv-rating-btn",
   RATING_ACTIVE: "cv-rating-btn--active",
+  SPLASH_SHELL: "cv-splash-shell",
+  SPLASH_HERO: "cv-splash-hero",
+  SPLASH_HEADER_GROUP: "cv-splash-header-group",
+  SPLASH_ACTION_SLOT: "cv-splash-action-slot",
+  SPLASH_FOOTER: "cv-splash-footer",
+  SPLASH_PARTNERS: "cv-splash-partners",
+  SPLASH_PARTNER_LOGO: "cv-splash-partner-logo",
+  SPLASH_PARTNER_EMBLEM: "cv-splash-partner-logo--emblem",
+  SPLASH_CREDITS: "cv-splash-credits",
+  SPLASH_CREDITS_LABEL: "cv-splash-credits-label",
+  SPLASH_CREDITS_LIST: "cv-splash-credits-list",
+  SPLASH_CREDITS_ITEM: "cv-splash-credits-item",
 } as const;
 
-export const MAIN_SCREEN_LOGOS = [
+export type PartnerLogoVariant = "wide" | "horizontal" | "emblem";
+
+export interface PartnerLogoAsset {
+  readonly id: string;
+  readonly src: string;
+  readonly alt: string;
+  readonly variant: PartnerLogoVariant;
+}
+
+export const PARTNER_LOGOS: readonly PartnerLogoAsset[] = [
   {
-    src: "/assets/logos/imagen-jes.png",
-    alt: "Logo de la iniciativa",
+    id: "cecan-nayarit",
+    src: "/assets/partners/cecan-nayarit-horizontal-white.webp",
+    alt: "Consejo Estatal para la Cultura y las Artes de Nayarit",
+    variant: "wide",
   },
   {
-    src: "/assets/logos/logo-arguello-03.png",
-    alt: "Logo de José Alfredo Arguello",
+    id: "solon-arguello",
+    src: "/assets/partners/solon-arguello-horizontal-white.webp",
+    alt: "Biblioteca Pública Central Estatal Solón Argüello",
+    variant: "horizontal",
   },
   {
-    src: "/assets/logos/cecan-convivencia-horizontal.png",
-    alt: "Logo de Nayarit CECAN Convivencia",
+    id: "ittepic",
+    src: "/assets/partners/ittepic-emblem.webp",
+    alt: "Instituto Tecnológico de Tepic",
+    variant: "emblem",
   },
+] as const;
+
+export const SPLASH_TIMING = {
+  SCENE_LOADED_TIMEOUT_MS: 3000,
+  POST_LOAD_REVEAL_DELAY_MS: 1400,
+} as const;
+
+export const SPLASH_DEVELOPERS: readonly string[] = [
+  "José Alfredo Camarena Martínez",
+  "Rodolfo Humberto Covarrubias García",
+  "Saúl Miguel González Ayala",
+  "Nelly Esmeralda González Nonato",
+  "Josadet Pérez Guerra",
 ] as const;
 
 export const UI_TEXT = {
   SPLASH_TITLE: "Culturas Vivas",
   SPLASH_TAGLINE: "El latido de nuestras raíces",
   SPLASH_LOADING: "Cargando entorno interactivo...",
-  SPLASH_DEVELOPERS:
-    "Desarrolladores:\nCamarena Martínez José Alfredo\nCovarrubias García Rodolfo Humberto\nGonzález Ayala Saúl Miguel\nGonzález Nonato Nelly Esmeralda\nPérez Guerra Josadet",
+  SPLASH_CREDITS_LABEL: "Desarrolladores",
   SPLASH_BTN_ENTER: "Entrar",
 
   WELCOME_HERO: "¡Bienvenido!",
@@ -92,6 +131,7 @@ export const UI_TEXT = {
   TUTORIAL_STEP_3: "Cierra la bandeja y colocate el visor.",
   TUTORIAL_BTN_START: "Comenzar",
 
+  EXPERIENCE_RETURN_LOBBY: "Volver al Lobby",
   EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",

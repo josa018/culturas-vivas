@@ -15,36 +15,73 @@ export interface AdminNetworkFetcher {
     body?: unknown,
     headers?: Record<string, string>,
   ): Promise<T>;
+  patch?<T = unknown>(
+    url: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T>;
+  delete?<T = unknown>(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<T>;
+  putBinary?(
+    url: string,
+    body: Blob,
+    headers?: Record<string, string>,
+  ): Promise<void>;
+}
+
+export interface AdminMediaFetcher extends AdminNetworkFetcher {
+  patch<T = unknown>(
+    url: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T>;
+  delete<T = unknown>(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<T>;
+  putBinary(
+    url: string,
+    body: Blob,
+    headers?: Record<string, string>,
+  ): Promise<void>;
+}
+
+async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new AdminHttpError(
+      response.status,
+      `HTTP ${response.status} from ${url}`,
+    );
+  }
+  return (await response.json()) as T;
 }
 
 /**
- * Default fetch-backed adapter for administrative JSON endpoints.
+ * Default fetch-backed adapter for administrative JSON and presigned binary endpoints.
  */
-export function createDefaultAdminFetcher(): AdminNetworkFetcher {
+export function createDefaultAdminFetcher(): AdminMediaFetcher {
   return {
-    get: async <T = unknown>(
+    get: <T = unknown>(
       url: string,
       headers: Record<string, string> = {},
-    ): Promise<T> => {
-      const response = await fetch(url, {
+    ): Promise<T> =>
+      requestJson<T>(url, {
         method: "GET",
         headers: { Accept: "application/json", ...headers },
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new AdminHttpError(
-          response.status,
-          `HTTP ${response.status} from ${url}`,
-        );
-      }
-      return (await response.json()) as T;
-    },
-    post: async <T = unknown>(
+      }),
+
+    post: <T = unknown>(
       url: string,
       body?: unknown,
       headers: Record<string, string> = {},
-    ): Promise<T> => {
-      const response = await fetch(url, {
+    ): Promise<T> =>
+      requestJson<T>(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -52,15 +89,48 @@ export function createDefaultAdminFetcher(): AdminNetworkFetcher {
           ...headers,
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        cache: "no-store",
+      }),
+
+    patch: <T = unknown>(
+      url: string,
+      body?: unknown,
+      headers: Record<string, string> = {},
+    ): Promise<T> =>
+      requestJson<T>(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...headers,
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      }),
+
+    delete: <T = unknown>(
+      url: string,
+      headers: Record<string, string> = {},
+    ): Promise<T> =>
+      requestJson<T>(url, {
+        method: "DELETE",
+        headers: { Accept: "application/json", ...headers },
+      }),
+
+    putBinary: async (
+      url: string,
+      body: Blob,
+      headers: Record<string, string> = {},
+    ): Promise<void> => {
+      const response = await fetch(url, {
+        method: "PUT",
+        headers,
+        body,
       });
       if (!response.ok) {
         throw new AdminHttpError(
           response.status,
-          `HTTP ${response.status} from ${url}`,
+          `Binary PUT failed with HTTP ${response.status}`,
         );
       }
-      return (await response.json()) as T;
     },
   };
 }

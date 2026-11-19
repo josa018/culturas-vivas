@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NavigationAction, ScreenId } from "../../src/navigation/index";
 import type { DispatchPayload } from "../../src/navigation/index";
 import {
@@ -11,10 +11,39 @@ import {
   ExitModalScreenView,
   SurveyScreenView,
   UI_CLASSES,
+  UI_TEXT,
+  PARTNER_LOGOS,
+  SPLASH_DEVELOPERS,
+  SPLASH_TIMING,
 } from "../../src/screens/index";
 import { SURVEY_CONSTANTS } from "../../src/survey/constants";
 import { SurveySubmissionService } from "../../src/survey/survey-submission-service";
 import { SESSION_CONSTANTS } from "../../src/session/constants";
+import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
+import { RoomId } from "../../src/experience/types";
+import { setSharedInspectionController } from "../../src/experience/components/inspectable";
+
+type MockSceneElement = HTMLElement & {
+  resize?: () => void;
+  enterVR?: () => Promise<void>;
+  exitVR?: () => Promise<void>;
+  is?: (state: string) => boolean;
+  removeState?: (state: string) => void;
+  play?: () => void;
+  pause?: () => void;
+  renderer?: { xr: { enabled: boolean } };
+};
+
+function createMockScene(): MockSceneElement {
+  const scene = document.createElement("a-scene") as MockSceneElement;
+  scene.resize = vi.fn();
+  scene.enterVR = vi.fn(async () => {});
+  scene.exitVR = vi.fn(async () => {});
+  scene.is = (state: string) => state === "vr-mode";
+  scene.play = vi.fn();
+  scene.pause = vi.fn();
+  return scene;
+}
 
 describe("Screen Views & Interactions", () => {
   let root: HTMLElement;
@@ -27,6 +56,7 @@ describe("Screen Views & Interactions", () => {
   };
 
   beforeEach(() => {
+    vi.useFakeTimers();
     dispatched = [];
     root = document.createElement("div");
     root.id = "app";
@@ -35,159 +65,181 @@ describe("Screen Views & Interactions", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+    const resetScene = document.createElement("a-scene");
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.LOBBY);
+    setSharedInspectionController(null);
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
   });
 
-  it("mounts Splash screen, updates readiness and dispatches FINISH_LOADING on enter", () => {
+  it("PARTNER_LOGOS and SPLASH_DEVELOPERS expose optimized WebP assets and ordered credits without legacy logos", () => {
+    expect(PARTNER_LOGOS).toHaveLength(3);
+    expect(PARTNER_LOGOS.map((item) => ({ src: item.src, variant: item.variant }))).toEqual([
+      {
+        src: "/assets/partners/cecan-nayarit-horizontal-white.webp",
+        variant: "wide",
+      },
+      {
+        src: "/assets/partners/solon-arguello-horizontal-white.webp",
+        variant: "horizontal",
+      },
+      {
+        src: "/assets/partners/ittepic-emblem.webp",
+        variant: "emblem",
+      },
+    ]);
+
+    for (const partner of PARTNER_LOGOS) {
+      expect(partner.alt.length).toBeGreaterThan(0);
+      const diskPath = path.resolve(process.cwd(), "public", partner.src.replace(/^\//, ""));
+      expect(fs.existsSync(diskPath)).toBe(true);
+    }
+
+    expect(fs.existsSync(path.resolve(process.cwd(), "public/assets/logos"))).toBe(false);
+    expect(UI_TEXT.SPLASH_CREDITS_LABEL).toBe("Desarrolladores");
+    expect(SPLASH_DEVELOPERS).toEqual([
+      "José Alfredo Camarena Martínez",
+      "Rodolfo Humberto Covarrubias García",
+      "Saúl Miguel González Ayala",
+      "Nelly Esmeralda González Nonato",
+      "Josadet Pérez Guerra",
+    ]);
+    expect(SPLASH_TIMING.SCENE_LOADED_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(SPLASH_TIMING.POST_LOAD_REVEAL_DELAY_MS).toBeGreaterThan(0);
+  });
+
+  it("SplashScreenView renders all 3 partner logos simultaneously and keeps 5 developer credits visible before and after setReady", () => {
+    const splash = new SplashScreenView(dispatch);
+    splash.mount(root);
+
+    const splashEl = splash.getElement()!;
+    expect(splashEl.querySelector(".cv-splash-brand-carousel")).toBeNull();
+
+    const footer = splashEl.querySelector(`footer.${UI_CLASSES.SPLASH_FOOTER}`) as HTMLElement;
+    expect(footer).toBeTruthy();
+
+    const partnersEl = footer.querySelector(`.${UI_CLASSES.SPLASH_PARTNERS}`) as HTMLElement;
+    expect(partnersEl).toBeTruthy();
+    expect(partnersEl.getAttribute("aria-live")).toBeNull();
+
+    const partnerImgs = Array.from(partnersEl.querySelectorAll("img"));
+    expect(partnerImgs).toHaveLength(3);
+    expect(partnerImgs.map((img) => img.getAttribute("src"))).toEqual(
+      PARTNER_LOGOS.map((p) => p.src),
+    );
+    expect(partnerImgs[0].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(false);
+    expect(partnerImgs[1].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(false);
+    expect(partnerImgs[2].classList.contains(UI_CLASSES.SPLASH_PARTNER_EMBLEM)).toBe(true);
+
+    const actionSlot = splashEl.querySelector(`.${UI_CLASSES.SPLASH_ACTION_SLOT}`) as HTMLElement;
+    expect(actionSlot).toBeTruthy();
+    expect(actionSlot.querySelector('[data-action="enter"]')).toBeTruthy();
+
+    const creditsLabel = footer.querySelector(`.${UI_CLASSES.SPLASH_CREDITS_LABEL}`) as HTMLElement;
+    expect(creditsLabel.textContent).toBe(UI_TEXT.SPLASH_CREDITS_LABEL);
+
+    const creditItems = Array.from(
+      footer.querySelectorAll(`.${UI_CLASSES.SPLASH_CREDITS_LIST} > .${UI_CLASSES.SPLASH_CREDITS_ITEM}`),
+    ) as HTMLElement[];
+    expect(creditItems.map((li) => li.textContent)).toEqual([...SPLASH_DEVELOPERS]);
+
+    splash.setReady();
+
+    expect(footer.style.display).not.toBe("none");
+    for (const item of creditItems) {
+      expect(item.style.display).not.toBe("none");
+    }
+    for (const img of partnerImgs) {
+      expect(img.style.display).not.toBe("none");
+    }
+
+    splash.unmount();
+  });
+
+  it("SplashScreenView ignores clicks until ready, then dispatches FINISH_LOADING", () => {
     const splash = new SplashScreenView(dispatch);
     expect(splash.id).toBe(ScreenId.SPLASH);
     splash.mount(root);
-    expect(splash.getElement()).toBeTruthy();
     splash.show();
 
     const splashEl = splash.getElement()!;
-    const enterBtn = splashEl.querySelector(
-      '[data-action="enter"]',
-    ) as HTMLElement;
-    expect(enterBtn).toBeTruthy();
+    const enterBtn = splashEl.querySelector('[data-action="enter"]') as HTMLElement;
     expect(enterBtn.style.display).toBe("none");
+
+    // Clicking splash before ready does not dispatch
+    splashEl.click();
+    expect(dispatched).toHaveLength(0);
 
     splash.setReady();
     expect(enterBtn.style.display).toBe("inline-block");
 
+    // Clicking splash background, partner logos, or credits footer after ready must NOT navigate
+    splashEl.click();
+    (splashEl.querySelector(`.${UI_CLASSES.SPLASH_FOOTER}`) as HTMLElement).click();
+    (splashEl.querySelector(`.${UI_CLASSES.SPLASH_PARTNERS} img`) as HTMLElement).click();
+    expect(dispatched).toHaveLength(0);
+
     enterBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.FINISH_LOADING,
-    );
+    expect(dispatched).toEqual([{ action: NavigationAction.FINISH_LOADING, payload: undefined }]);
+
+    splash.unmount();
+    expect(splash.getElement()).toBeNull();
   });
 
-  it("mounts Welcome screen and dispatches SELECT_VR & SELECT_2D", () => {
+  it("WelcomeScreenView dispatches SELECT_VR and SELECT_2D", () => {
     const welcome = new WelcomeScreenView(dispatch);
     expect(welcome.id).toBe(ScreenId.WELCOME);
     welcome.mount(root);
     const el = welcome.getElement()!;
 
-    const vrBtn = el.querySelector('[data-action="vr"]') as HTMLElement;
-    expect(vrBtn).toBeTruthy();
-    vrBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SELECT_VR,
-    );
+    (el.querySelector('[data-action="vr"]') as HTMLElement).click();
+    (el.querySelector('[data-action="2d"]') as HTMLElement).click();
 
-    const touchBtn = el.querySelector('[data-action="2d"]') as HTMLElement;
-    expect(touchBtn).toBeTruthy();
-    touchBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
+    expect(dispatched.map((d) => d.action)).toEqual([
+      NavigationAction.SELECT_VR,
       NavigationAction.SELECT_2D,
-    );
+    ]);
   });
 
-  it("mounts Tutorial screen and dispatches CONFIRM_INSERTION", () => {
+  it("TutorialScreenView dispatches CONFIRM_INSERTION", () => {
     const tutorial = new TutorialScreenView(dispatch);
     expect(tutorial.id).toBe(ScreenId.TUTORIAL);
     tutorial.mount(root);
-    const el = tutorial.getElement()!;
 
-    const startBtn = el.querySelector(
-      '[data-action="confirm-insertion"]',
-    ) as HTMLElement;
-    expect(startBtn).toBeTruthy();
-    startBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
+    (tutorial.getElement()!.querySelector('[data-action="confirm-insertion"]') as HTMLElement).click();
+    expect(dispatched.map((d) => d.action)).toEqual([
       NavigationAction.CONFIRM_INSERTION,
-    );
+    ]);
   });
 
-  it("manages Experience HUD, viewport synchronization, enterVR/exitVR, and 2D touch unlock", async () => {
-    const mockScene = document.createElement("a-scene") as HTMLElement & {
-      resize?: () => void;
-      enterVR?: () => Promise<void>;
-      exitVR?: () => Promise<void>;
-      is?: (state: string) => boolean;
-      removeState?: (state: string) => void;
-      renderer?: { xr: { enabled: boolean } };
-    };
-
-    let resizeInvoked = false;
-    let enterVRCount = 0;
-    let exitVRCount = 0;
-
-    mockScene.resize = () => {
-      resizeInvoked = true;
-    };
-    mockScene.enterVR = async () => {
-      enterVRCount++;
-    };
-    mockScene.exitVR = async () => {
-      exitVRCount++;
-    };
-    mockScene.is = (state: string) => state === "vr-mode";
-
+  it("ExperienceScreenView enters VR on show() and exits VR on hide()", () => {
+    const mockScene = createMockScene();
     document.body.appendChild(mockScene);
 
     const experience = new ExperienceScreenView(dispatch, "vr");
-    expect(experience.id).toBe(ScreenId.EXPERIENCE_3D);
     experience.mount(root);
     experience.show();
 
-    expect(root.querySelector(".cv-badge")?.textContent).toBe(
-      "Sala de Arqueologia",
-    );
-    expect(resizeInvoked).toBe(false);
-    expect(enterVRCount).toBe(1);
+    expect(root.querySelector(".cv-badge")?.textContent).toBe("Vestíbulo Cultural");
+    expect(mockScene.enterVR).toHaveBeenCalledTimes(1);
+    expect(mockScene.resize).not.toHaveBeenCalled();
     expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(true);
 
     experience.hide();
-    expect(exitVRCount).toBe(1);
+    expect(mockScene.exitVR).toHaveBeenCalledTimes(1);
     expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(false);
+    experience.unmount();
+  });
 
-    // Test 2D mode
-    experience.setViewMode("2d");
-    experience.show();
-    await new Promise((r) => setTimeout(r, 10));
-    expect(resizeInvoked).toBe(true);
-    expect(exitVRCount).toBe(2);
+  it("ExperienceScreenView unlocks 2D touch look-controls and resizes viewport in 2D mode", () => {
+    const mockScene = createMockScene();
+    const removedStates: string[] = [];
+    mockScene.removeState = (s) => removedStates.push(s);
+    mockScene.renderer = { xr: { enabled: true } };
 
-    experience.hide();
-    expect(exitVRCount).toBe(3);
-
-    experience.show();
-    const el = experience.getElement()!;
-    const exitHudBtn = el.querySelector(
-      '[data-action="request-exit"]',
-    ) as HTMLElement;
-    expect(exitHudBtn).toBeTruthy();
-    exitHudBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.REQUEST_EXIT,
-    );
-
-    // Test native exit-vr event in VR mode
-    experience.setViewMode("vr");
-    experience.show();
-    const initialDispatchedCount = dispatched.length;
-    mockScene.dispatchEvent(new CustomEvent("exit-vr"));
-    expect(dispatched.length).toBe(initialDispatchedCount + 1);
-    expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.REQUEST_EXIT,
-    );
-
-    // Test retainBackground() decoupling
-    const enterVRCountBeforeRetain = enterVRCount;
-    experience.retainBackground();
-    expect(enterVRCount).toBe(enterVRCountBeforeRetain);
-    expect(mockScene.style.display).toBe("block");
-    const hudContainer = experience.getElement()!;
-    expect(hudContainer.classList.contains(UI_CLASSES.SCREEN_HIDDEN)).toBe(
-      true,
-    );
-
-    // Test 2D Touch Mode Camera Unlock & Viewport Sanitization after exiting VR
     const mockCamera = document.createElement("a-camera") as HTMLElement & {
-      object3D?: {
-        matrixAutoUpdate: boolean;
-        updateMatrix: () => void;
-      };
+      object3D?: { matrixAutoUpdate: boolean; updateMatrix: () => void };
       components?: Record<
         string,
         {
@@ -198,131 +250,114 @@ describe("Screen Views & Interactions", () => {
         }
       >;
     };
-
-    let cameraMatrixUpdated = false;
-    let lookControlsAddListenersCalled = false;
-
-    mockCamera.object3D = {
-      matrixAutoUpdate: false,
-      updateMatrix: () => {
-        cameraMatrixUpdated = true;
-      },
-    };
+    const updateMatrix = vi.fn();
+    const addEventListeners = vi.fn();
+    mockCamera.object3D = { matrixAutoUpdate: false, updateMatrix };
     mockCamera.components = {
       "look-controls": {
         touchStarted: true,
         mouseDown: true,
         data: { touchEnabled: false, enabled: false },
-        addEventListeners: () => {
-          lookControlsAddListenersCalled = true;
-        },
+        addEventListeners,
       },
     };
     mockScene.appendChild(mockCamera);
+    document.body.appendChild(mockScene);
 
-    const removedStates: string[] = [];
-    mockScene.removeState = (s: string) => {
-      removedStates.push(s);
-    };
-    mockScene.renderer = {
-      xr: { enabled: true },
-    };
-
-    // Transition back into 2D mode
-    experience.setViewMode("2d");
+    const experience = new ExperienceScreenView(dispatch, "2d");
+    experience.mount(root);
     experience.show();
 
-    const cameraObj3D = mockCamera.object3D!;
-    expect(cameraObj3D.matrixAutoUpdate).toBe(true);
-    expect(cameraMatrixUpdated).toBe(true);
-    expect(mockScene.renderer.xr.enabled).toBe(false);
-
-    const cameraControls = mockCamera.components!["look-controls"];
-    expect(cameraControls.touchStarted).toBe(false);
-    expect(cameraControls.mouseDown).toBe(false);
-    expect(cameraControls.data.touchEnabled).toBe(true);
-    expect(lookControlsAddListenersCalled).toBe(true);
-    expect(removedStates).toContain("vr-mode");
+    // Flush exitVR microtask & requestAnimationFrame
+    return vi.runAllTimersAsync().then(() => {
+      expect(mockScene.exitVR).toHaveBeenCalledTimes(1);
+      expect(mockScene.resize).toHaveBeenCalledTimes(1);
+      expect(mockCamera.object3D?.matrixAutoUpdate).toBe(true);
+      expect(updateMatrix).toHaveBeenCalled();
+      expect(mockScene.renderer?.xr?.enabled).toBe(false);
+      expect(mockCamera.components?.["look-controls"].touchStarted).toBe(false);
+      expect(mockCamera.components?.["look-controls"].mouseDown).toBe(false);
+      expect(mockCamera.components?.["look-controls"].data.touchEnabled).toBe(true);
+      expect(addEventListeners).toHaveBeenCalled();
+      expect(removedStates).toContain("vr-mode");
+      experience.unmount();
+    });
   });
 
-  it("mounts Exit Modal and dispatches RESUME_TOUR, SWITCH_TO_TOUCH, and CONFIRM_EXIT", () => {
+  it("ExperienceScreenView dispatches REQUEST_EXIT on HUD click or native VR exit-vr, and suppresses exit-vr during programmatic exit", async () => {
+    const mockScene = createMockScene();
+    let resolveExitVR: () => void = () => {};
+    mockScene.exitVR = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveExitVR = resolve;
+        }),
+    );
+    document.body.appendChild(mockScene);
+
+    const experience = new ExperienceScreenView(dispatch, "vr");
+    experience.mount(root);
+    experience.show();
+
+    (experience.getElement()!.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+    expect(dispatched.map((d) => d.action)).toEqual([NavigationAction.REQUEST_EXIT]);
+
+    mockScene.dispatchEvent(new CustomEvent("exit-vr"));
+    expect(dispatched.map((d) => d.action)).toEqual([
+      NavigationAction.REQUEST_EXIT,
+      NavigationAction.REQUEST_EXIT,
+    ]);
+
+    // Programmatic exit via retainBackground() ignores exit-vr while in flight
+    experience.retainBackground();
+    expect(mockScene.style.display).toBe("block");
+    expect(experience.getElement()!.classList.contains(UI_CLASSES.SCREEN_HIDDEN)).toBe(true);
+    mockScene.dispatchEvent(new CustomEvent("exit-vr"));
+    expect(dispatched).toHaveLength(2);
+
+    resolveExitVR();
+    await Promise.resolve();
+    experience.unmount();
+  });
+
+  it("ExperienceScreenView handles enterVR/exitVR promise rejections without throwing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const mockScene = createMockScene();
+    mockScene.enterVR = vi.fn().mockRejectedValue(new Error("WebXR blocked"));
+    mockScene.exitVR = vi.fn().mockRejectedValue(new Error("Exit failed"));
+    document.body.appendChild(mockScene);
+
+    const experience = new ExperienceScreenView(dispatch, "vr");
+    experience.mount(root);
+    experience.show();
+    experience.hide();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    experience.unmount();
+  });
+
+  it("ExitModalScreenView dispatches RESUME_TOUR, SWITCH_TO_TOUCH, and CONFIRM_EXIT", () => {
     const modal = new ExitModalScreenView(dispatch);
     expect(modal.id).toBe(ScreenId.EXIT_MODAL);
     modal.mount(root);
     const el = modal.getElement()!;
 
-    const resumeBtn = el.querySelector(
-      '[data-action="resume-tour"]',
-    ) as HTMLElement;
-    expect(resumeBtn).toBeTruthy();
-    resumeBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
+    (el.querySelector('[data-action="resume-tour"]') as HTMLElement).click();
+    (el.querySelector('[data-action="switch-to-touch"]') as HTMLElement).click();
+    (el.querySelector('[data-action="confirm-exit"]') as HTMLElement).click();
+
+    expect(dispatched.map((d) => d.action)).toEqual([
       NavigationAction.RESUME_TOUR,
-    );
-
-    const switchTouchBtn = el.querySelector(
-      '[data-action="switch-to-touch"]',
-    ) as HTMLElement;
-    expect(switchTouchBtn).toBeTruthy();
-    switchTouchBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.SWITCH_TO_TOUCH,
-    );
-
-    const exitBtn = el.querySelector(
-      '[data-action="confirm-exit"]',
-    ) as HTMLElement;
-    expect(exitBtn).toBeTruthy();
-    exitBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
       NavigationAction.CONFIRM_EXIT,
-    );
+    ]);
   });
 
-  it("mounts Survey screen and dispatches COMPLETE_SURVEY and SKIP_SURVEY", () => {
-    const survey = new SurveyScreenView(dispatch);
-    expect(survey.id).toBe(ScreenId.SURVEY);
-    survey.mount(root);
-    const el = survey.getElement()!;
-
-    const ratingButtons = el.querySelectorAll("[data-rating]");
-    expect(ratingButtons.length).toBe(
-      SURVEY_CONSTANTS.RATING.MAX - SURVEY_CONSTANTS.RATING.MIN + 1,
-    );
-
-    const feedbackInput = el.querySelector(
-      "#cv-feedback-input",
-    ) as HTMLTextAreaElement;
-    expect(feedbackInput).toBeTruthy();
-    expect(feedbackInput.maxLength).toBe(SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH);
-
-    const submitBtn = el.querySelector(
-      '[data-action="submit-survey"]',
-    ) as HTMLElement;
-    expect(submitBtn).toBeTruthy();
-    submitBtn.click();
-    const lastDispatch = dispatched[dispatched.length - 1];
-    expect(lastDispatch.action).toBe(NavigationAction.COMPLETE_SURVEY);
-    expect(lastDispatch.payload?.surveyAnswers?.rating).toBe(
-      SURVEY_CONSTANTS.RATING.DEFAULT,
-    );
-
-    const skipBtn = el.querySelector(
-      '[data-action="skip-survey"]',
-    ) as HTMLElement;
-    expect(skipBtn).toBeTruthy();
-    skipBtn.click();
-    expect(dispatched[dispatched.length - 1].action).toBe(
-      NavigationAction.SKIP_SURVEY,
-    );
-  });
-
-  it("submits survey via composed SurveySubmissionService and guards duplicate clicks", async () => {
+  it("SurveyScreenView updates rating stars, submits via SurveySubmissionService, guards duplicate clicks, and supports skip", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
-    let resolvePost!: (value: unknown) => void;
-    const pendingPost = new Promise((resolve) => {
-      resolvePost = resolve;
-    });
+    let resolvePost: (value: unknown) => void = () => {};
 
     const storage = {
       getItem: (key: string) =>
@@ -335,56 +370,87 @@ describe("Screen Views & Interactions", () => {
     const fetcher = {
       post: async <T = unknown>(url: string, body?: unknown): Promise<T> => {
         calls.push({ url, body });
-        return (await pendingPost) as T;
+        return (await new Promise<unknown>((resolve) => {
+          resolvePost = resolve;
+        })) as T;
       },
     };
 
-    const service = new SurveySubmissionService(storage, fetcher);
-    const survey = new SurveyScreenView(dispatch, service);
+    const survey = new SurveyScreenView(
+      dispatch,
+      new SurveySubmissionService(storage, fetcher),
+    );
     survey.mount(root);
     survey.show();
 
     const el = survey.getElement()!;
-    const ratingBtn3 = el.querySelector('[data-rating="3"]') as HTMLButtonElement;
-    ratingBtn3.click();
+    const ratingButtons = el.querySelectorAll("[data-rating]");
+    expect(ratingButtons).toHaveLength(
+      SURVEY_CONSTANTS.RATING.MAX - SURVEY_CONSTANTS.RATING.MIN + 1,
+    );
 
-    const feedbackInput = el.querySelector(
-      "#cv-feedback-input",
-    ) as HTMLTextAreaElement;
+    const feedbackInput = el.querySelector("#cv-feedback-input") as HTMLTextAreaElement;
+    expect(feedbackInput.maxLength).toBe(SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH);
+
+    // Selecting rating 2 activates buttons 1-2 and deactivates 3-5
+    (el.querySelector('[data-rating="2"]') as HTMLButtonElement).click();
+    expect(ratingButtons[0].classList.contains(UI_CLASSES.RATING_ACTIVE)).toBe(true);
+    expect(ratingButtons[1].classList.contains(UI_CLASSES.RATING_ACTIVE)).toBe(true);
+    expect(ratingButtons[2].classList.contains(UI_CLASSES.RATING_ACTIVE)).toBe(false);
+
     feedbackInput.value = "  Muy buena experiencia  ";
 
-    const submitBtn = el.querySelector(
-      '[data-action="submit-survey"]',
-    ) as HTMLButtonElement;
-
+    const submitBtn = el.querySelector('[data-action="submit-survey"]') as HTMLButtonElement;
     submitBtn.click();
-    submitBtn.click(); // duplicate click ignored while in flight
+    submitBtn.click();
 
-    expect(dispatched.length).toBe(1);
-    expect(dispatched[0].action).toBe(NavigationAction.COMPLETE_SURVEY);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toEqual({
+      action: NavigationAction.COMPLETE_SURVEY,
+      payload: {
+        surveyAnswers: { rating: 2, feedback: "Muy buena experiencia" },
+      },
+    });
     expect(submitBtn.disabled).toBe(true);
     expect(calls).toEqual([
       {
         url: SURVEY_CONSTANTS.ENDPOINTS.SUBMIT,
         body: {
           sessionId: "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d",
-          rating: 3,
+          rating: 2,
           feedback: "Muy buena experiencia",
         },
       },
     ]);
 
     resolvePost({ ok: true });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(submitBtn.disabled).toBe(false);
+    await vi.waitFor(() => expect(submitBtn.disabled).toBe(false));
+
+    (el.querySelector('[data-action="skip-survey"]') as HTMLElement).click();
+    expect(dispatched[1].action).toBe(NavigationAction.SKIP_SURVEY);
   });
 
-  it("verifies index.html markup for stylesheet and FOUC prevention", () => {
+  it("src/style.css defines responsive splash layout classes, emblem contrast rule, and removes legacy brand carousel", () => {
+    const cssPath = path.resolve(process.cwd(), "src/style.css");
+    const styleCss = fs.readFileSync(cssPath, "utf8");
+
+    expect(styleCss).toContain(".cv-splash-shell");
+    expect(styleCss).toMatch(/\.cv-splash-shell\s*\{[^}]*min-height:\s*100%/);
+    expect(styleCss).toMatch(/\.cv-splash-hero\s*\{[^}]*margin-block:\s*auto/);
+    expect(styleCss).toMatch(/\.cv-splash-credits-list\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(styleCss).toContain(".cv-splash-action-slot");
+    expect(styleCss).toContain(".cv-splash-partners");
+    expect(styleCss).toContain(".cv-splash-partner-logo--emblem");
+    expect(styleCss).toContain("@media (min-width: 640px)");
+    expect(styleCss).toContain("@media (orientation: landscape) and (max-height: 520px)");
+    expect(styleCss).not.toContain(".cv-splash-brand-carousel");
+  });
+
+  it("index.html includes design stylesheet and hides inactive <a-scene> to prevent FOUC", () => {
     const htmlPath = path.resolve(process.cwd(), "index.html");
     const indexHtml = fs.readFileSync(htmlPath, "utf8");
 
     expect(indexHtml).toContain('<link rel="stylesheet" href="/src/style.css"');
-    expect(indexHtml).toContain("background-color: #111318");
     expect(indexHtml).toContain("a-scene:not(.cv-scene--active)");
     expect(indexHtml).toContain("opacity: 0 !important");
     expect(indexHtml).toContain("visibility: hidden !important");

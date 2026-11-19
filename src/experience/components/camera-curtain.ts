@@ -20,12 +20,100 @@ export interface CameraCurtainComponentInstance {
   data: CameraCurtainComponentData;
   opacity: number;
   isAnimating: boolean;
+  transitionEpoch?: number;
+  activeTimer?: ReturnType<typeof setTimeout> | null;
+  activeCompleteEvent?: string | null;
+  activeCompleteHandler?: (() => void) | null;
   init: () => void;
   fadeOut: (onComplete?: () => void) => void;
   fadeIn: (onComplete?: () => void) => void;
   setOpacity: (val: number) => void;
   getOpacity: () => number;
   remove: () => void;
+}
+
+function clearPendingCurtainTransition(
+  instance: CameraCurtainComponentInstance,
+): void {
+  if (instance.activeTimer !== null && instance.activeTimer !== undefined) {
+    clearTimeout(instance.activeTimer);
+    instance.activeTimer = null;
+  }
+  if (instance.activeCompleteEvent && instance.activeCompleteHandler) {
+    instance.el.removeEventListener?.(
+      instance.activeCompleteEvent,
+      instance.activeCompleteHandler,
+    );
+  }
+  instance.activeCompleteEvent = null;
+  instance.activeCompleteHandler = null;
+}
+
+function scheduleCurtainTransition(
+  instance: CameraCurtainComponentInstance,
+  options: {
+    removeAttr: string;
+    setAttr: string;
+    completeEvent: string;
+    targetOpacity: number;
+    hideAfterComplete: boolean;
+    onComplete?: () => void;
+  },
+): void {
+  clearPendingCurtainTransition(instance);
+  const epoch = (instance.transitionEpoch ?? 0) + 1;
+  instance.transitionEpoch = epoch;
+  instance.isAnimating = true;
+
+  const applyFinalState = () => {
+    if (typeof instance.setOpacity === "function") {
+      instance.setOpacity(options.targetOpacity);
+    } else {
+      instance.opacity = options.targetOpacity;
+    }
+    if (options.hideAfterComplete) {
+      instance.el.setAttribute("visible", "false");
+      if (instance.el.object3D) {
+        instance.el.object3D.visible = false;
+      }
+    }
+    instance.isAnimating = false;
+  };
+
+  const hasAFrame =
+    typeof globalThis !== "undefined" &&
+    Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+  if (!hasAFrame) {
+    applyFinalState();
+    options.onComplete?.();
+    return;
+  }
+
+  instance.el.removeAttribute(options.removeAttr);
+  instance.el.setAttribute(
+    options.setAttr,
+    `property: material.opacity; from: ${instance.opacity}; to: ${options.targetOpacity.toFixed(1)}; dur: ${instance.data.duration}; easing: ${instance.data.easing}`,
+  );
+
+  const settle = () => {
+    if (instance.transitionEpoch !== epoch) {
+      return;
+    }
+    clearPendingCurtainTransition(instance);
+    applyFinalState();
+    options.onComplete?.();
+  };
+
+  if (typeof instance.el.addEventListener === "function") {
+    instance.activeCompleteEvent = options.completeEvent;
+    instance.activeCompleteHandler = settle;
+    instance.el.addEventListener(options.completeEvent, settle, { once: true });
+  }
+  instance.activeTimer = setTimeout(
+    settle,
+    instance.data.duration + TRANSITION_TIMINGS.CURTAIN_FALLBACK_BUFFER_MS,
+  );
 }
 
 export function createCameraCurtainComponentDefinition() {
@@ -44,6 +132,10 @@ export function createCameraCurtainComponentDefinition() {
     init: function (this: CameraCurtainComponentInstance) {
       this.opacity = 0;
       this.isAnimating = false;
+      this.transitionEpoch = 0;
+      this.activeTimer = null;
+      this.activeCompleteEvent = null;
+      this.activeCompleteHandler = null;
       this.el.setAttribute("visible", "false");
 
       const applyRenderOrder = () => {
@@ -107,7 +199,6 @@ export function createCameraCurtainComponentDefinition() {
       this: CameraCurtainComponentInstance,
       onComplete?: () => void,
     ) {
-      this.isAnimating = true;
       this.el.setAttribute("visible", "true");
       if (this.el.object3D) {
         this.el.object3D.visible = true;
@@ -122,113 +213,33 @@ export function createCameraCurtainComponentDefinition() {
         }
       }
 
-      const hasAFrame =
-        typeof globalThis !== "undefined" &&
-        Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
-
-      if (!hasAFrame) {
-        // Headless execution path for unit tests
-        if (typeof this.setOpacity === "function") {
-          this.setOpacity(1);
-        } else {
-          this.opacity = 1;
-        }
-        this.isAnimating = false;
-        if (onComplete) {
-          onComplete();
-        }
-        return;
-      }
-
-      this.el.removeAttribute("animation__curtain_in");
-      this.el.setAttribute(
-        "animation__curtain_out",
-        `property: material.opacity; from: ${this.opacity}; to: 1.0; dur: ${this.data.duration}; easing: ${this.data.easing}`,
-      );
-
-      const completeHandler = () => {
-        this.setOpacity(1);
-        this.isAnimating = false;
-        this.el.removeEventListener(
-          "animationcomplete__curtain_out",
-          completeHandler,
-        );
-        if (onComplete) {
-          onComplete();
-        }
-      };
-
-      if (typeof this.el.addEventListener === "function") {
-        this.el.addEventListener(
-          "animationcomplete__curtain_out",
-          completeHandler,
-          { once: true },
-        );
-      }
-      setTimeout(completeHandler, this.data.duration + 50);
+      scheduleCurtainTransition(this, {
+        removeAttr: "animation__curtain_in",
+        setAttr: "animation__curtain_out",
+        completeEvent: "animationcomplete__curtain_out",
+        targetOpacity: 1.0,
+        hideAfterComplete: false,
+        onComplete,
+      });
     },
 
     fadeIn: function (
       this: CameraCurtainComponentInstance,
       onComplete?: () => void,
     ) {
-      this.isAnimating = true;
-
-      const hasAFrame =
-        typeof globalThis !== "undefined" &&
-        Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
-
-      if (!hasAFrame) {
-        // Headless execution path for unit tests
-        if (typeof this.setOpacity === "function") {
-          this.setOpacity(0);
-        } else {
-          this.opacity = 0;
-        }
-        this.el.setAttribute("visible", "false");
-        if (this.el.object3D) {
-          this.el.object3D.visible = false;
-        }
-        this.isAnimating = false;
-        if (onComplete) {
-          onComplete();
-        }
-        return;
-      }
-
-      this.el.removeAttribute("animation__curtain_out");
-      this.el.setAttribute(
-        "animation__curtain_in",
-        `property: material.opacity; from: ${this.opacity}; to: 0.0; dur: ${this.data.duration}; easing: ${this.data.easing}`,
-      );
-
-      const completeHandler = () => {
-        this.setOpacity(0);
-        this.el.setAttribute("visible", "false");
-        if (this.el.object3D) {
-          this.el.object3D.visible = false;
-        }
-        this.isAnimating = false;
-        this.el.removeEventListener(
-          "animationcomplete__curtain_in",
-          completeHandler,
-        );
-        if (onComplete) {
-          onComplete();
-        }
-      };
-
-      if (typeof this.el.addEventListener === "function") {
-        this.el.addEventListener(
-          "animationcomplete__curtain_in",
-          completeHandler,
-          { once: true },
-        );
-      }
-      setTimeout(completeHandler, this.data.duration + 50);
+      scheduleCurtainTransition(this, {
+        removeAttr: "animation__curtain_out",
+        setAttr: "animation__curtain_in",
+        completeEvent: "animationcomplete__curtain_in",
+        targetOpacity: 0.0,
+        hideAfterComplete: true,
+        onComplete,
+      });
     },
 
     remove: function (this: CameraCurtainComponentInstance) {
+      this.transitionEpoch = (this.transitionEpoch ?? 0) + 1;
+      clearPendingCurtainTransition(this);
       this.isAnimating = false;
     },
   };

@@ -33,20 +33,28 @@ describe("PortalWaypoint Component", () => {
   it("createPortalEntity constructs correct 3D entity tree and attributes", () => {
     const portalConfig = {
       id: "portal-test",
-      targetRoomId: RoomId.TEXTILES,
-      title: "Ir a Sala de Textiles",
-      position: { x: 0, y: 1.6, z: 2.8 },
+      targetRoomId: RoomId.WIXARIKA,
+      title: "Cultura Wixárika",
+      position: { x: 0, y: 1.6, z: 3.2 },
       rotation: { x: 0, y: 180, z: 0 },
+      accentColor: "#D99B26",
     };
 
     const portalEl = createPortalEntity(portalConfig);
     expect(portalEl.getAttribute("id")).toBe("portal-test");
-    expect(portalEl.getAttribute("position")).toBe("0 1.6 2.8");
+    expect(portalEl.getAttribute("position")).toBe("0 1.6 3.2");
     expect(portalEl.getAttribute("rotation")).toBe("0 180 0");
     expect(portalEl.getAttribute("class")).toMatch(/clickable/);
     expect(portalEl.getAttribute("cv-portal")).toMatch(
-      /targetRoomId:\s*TEXTILES/,
+      /targetRoomId:\s*WIXARIKA/,
     );
+    expect(portalEl.querySelector("a-box")?.getAttribute("color")).toBe(
+      "#D99B26",
+    );
+    const labelPlane = portalEl.querySelector("[cv-canvas-text]");
+    expect(labelPlane).not.toBeNull();
+    expect(labelPlane?.getAttribute("value")).toBe("Cultura Wixárika");
+    expect(portalEl.querySelector("a-text")).toBeNull();
   });
 
   it("triggers cv-portal-activated event on click", () => {
@@ -60,25 +68,33 @@ describe("PortalWaypoint Component", () => {
     }) as EventListener);
 
     const instance = createMockPortalInstance(el, {
-      id: "portal-archaeology-to-textiles",
-      targetRoomId: RoomId.TEXTILES,
-      title: "Ir a Sala de Textiles",
+      id: "portal-lobby-to-wixarika",
+      targetRoomId: RoomId.WIXARIKA,
+      title: "Cultura Wixárika",
     });
 
     instance.init();
 
-    // Trigger synthetic click
-    el.dispatchEvent(new Event("click"));
+    // Trigger synthetic click and verify propagation is stopped
+    const clickEvent = new Event("click", { bubbles: true, cancelable: true });
+    let propagatedToParent = false;
+    const parent = document.createElement("a-entity");
+    parent.appendChild(el);
+    parent.addEventListener("click", () => {
+      propagatedToParent = true;
+    });
+    el.dispatchEvent(clickEvent);
+    expect(propagatedToParent).toBe(false);
 
     expect(dispatchedEvent).not.toBeNull();
     expect(
       (dispatchedEvent as unknown as { detail: PortalActivatedEventDetail })
         .detail.portalId,
-    ).toBe("portal-archaeology-to-textiles");
+    ).toBe("portal-lobby-to-wixarika");
     expect(
       (dispatchedEvent as unknown as { detail: PortalActivatedEventDetail })
         .detail.targetRoomId,
-    ).toBe(RoomId.TEXTILES);
+    ).toBe(RoomId.WIXARIKA);
   });
 
   it("does not dispatch event when targetRoomId is empty", () => {

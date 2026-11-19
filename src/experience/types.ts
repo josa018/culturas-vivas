@@ -1,10 +1,7 @@
 import type { ExhibitItemConfig, Vector3D } from "./constants";
+import { RoomId, StandId } from "../shared/room-catalog";
 
-export const RoomId = {
-  ARCHAEOLOGY: "ARCHAEOLOGY",
-  TEXTILES: "TEXTILES",
-} as const;
-export type RoomId = (typeof RoomId)[keyof typeof RoomId];
+export { RoomId, StandId };
 
 export const RoomTransitionState = {
   IDLE: "IDLE",
@@ -21,6 +18,16 @@ export interface RoomPortalConfig {
   readonly title: string;
   readonly position: Vector3D;
   readonly rotation: Vector3D;
+  readonly accentColor?: string;
+}
+
+export interface RoomStandSlotConfig {
+  readonly id: string;
+  readonly roomId: RoomId;
+  readonly standId: StandId;
+  readonly label: string;
+  readonly position: Vector3D;
+  readonly rotation: Vector3D;
 }
 
 export interface RoomDefinition {
@@ -28,7 +35,9 @@ export interface RoomDefinition {
   readonly title: string;
   readonly skyboxAssetId: string;
   readonly skyboxUrl: string;
+  readonly accentColor: string;
   readonly exhibits: readonly ExhibitItemConfig[];
+  readonly stands: readonly RoomStandSlotConfig[];
   readonly portals: readonly RoomPortalConfig[];
 }
 

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+// @ts-expect-error ESM utility script without generated .d.ts
 import { runMigrations } from "../../scripts/db-migrate.mjs";
 
 describe("scripts/db-migrate.mjs", () => {
@@ -50,11 +51,12 @@ describe("scripts/db-migrate.mjs", () => {
       log: (msg: string) => firstLogs.push(msg),
     });
 
-    expect(first.appliedCount).toBeGreaterThanOrEqual(6);
+    expect(first.appliedCount).toBeGreaterThanOrEqual(7);
     expect(first.skippedCount).toBe(0);
     expect(first.tables).toContain("_migrations");
     expect(first.tables).toContain("visitor_sessions");
     expect(first.tables).toContain("surveys");
+    expect(first.tables).toContain("room_media_items");
 
     const secondLogs: string[] = [];
     const second = await runMigrations({

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   createCameraCurtainComponentDefinition,
   ensureCameraCurtain,
@@ -52,6 +52,15 @@ function createMockCurtainInstance(
 }
 
 describe("CameraCurtain Component", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
+  });
+
   it("ensureCameraCurtain creates and retrieves idempotent curtain element", () => {
     const cameraEl = document.createElement("a-camera");
     const curtain = ensureCameraCurtain(cameraEl);
@@ -64,12 +73,10 @@ describe("CameraCurtain Component", () => {
     expect(curtain.getAttribute("material")).toContain("side: back");
     expect(curtain.getAttribute("material")).toMatch(/opacity:\s*0/);
 
-    // Calling ensure again returns existing element without creating duplicate
-    const existingCurtain = ensureCameraCurtain(cameraEl);
-    expect(existingCurtain).toBe(curtain);
+    expect(ensureCameraCurtain(cameraEl)).toBe(curtain);
   });
 
-  it("handles opacity bounds clamping cleanly", () => {
+  it("clamps opacity within [0, 1] and updates material string", () => {
     const el = document.createElement(
       "a-sphere",
     ) as unknown as CameraCurtainEntity;
@@ -88,14 +95,14 @@ describe("CameraCurtain Component", () => {
     expect(instance.getOpacity()).toBe(0.5);
     expect(el.getAttribute("material")).toMatch(/opacity:\s*0.5/);
 
-    instance.setOpacity(1.2); // Clamps to 1.0
+    instance.setOpacity(1.2);
     expect(instance.getOpacity()).toBe(1.0);
 
-    instance.setOpacity(-0.3); // Clamps to 0.0
+    instance.setOpacity(-0.3);
     expect(instance.getOpacity()).toBe(0.0);
   });
 
-  it("executes bidirectional fade transitions with completion callbacks", () => {
+  it("executes synchronous fadeOut/fadeIn transitions with callbacks in headless mode", () => {
     const el = document.createElement(
       "a-sphere",
     ) as unknown as CameraCurtainEntity;
@@ -104,7 +111,6 @@ describe("CameraCurtain Component", () => {
     const instance = createMockCurtainInstance(el);
     instance.init();
 
-    // Fade out (0 -> 1)
     let fadeOutCalled = false;
     instance.fadeOut(() => {
       fadeOutCalled = true;
@@ -113,7 +119,6 @@ describe("CameraCurtain Component", () => {
     expect(instance.getOpacity()).toBe(1);
     expect(el.getAttribute("visible")).toBe("true");
 
-    // Fade in (1 -> 0)
     let fadeInCalled = false;
     instance.fadeIn(() => {
       fadeInCalled = true;
@@ -123,9 +128,43 @@ describe("CameraCurtain Component", () => {
     expect(el.getAttribute("visible")).toBe("false");
   });
 
-  it("enforces CURTAIN_RENDER_ORDER on object3D and child nodes across lifecycle and object3dset", () => {
-    expect(CURTAIN_RENDER_ORDER).toBe(99999);
+  it("executes A-Frame animated fadeOut/fadeIn lifecycle via animationcomplete and fallback timer", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
 
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
+    el.setAttribute("material", "shader: flat; side: back; opacity: 0");
+
+    const instance = createMockCurtainInstance(el);
+    instance.init();
+
+    let fadeOutCount = 0;
+    instance.fadeOut(() => {
+      fadeOutCount++;
+    });
+    expect(instance.isAnimating).toBe(true);
+    expect(el.getAttribute("animation__curtain_out")).toContain("to: 1.0");
+
+    el.dispatchEvent(new Event("animationcomplete__curtain_out"));
+    expect(fadeOutCount).toBe(1);
+    expect(instance.isAnimating).toBe(false);
+    expect(instance.getOpacity()).toBe(1);
+
+    let fadeInCount = 0;
+    instance.fadeIn(() => {
+      fadeInCount++;
+    });
+    expect(el.getAttribute("animation__curtain_in")).toContain("to: 0.0");
+
+    vi.advanceTimersByTime(TRANSITION_TIMINGS.FADE_DURATION_MS + 50);
+    expect(fadeInCount).toBe(1);
+    expect(instance.isAnimating).toBe(false);
+    expect(instance.getOpacity()).toBe(0);
+    expect(el.getAttribute("visible")).toBe("false");
+  });
+
+  it("enforces CURTAIN_RENDER_ORDER on object3D and child nodes across lifecycle and object3dset", () => {
     const childMesh = { renderOrder: 0 };
     const mockObject3D = {
       visible: false,
@@ -144,11 +183,9 @@ describe("CameraCurtain Component", () => {
     const instance = createMockCurtainInstance(el);
     instance.init();
 
-    // After init, renderOrder must be set to 99999
     expect(mockObject3D.renderOrder).toBe(CURTAIN_RENDER_ORDER);
     expect(childMesh.renderOrder).toBe(CURTAIN_RENDER_ORDER);
 
-    // Simulate dynamically attached mesh via object3dset event
     const newChildMesh = { renderOrder: 0 };
     mockObject3D.traverse = (cb: (node: unknown) => void) => {
       cb(mockObject3D);
@@ -158,8 +195,41 @@ describe("CameraCurtain Component", () => {
     el.dispatchEvent(new Event("object3dset"));
     expect(newChildMesh.renderOrder).toBe(CURTAIN_RENDER_ORDER);
 
-    // Fade out must preserve renderOrder
     instance.fadeOut();
     expect(mockObject3D.renderOrder).toBe(CURTAIN_RENDER_ORDER);
+  });
+
+  it("cancels fallback timeout when animationcomplete resolves first so onComplete fires once per phase and cleans up on remove()", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const el = document.createElement(
+      "a-sphere",
+    ) as unknown as CameraCurtainEntity;
+    el.setAttribute("material", "shader: flat; side: back; opacity: 0");
+
+    const instance = createMockCurtainInstance(el);
+    instance.init();
+
+    let fadeOutCount = 0;
+    instance.fadeOut(() => {
+      fadeOutCount++;
+    });
+    el.dispatchEvent(new Event("animationcomplete__curtain_out"));
+    vi.advanceTimersByTime(TRANSITION_TIMINGS.FADE_DURATION_MS + 100);
+    expect(fadeOutCount).toBe(1);
+
+    let fadeInCount = 0;
+    instance.fadeIn(() => {
+      fadeInCount++;
+    });
+    el.dispatchEvent(new Event("animationcomplete__curtain_in"));
+    vi.advanceTimersByTime(TRANSITION_TIMINGS.FADE_DURATION_MS + 100);
+    expect(fadeInCount).toBe(1);
+
+    // Calling remove() while animating clears pending fallback timer
+    instance.fadeOut();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    instance.remove();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

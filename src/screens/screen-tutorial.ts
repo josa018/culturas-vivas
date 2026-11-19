@@ -1,6 +1,7 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
+import { getSharedVideoController } from "../experience/shared-video-controller";
 
 export class TutorialScreenView implements ScreenView {
   public readonly id = ScreenId.TUTORIAL;
@@ -65,6 +66,7 @@ export class TutorialScreenView implements ScreenView {
 
     startButton.addEventListener("click", (event) => {
       event.stopPropagation();
+      void getSharedVideoController().unlockFromUserGesture();
       this.dispatch(NavigationAction.CONFIRM_INSERTION);
     });
 

@@ -1,10 +1,13 @@
 export interface ServerlessRequest {
   method?: string;
+  url?: string;
+  query?: Record<string, string | string[] | undefined>;
   body?: unknown;
   headers?: Record<string, string | string[] | undefined>;
 }
 
 export interface ServerlessResponse {
+  setHeader?: (name: string, value: string) => void;
   status: (statusCode: number) => {
     json: (body: unknown) => void;
   };
@@ -17,11 +20,42 @@ export const API_HTTP_STATUS = {
   OK: 200,
   CREATED: 201,
   BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
   NOT_FOUND: 404,
   METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
+  PAYLOAD_TOO_LARGE: 413,
+  UNPROCESSABLE_ENTITY: 422,
   INTERNAL_SERVER_ERROR: 500,
 } as const;
+
+export function extractQueryParam(
+  req: ServerlessRequest,
+  key: string,
+): string | null {
+  const fromQuery = req.query?.[key];
+  if (typeof fromQuery === "string" && fromQuery.trim().length > 0) {
+    return fromQuery.trim();
+  }
+  if (Array.isArray(fromQuery) && typeof fromQuery[0] === "string") {
+    const trimmed = fromQuery[0].trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  if (typeof req.url === "string" && req.url.includes("?")) {
+    try {
+      const parsed = new URL(req.url, "http://localhost");
+      const val = parsed.searchParams.get(key);
+      if (val && val.trim().length > 0) {
+        return val.trim();
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 /**
  * Parses a serverless request body into a plain JSON object, rejecting arrays and primitives.

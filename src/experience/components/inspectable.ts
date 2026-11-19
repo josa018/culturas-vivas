@@ -10,6 +10,7 @@ import {
   ROOM_CENTER_COORDINATE,
 } from "../constants";
 import { ExhibitInspectionController } from "../inspection-controller";
+import { createCanvasTextPlane } from "./canvas-text";
 
 let sharedInspectionController: ExhibitInspectionController | null = null;
 
@@ -32,6 +33,7 @@ export interface InspectableComponentData {
   autoRotate: boolean;
   rotationSpeed: number;
   title: string;
+  creatorName?: string;
   description: string;
   mediaType: string;
 }
@@ -54,12 +56,81 @@ export interface InspectableComponentInstance {
   galleryPosition: Vector3D;
   galleryRotation: Vector3D;
   billboardEl: HTMLElement | null;
+  returnBtnEl: HTMLElement | null;
   unsubscribeController: (() => void) | null;
+  transitionEpoch: number;
+  panelDelayTimer: ReturnType<typeof setTimeout> | null;
+  hideBillboardTimer: ReturnType<typeof setTimeout> | null;
+  inspectCompleteHandler: (() => void) | null;
+  returnCompleteHandler: (() => void) | null;
+  panelInCompleteHandler: (() => void) | null;
+  panelOutCompleteHandler: (() => void) | null;
   init: () => void;
   inspect: () => void;
   returnToGallery: () => void;
   tick: (time: number, timeDelta: number) => void;
   remove: () => void;
+}
+
+function isAFrameActive(): boolean {
+  return (
+    typeof globalThis !== "undefined" &&
+    Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME)
+  );
+}
+
+function setClickableState(el: HTMLElement | null, enabled: boolean): void {
+  if (!el) {
+    return;
+  }
+  const current = el.getAttribute("class") ?? "";
+  const classes = current.split(/\s+/).filter(Boolean);
+  const filtered = classes.filter((cls) => cls !== "clickable");
+  if (enabled) {
+    filtered.push("clickable");
+  }
+  el.setAttribute("class", filtered.join(" "));
+}
+
+function clearPendingTimersAndListeners(
+  instance: InspectableComponentInstance,
+): void {
+  if (instance.panelDelayTimer !== null) {
+    clearTimeout(instance.panelDelayTimer);
+    instance.panelDelayTimer = null;
+  }
+  if (instance.hideBillboardTimer !== null) {
+    clearTimeout(instance.hideBillboardTimer);
+    instance.hideBillboardTimer = null;
+  }
+  if (instance.inspectCompleteHandler) {
+    instance.el.removeEventListener?.(
+      "animationcomplete__inspect",
+      instance.inspectCompleteHandler,
+    );
+    instance.inspectCompleteHandler = null;
+  }
+  if (instance.returnCompleteHandler) {
+    instance.el.removeEventListener?.(
+      "animationcomplete__return",
+      instance.returnCompleteHandler,
+    );
+    instance.returnCompleteHandler = null;
+  }
+  if (instance.billboardEl && instance.panelInCompleteHandler) {
+    instance.billboardEl.removeEventListener?.(
+      "animationcomplete__panel_in",
+      instance.panelInCompleteHandler,
+    );
+    instance.panelInCompleteHandler = null;
+  }
+  if (instance.billboardEl && instance.panelOutCompleteHandler) {
+    instance.billboardEl.removeEventListener?.(
+      "animationcomplete__panel_out",
+      instance.panelOutCompleteHandler,
+    );
+    instance.panelOutCompleteHandler = null;
+  }
 }
 
 export function createInspectableComponentDefinition() {
@@ -73,6 +144,7 @@ export function createInspectableComponentDefinition() {
         default: INSPECTION_TIMINGS.DEFAULT_ROTATION_SPEED,
       },
       title: { type: "string", default: "" },
+      creatorName: { type: "string", default: "" },
       description: { type: "string", default: "" },
       mediaType: { type: "string", default: ExhibitMediaType.IMAGE_2D },
     },
@@ -80,6 +152,14 @@ export function createInspectableComponentDefinition() {
     init: function (this: InspectableComponentInstance) {
       this.state = InspectionState.IDLE;
       this.unsubscribeController = null;
+      this.returnBtnEl = null;
+      this.transitionEpoch = 0;
+      this.panelDelayTimer = null;
+      this.hideBillboardTimer = null;
+      this.inspectCompleteHandler = null;
+      this.returnCompleteHandler = null;
+      this.panelInCompleteHandler = null;
+      this.panelOutCompleteHandler = null;
       const initialPos = this.el.getAttribute("position");
       const initialRot = this.el.getAttribute("rotation");
 
@@ -105,57 +185,114 @@ export function createInspectableComponentDefinition() {
         "position",
         `${METADATA_BILLBOARD_OFFSET.x} ${METADATA_BILLBOARD_OFFSET.y} ${METADATA_BILLBOARD_OFFSET.z}`,
       );
-      billboard.setAttribute("scale", "0.001 0.001 0.001");
+      billboard.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
       billboard.setAttribute("visible", "false");
 
       const plane = document.createElement("a-plane");
       plane.setAttribute("width", String(EXHIBIT_DIMENSIONS.BILLBOARD_WIDTH));
       plane.setAttribute("height", String(EXHIBIT_DIMENSIONS.BILLBOARD_HEIGHT));
       plane.setAttribute("color", "#0f172a");
-      plane.setAttribute("opacity", "0.95");
       plane.setAttribute("material", "shader: flat; side: double");
 
-      const titleEl = document.createElement("a-text");
-      titleEl.setAttribute("value", this.data.title);
-      titleEl.setAttribute("color", "#38bdf8");
-      titleEl.setAttribute("align", "left");
-      titleEl.setAttribute("baseline", "top");
-      titleEl.setAttribute("position", "-0.70 0.20 0.02");
-      titleEl.setAttribute(
-        "width",
-        String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
-      );
-      titleEl.setAttribute(
-        "wrap-count",
-        String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WRAP_COUNT),
-      );
+      const trimmedCreator = (this.data.creatorName ?? "").trim();
+      const hasCreator = trimmedCreator.length > 0;
+      const estimatedTitleLines = (this.data.title ?? "").trim().length > 34 ? 2 : 1;
+      const estimatedCreatorLines =
+        hasCreator && (`${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}`).length > 42
+          ? 2
+          : 1;
 
-      const descEl = document.createElement("a-text");
-      descEl.setAttribute("value", this.data.description);
-      descEl.setAttribute("color", "#f1f5f9");
-      descEl.setAttribute("align", "left");
-      descEl.setAttribute("baseline", "top");
-      descEl.setAttribute("position", "-0.70 0.02 0.02");
-      descEl.setAttribute("width", "1.45");
-      descEl.setAttribute("wrap-count", "44");
+      const creatorTop = estimatedTitleLines > 1 ? 0.13 : 0.21;
+      const creatorCenterY = creatorTop - 0.07;
+      const descTop = hasCreator
+        ? creatorTop - (estimatedCreatorLines > 1 ? 0.15 : 0.10)
+        : estimatedTitleLines > 1
+          ? 0.125
+          : 0.205;
+      const descCenterY = descTop - 0.18;
 
-      // Top-right circular close button
+      const titleEl = createCanvasTextPlane({
+        className: "cv-billboard-title",
+        value: this.data.title,
+        color: "#38bdf8",
+        align: "left",
+        baseline: "top",
+        width: EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH,
+        height: 0.18,
+        fontSizePx: 48,
+        fontWeight: "700",
+        canvasWidth: 800,
+        canvasHeight: 116,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 8,
+        position: "-0.12 0.26 0.03",
+      });
+
+      const creatorEl = createCanvasTextPlane({
+        className: "cv-billboard-creator",
+        value: hasCreator
+          ? `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}`
+          : "",
+        visible: hasCreator ? "true" : "false",
+        color: "#D99B26",
+        align: "left",
+        baseline: "top",
+        width: 1.46,
+        height: 0.14,
+        fontSizePx: 36,
+        fontWeight: "600",
+        canvasWidth: 936,
+        canvasHeight: 90,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 6,
+        position: `0 ${creatorCenterY} 0.035`,
+      });
+
+      const descEl = createCanvasTextPlane({
+        className: "cv-billboard-description",
+        value: this.data.description,
+        color: "#f1f5f9",
+        align: "left",
+        baseline: "top",
+        width: 1.46,
+        height: 0.36,
+        fontSizePx: 34,
+        fontWeight: "400",
+        canvasWidth: 936,
+        canvasHeight: 230,
+        maxLines: 5,
+        paddingX: 20,
+        paddingY: 8,
+        position: `0 ${descCenterY} 0.04`,
+      });
+
+      // Top-right circular close button (becomes .clickable only when billboard is open)
       const returnBtn = document.createElement("a-entity");
-      returnBtn.setAttribute("class", "cv-return-btn clickable");
+      returnBtn.setAttribute("class", "cv-return-btn");
       returnBtn.setAttribute(
         "geometry",
         `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}`,
       );
       returnBtn.setAttribute("material", "color: #e11d48; shader: flat");
-      returnBtn.setAttribute("position", "0.68 0.18 0.03");
+      returnBtn.setAttribute("position", "0.68 0.27 0.05");
       returnBtn.setAttribute("data-action", "return-exhibit");
 
-      const returnText = document.createElement("a-text");
-      returnText.setAttribute("value", EXHIBIT_DICTIONARY.CLOSE_ICON);
-      returnText.setAttribute("align", "center");
-      returnText.setAttribute("color", "#ffffff");
-      returnText.setAttribute("width", "1.5");
-      returnText.setAttribute("position", "0 0 0.01");
+      const returnText = createCanvasTextPlane({
+        value: EXHIBIT_DICTIONARY.CLOSE_ICON,
+        color: "#ffffff",
+        align: "center",
+        baseline: "middle",
+        width: 0.11,
+        height: 0.11,
+        fontSizePx: 64,
+        fontWeight: "700",
+        canvasWidth: 128,
+        canvasHeight: 128,
+        maxLines: 1,
+        position: "0 0 0.01",
+      });
       returnBtn.appendChild(returnText);
 
       returnBtn.addEventListener?.("click", (evt) => {
@@ -170,21 +307,22 @@ export function createInspectableComponentDefinition() {
       });
 
       plane.appendChild(titleEl);
+      plane.appendChild(creatorEl);
       plane.appendChild(descEl);
       plane.appendChild(returnBtn);
       billboard.appendChild(plane);
 
       this.el.appendChild(billboard);
       this.billboardEl = billboard;
+      this.returnBtnEl = returnBtn;
 
       // Subscribe to controller for mutual exclusivity / auto-return
       this.unsubscribeController = getSharedInspectionController().subscribe(
-        (_state, _active, prev) => {
+        (_state, active) => {
           if (
-            prev &&
-            prev.id === this.data.id &&
             (this.state === InspectionState.INSPECTING ||
-              this.state === InspectionState.FOCUSING)
+              this.state === InspectionState.FOCUSING) &&
+            active?.id !== this.data.id
           ) {
             this.returnToGallery();
           }
@@ -203,10 +341,19 @@ export function createInspectableComponentDefinition() {
       if (this.state !== InspectionState.IDLE) {
         return;
       }
+      clearPendingTimersAndListeners(this);
+      const epoch = ++this.transitionEpoch;
       this.state = InspectionState.FOCUSING;
 
       const controller = getSharedInspectionController();
-      controller.focus(this.data.id);
+      if (controller.getExhibit(this.data.id)) {
+        if (!controller.focus(this.data.id)) {
+          this.state = InspectionState.IDLE;
+          return;
+        }
+      } else {
+        controller.abortActiveInspection();
+      }
 
       // Compute dynamic radial target position
       const targetPos = controller.calculateRadialTargetPosition(
@@ -228,18 +375,21 @@ export function createInspectableComponentDefinition() {
         `property: position; from: ${fromPos}; to: ${toPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
       );
 
-      const hasAFrame =
-        typeof globalThis !== "undefined" &&
-        Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+      const hasAFrame = isAFrameActive();
 
       if (!hasAFrame) {
         // Direct attribute update for headless test runners where anime.js RAF does not run
         this.el.setAttribute("position", toPos);
       } else if (typeof this.el.addEventListener === "function") {
         const onComplete = () => {
+          if (this.transitionEpoch !== epoch) {
+            return;
+          }
           this.el.setAttribute("position", toPos);
           this.el.removeEventListener?.("animationcomplete__inspect", onComplete);
+          this.inspectCompleteHandler = null;
         };
+        this.inspectCompleteHandler = onComplete;
         this.el.addEventListener("animationcomplete__inspect", onComplete);
       }
 
@@ -260,33 +410,52 @@ export function createInspectableComponentDefinition() {
         pedestal.setAttribute("position", `${pedX} ${pedY} ${pedZ}`);
       }
 
-      // Sub-exhibit billboard animated entrance (flicker-free scale interpolation)
+      // Sub-exhibit billboard animated entrance (cancelable delay avoids A-Frame delay timer leak)
       if (this.billboardEl) {
         this.billboardEl.removeAttribute("animation__panel_out");
-        this.billboardEl.setAttribute("scale", "0.001 0.001 0.001");
+        this.billboardEl.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
         this.billboardEl.setAttribute("visible", "true");
-        this.billboardEl.setAttribute(
-          "animation__panel_in",
-          `property: scale; from: 0.001 0.001 0.001; to: 1 1 1; dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.PANEL_ANIMATION_EASING}; delay: 150`,
-        );
+        setClickableState(this.returnBtnEl, true);
 
-        const hasAFrame =
-          typeof globalThis !== "undefined" &&
-          Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+        const panelInAttr = `property: scale; from: ${INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE}; to: ${INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE}; dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.PANEL_ANIMATION_EASING}`;
 
         if (!hasAFrame) {
           // Synchronous fallback for headless test runners
-          this.billboardEl.setAttribute("scale", "1 1 1");
-        } else if (typeof this.billboardEl.addEventListener === "function") {
-          this.billboardEl.addEventListener(
-            "animationcomplete__panel_in",
-            () => {
-              if (this.state === InspectionState.INSPECTING) {
-                this.billboardEl?.setAttribute("scale", "1 1 1");
+          this.billboardEl.setAttribute("animation__panel_in", panelInAttr);
+          this.billboardEl.setAttribute("scale", INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE);
+        } else {
+          if (typeof this.billboardEl.addEventListener === "function") {
+            const onPanelInComplete = () => {
+              if (
+                this.transitionEpoch === epoch &&
+                this.state === InspectionState.INSPECTING
+              ) {
+                this.billboardEl?.setAttribute(
+                  "scale",
+                  INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE,
+                );
               }
-            },
-            { once: true },
-          );
+              this.panelInCompleteHandler = null;
+            };
+            this.panelInCompleteHandler = onPanelInComplete;
+            this.billboardEl.addEventListener(
+              "animationcomplete__panel_in",
+              onPanelInComplete,
+              { once: true },
+            );
+          }
+
+          this.panelDelayTimer = setTimeout(() => {
+            this.panelDelayTimer = null;
+            if (
+              this.transitionEpoch !== epoch ||
+              !this.billboardEl ||
+              this.state !== InspectionState.INSPECTING
+            ) {
+              return;
+            }
+            this.billboardEl.setAttribute("animation__panel_in", panelInAttr);
+          }, INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS);
         }
       }
 
@@ -311,38 +480,59 @@ export function createInspectableComponentDefinition() {
       if (this.state === InspectionState.IDLE) {
         return;
       }
+      clearPendingTimersAndListeners(this);
+      const epoch = ++this.transitionEpoch;
       this.state = InspectionState.RETURNING;
+      setClickableState(this.returnBtnEl, false);
 
       // Animate billboard panel scale out with deferred visibility teardown
       if (this.billboardEl) {
         this.billboardEl.removeAttribute("animation__panel_in");
         this.billboardEl.setAttribute(
           "animation__panel_out",
-          `property: scale; from: 1 1 1; to: 0.001 0.001 0.001; dur: 250; easing: easeInCubic`,
+          `property: scale; from: ${INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE}; to: ${INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE}; dur: ${INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS}; easing: ${INSPECTION_TIMINGS.PANEL_EXIT_EASING}`,
         );
 
-        const hasAFrame =
-          typeof globalThis !== "undefined" &&
-          Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+        const hasAFrame = isAFrameActive();
 
         if (!hasAFrame) {
-          this.billboardEl.setAttribute("scale", "0.001 0.001 0.001");
+          this.billboardEl.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
           this.billboardEl.setAttribute("visible", "false");
         } else {
           const hideBillboard = () => {
-            if (this.billboardEl) {
-              this.billboardEl.setAttribute("scale", "0.001 0.001 0.001");
-              this.billboardEl.setAttribute("visible", "false");
+            if (this.transitionEpoch !== epoch || !this.billboardEl) {
+              return;
             }
+            if (this.hideBillboardTimer !== null) {
+              clearTimeout(this.hideBillboardTimer);
+              this.hideBillboardTimer = null;
+            }
+            if (this.panelOutCompleteHandler) {
+              this.billboardEl.removeEventListener?.(
+                "animationcomplete__panel_out",
+                this.panelOutCompleteHandler,
+              );
+              this.panelOutCompleteHandler = null;
+            }
+            this.billboardEl.setAttribute(
+              "scale",
+              INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE,
+            );
+            this.billboardEl.setAttribute("visible", "false");
           };
           if (typeof this.billboardEl.addEventListener === "function") {
+            this.panelOutCompleteHandler = hideBillboard;
             this.billboardEl.addEventListener(
               "animationcomplete__panel_out",
               hideBillboard,
               { once: true },
             );
           }
-          setTimeout(hideBillboard, 260);
+          this.hideBillboardTimer = setTimeout(
+            hideBillboard,
+            INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS +
+              INSPECTION_TIMINGS.PANEL_EXIT_TIMEOUT_BUFFER_MS,
+          );
         }
       }
 
@@ -390,20 +580,21 @@ export function createInspectableComponentDefinition() {
         `property: position; from: ${fromPos}; to: ${toPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
       );
 
-      const hasAFrame =
-        typeof globalThis !== "undefined" &&
-        Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
-
-      if (!hasAFrame) {
+      if (!isAFrameActive()) {
         this.el.setAttribute("position", toPos);
       } else if (typeof this.el.addEventListener === "function") {
         const onReturnComplete = () => {
+          if (this.transitionEpoch !== epoch) {
+            return;
+          }
           this.el.setAttribute("position", toPos);
           this.el.removeEventListener?.(
             "animationcomplete__return",
             onReturnComplete,
           );
+          this.returnCompleteHandler = null;
         };
+        this.returnCompleteHandler = onReturnComplete;
         this.el.addEventListener("animationcomplete__return", onReturnComplete);
       }
 
@@ -429,6 +620,8 @@ export function createInspectableComponentDefinition() {
     },
 
     remove: function (this: InspectableComponentInstance) {
+      this.transitionEpoch++;
+      clearPendingTimersAndListeners(this);
       if (this.unsubscribeController) {
         this.unsubscribeController();
         this.unsubscribeController = null;
@@ -437,6 +630,7 @@ export function createInspectableComponentDefinition() {
         this.billboardEl.remove();
         this.billboardEl = null;
       }
+      this.returnBtnEl = null;
     },
   };
 }

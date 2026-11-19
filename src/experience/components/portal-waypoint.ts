@@ -1,5 +1,6 @@
 import { PORTAL_COLORS, PORTAL_DIMENSIONS } from "../constants";
 import type { RoomId, RoomPortalConfig } from "../types";
+import { createCanvasTextPlane } from "./canvas-text";
 
 export const PORTAL_ACTIVATED_EVENT = "cv-portal-activated";
 
@@ -112,6 +113,8 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     `id: ${config.id}; targetRoomId: ${config.targetRoomId}; title: ${config.title}`,
   );
 
+  const frameColor = config.accentColor ?? PORTAL_COLORS.FRAME;
+
   // Archway frame left pillar
   const leftPillar = document.createElement("a-box");
   leftPillar.setAttribute("width", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
@@ -121,7 +124,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     "position",
     `${-(PORTAL_DIMENSIONS.FRAME_WIDTH / 2)} 0 0`,
   );
-  leftPillar.setAttribute("color", PORTAL_COLORS.FRAME);
+  leftPillar.setAttribute("color", frameColor);
   leftPillar.setAttribute("material", "shader: flat");
 
   // Archway frame right pillar
@@ -133,7 +136,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     "position",
     `${PORTAL_DIMENSIONS.FRAME_WIDTH / 2} 0 0`,
   );
-  rightPillar.setAttribute("color", PORTAL_COLORS.FRAME);
+  rightPillar.setAttribute("color", frameColor);
   rightPillar.setAttribute("material", "shader: flat");
 
   // Archway top lintel
@@ -145,7 +148,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   lintel.setAttribute("height", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
   lintel.setAttribute("depth", "0.08");
   lintel.setAttribute("position", `0 ${PORTAL_DIMENSIONS.FRAME_HEIGHT / 2} 0`);
-  lintel.setAttribute("color", PORTAL_COLORS.FRAME);
+  lintel.setAttribute("color", frameColor);
   lintel.setAttribute("material", "shader: flat");
 
   // Portal gateway aperture plane (interactive target)
@@ -158,15 +161,20 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   aperture.setAttribute("material", "shader: flat; side: double");
 
   // Floating room title billboard
-  const labelText = document.createElement("a-text");
-  labelText.setAttribute("value", config.title);
-  labelText.setAttribute("align", "center");
-  labelText.setAttribute("color", PORTAL_COLORS.TEXT);
-  labelText.setAttribute("width", String(PORTAL_DIMENSIONS.LABEL_WIDTH));
-  labelText.setAttribute(
-    "position",
-    `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
-  );
+  const labelText = createCanvasTextPlane({
+    value: config.title,
+    color: PORTAL_COLORS.TEXT,
+    align: "center",
+    baseline: "middle",
+    width: PORTAL_DIMENSIONS.LABEL_WIDTH,
+    height: 0.36,
+    fontSizePx: 52,
+    fontWeight: "700",
+    canvasWidth: 1024,
+    canvasHeight: 160,
+    maxLines: 2,
+    position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
+  });
 
   portalRoot.append(leftPillar, rightPillar, lintel, aperture, labelText);
   return portalRoot;

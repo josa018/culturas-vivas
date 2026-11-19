@@ -1,0 +1,1067 @@
+import { computeContainDimensions } from "../aspect-ratio";
+import {
+  EXHIBIT_DICTIONARY,
+  INSPECTION_TIMINGS,
+  InspectionState,
+  SHARED_VIDEO_ELEMENT_ID,
+  STAND_DICTIONARY,
+  STAND_DIMENSIONS,
+  type Vector3D,
+} from "../constants";
+import { type ExhibitInspectionController } from "../inspection-controller";
+import { MediaCarouselController } from "../media-carousel-controller";
+import type { StandMediaItem } from "../media-types";
+import {
+  getSharedVideoController,
+  type DisposableVideoTexture,
+  type SharedVideoController,
+} from "../shared-video-controller";
+import {
+  createCanvasTextPlane,
+  setCanvasTextElement,
+} from "./canvas-text";
+import { getSharedInspectionController } from "./inspectable";
+
+const STAND_VISUAL_TOKENS = {
+  SURFACE_COLOR: "#0f172a",
+  HEADER_BG_COLOR: "#1e293b",
+  TEXT_PRIMARY: "#EDE8DF",
+  TEXT_MUTED: "#94a3b8",
+  CLOSE_BG_COLOR: "#ef4444",
+  CONTROL_BG_COLOR: "#1e293b",
+  CONTROL_TEXT_COLOR: "#f8fafc",
+  COUNTER_TEXT_COLOR: "#cbd5e1",
+  HEADER_OFFSET_Y: 0.65,
+  CONTROL_BTN_STEP_X: 0.24,
+  PREV_BTN_X: -0.42,
+  COUNTER_X: -0.18,
+  NEXT_BTN_X: 0.06,
+  PLAY_BTN_X: 0.3,
+  MUTE_BTN_X: 0.5,
+  CLOSE_BTN_X: 0.72,
+  VIDEO_BADGE_POS: "0.56 0.40 0.03",
+  COUNT_BADGE_POS: "0 0.575 0.03",
+  HEADER_TEXT_POS: "0 0.70 0.03",
+  ROTATION_RAD_TO_DEG: 180 / Math.PI,
+} as const;
+
+export interface MediaStandComponentData {
+  roomId: string;
+  standId: string;
+  label: string;
+  accentColor: string;
+  viewMode: string;
+  galleryPosition: Vector3D;
+  galleryRotation: Vector3D;
+  itemsJson: string;
+}
+
+export interface MediaStandEntity extends HTMLElement {
+  standItems?: StandMediaItem[];
+  setAttribute(name: string, value: unknown, ...rest: unknown[]): void;
+}
+
+export interface MediaStandDependencies {
+  readonly getInspectionController?: () => ExhibitInspectionController;
+  readonly getVideoController?: () => SharedVideoController;
+  readonly prefetchImage?: (url: string) => void;
+}
+
+export interface MediaStandComponentInstance {
+  el: MediaStandEntity;
+  data: MediaStandComponentData;
+  exhibitId: string;
+  carousel: MediaCarouselController;
+  localState: InspectionState;
+  ownsActiveVideo: boolean;
+  unsubscribeInspection: (() => void) | null;
+  cleanupListeners: Array<() => void>;
+  elements: StandDomElements | null;
+  init: () => void;
+  update: (oldData: Partial<MediaStandComponentData>) => void;
+  remove: () => void;
+  getLocalState: () => InspectionState;
+  inspect: () => Promise<void>;
+  returnToGallery: () => void;
+  nextSlide: () => Promise<void>;
+  prevSlide: () => Promise<void>;
+  togglePlay: () => Promise<void>;
+  toggleMute: () => void;
+}
+
+interface StandDomElements {
+  frame: HTMLElement;
+  headerBg: HTMLElement;
+  headerText: HTMLElement;
+  countBadge: HTMLElement;
+  videoBadge: HTMLElement;
+  emptyPlaceholder: HTMLElement;
+  leftPlane: HTMLElement;
+  rightPlane: HTMLElement;
+  controlBar: HTMLElement;
+  prevBtn: HTMLElement;
+  counterText: HTMLElement;
+  nextBtn: HTMLElement;
+  playBtn: HTMLElement;
+  muteBtn: HTMLElement;
+  closeBtn: HTMLElement;
+  billboard: HTMLElement;
+  billboardTitle: HTMLElement;
+  billboardCreator: HTMLElement;
+  billboardDesc: HTMLElement;
+}
+
+function defaultPrefetchImage(url: string): void {
+  if (typeof Image === "undefined" || !url) {
+    return;
+  }
+  const preloader = new Image();
+  preloader.crossOrigin = "anonymous";
+  preloader.src = url;
+}
+
+function formatItemCount(count: number): string {
+  const unit =
+    count === 1
+      ? STAND_DICTIONARY.ITEM_COUNT_SINGULAR
+      : STAND_DICTIONARY.ITEM_COUNT_PLURAL;
+  return `${count} ${unit}`;
+}
+
+function setToggleClass(el: Element, className: string, enabled: boolean): void {
+  if (enabled) {
+    el.classList.add(className);
+  } else {
+    el.classList.remove(className);
+  }
+}
+
+function parseStandItems(el: MediaStandEntity, itemsJson: string): StandMediaItem[] {
+  if (Array.isArray(el.standItems)) {
+    return [...el.standItems];
+  }
+  if (!itemsJson || itemsJson === "[]") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(itemsJson);
+    return Array.isArray(parsed) ? (parsed as StandMediaItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function createControlButton(
+  className: string,
+  iconText: string,
+  x: number,
+  bgColor: string,
+  textColor: string,
+): HTMLElement {
+  const btn = document.createElement("a-entity");
+  btn.setAttribute("class", className);
+  btn.setAttribute("position", `${x} 0 0.02`);
+  btn.setAttribute("visible", "false");
+  btn.setAttribute(
+    "geometry",
+    `primitive: plane; width: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}; height: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}`,
+  );
+  btn.setAttribute("material", `shader: flat; color: ${bgColor}`);
+
+  const label = createCanvasTextPlane({
+    className: `${className}-label`,
+    value: iconText,
+    color: textColor,
+    align: "center",
+    baseline: "middle",
+    width: STAND_DIMENSIONS.CONTROL_BTN_SIZE_M * 0.85,
+    height: STAND_DIMENSIONS.CONTROL_BTN_SIZE_M * 0.85,
+    fontSizePx: 64,
+    fontWeight: "700",
+    canvasWidth: 128,
+    canvasHeight: 128,
+    maxLines: 1,
+    position: "0 0 0.01",
+  });
+
+  btn.appendChild(label);
+  return btn;
+}
+
+function buildStandDom(
+  root: HTMLElement,
+  accentColor: string,
+  categoryLabel: string,
+): StandDomElements {
+  const frameWidth = STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M + STAND_DIMENSIONS.FRAME_PADDING_M * 2;
+  const frameHeight = STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M + STAND_DIMENSIONS.FRAME_PADDING_M * 2;
+
+  const frame = document.createElement("a-plane");
+  frame.setAttribute("class", "cv-stand-frame");
+  frame.setAttribute("width", String(frameWidth));
+  frame.setAttribute("height", String(frameHeight));
+  frame.setAttribute("position", "0 0 -0.02");
+  frame.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  frame.setAttribute("material", "shader: flat");
+
+  const headerBg = document.createElement("a-plane");
+  headerBg.setAttribute("class", "cv-stand-header-bg");
+  headerBg.setAttribute("width", String(frameWidth));
+  headerBg.setAttribute("height", String(STAND_DIMENSIONS.HEADER_HEIGHT_M));
+  headerBg.setAttribute("position", `0 ${STAND_VISUAL_TOKENS.HEADER_OFFSET_Y} 0`);
+  headerBg.setAttribute("color", STAND_VISUAL_TOKENS.HEADER_BG_COLOR);
+  headerBg.setAttribute("material", "shader: flat");
+
+  const headerText = createCanvasTextPlane({
+    className: "cv-stand-header",
+    value: categoryLabel,
+    align: "center",
+    baseline: "middle",
+    color: accentColor,
+    width: 1.5,
+    height: 0.13,
+    fontSizePx: 66,
+    fontWeight: "700",
+    canvasWidth: 960,
+    canvasHeight: 84,
+    maxLines: 1,
+    paddingY: 6,
+    position: STAND_VISUAL_TOKENS.HEADER_TEXT_POS,
+  });
+
+  const countBadge = createCanvasTextPlane({
+    className: "cv-stand-count-badge",
+    value: "",
+    align: "center",
+    baseline: "middle",
+    color: STAND_VISUAL_TOKENS.TEXT_MUTED,
+    width: 1.1,
+    height: 0.095,
+    fontSizePx: 44,
+    fontWeight: "600",
+    canvasWidth: 704,
+    canvasHeight: 60,
+    maxLines: 1,
+    paddingY: 4,
+    position: STAND_VISUAL_TOKENS.COUNT_BADGE_POS,
+  });
+
+  const videoBadge = createCanvasTextPlane({
+    className: "cv-stand-video-badge",
+    value: STAND_DICTIONARY.VIDEO_BADGE,
+    align: "center",
+    baseline: "middle",
+    color: accentColor,
+    backgroundColor: STAND_VISUAL_TOKENS.SURFACE_COLOR,
+    width: 0.34,
+    height: 0.105,
+    fontSizePx: 40,
+    fontWeight: "700",
+    canvasWidth: 224,
+    canvasHeight: 68,
+    maxLines: 1,
+    paddingY: 6,
+    position: STAND_VISUAL_TOKENS.VIDEO_BADGE_POS,
+    visible: "false",
+  });
+
+  const emptyPlaceholder = createCanvasTextPlane({
+    className: "cv-stand-empty-placeholder",
+    value: STAND_DICTIONARY.EMPTY_PLACEHOLDER,
+    align: "center",
+    baseline: "middle",
+    color: STAND_VISUAL_TOKENS.TEXT_PRIMARY,
+    width: 1.4,
+    height: 0.26,
+    fontSizePx: 64,
+    fontWeight: "600",
+    canvasWidth: 896,
+    canvasHeight: 166,
+    maxLines: 2,
+    position: "0 0 0.03",
+    visible: "false",
+  });
+
+  const leftPlane = document.createElement("a-plane");
+  leftPlane.setAttribute("class", "cv-stand-left-plane");
+  leftPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
+  leftPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
+  leftPlane.setAttribute("position", "0 0 0.01");
+  leftPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  leftPlane.setAttribute(
+    "material",
+    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+  );
+  leftPlane.setAttribute("visible", "false");
+
+  const rightPlane = document.createElement("a-plane");
+  rightPlane.setAttribute("class", "cv-stand-right-plane");
+  rightPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
+  rightPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
+  rightPlane.setAttribute("position", "0 0 0.01");
+  rightPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  rightPlane.setAttribute(
+    "material",
+    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+  );
+  rightPlane.setAttribute("visible", "false");
+
+  const controlBar = document.createElement("a-entity");
+  controlBar.setAttribute("class", "cv-stand-control-bar");
+  controlBar.setAttribute("position", `0 ${STAND_DIMENSIONS.CONTROL_BAR_OFFSET_Y} 0.03`);
+  controlBar.setAttribute("visible", "false");
+
+  const prevBtn = createControlButton(
+    "cv-stand-prev-btn",
+    STAND_DICTIONARY.PREV_ICON,
+    STAND_VISUAL_TOKENS.PREV_BTN_X,
+    STAND_VISUAL_TOKENS.CONTROL_BG_COLOR,
+    STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+  );
+  const counterText = createCanvasTextPlane({
+    className: "cv-stand-counter",
+    value: "0 / 0",
+    align: "center",
+    baseline: "middle",
+    color: STAND_VISUAL_TOKENS.COUNTER_TEXT_COLOR,
+    width: 0.32,
+    height: 0.12,
+    fontSizePx: 54,
+    fontWeight: "600",
+    canvasWidth: 256,
+    canvasHeight: 96,
+    maxLines: 1,
+    position: `${STAND_VISUAL_TOKENS.COUNTER_X} 0 0.02`,
+  });
+
+  const nextBtn = createControlButton(
+    "cv-stand-next-btn",
+    STAND_DICTIONARY.NEXT_ICON,
+    STAND_VISUAL_TOKENS.NEXT_BTN_X,
+    STAND_VISUAL_TOKENS.CONTROL_BG_COLOR,
+    STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+  );
+  const playBtn = createControlButton(
+    "cv-stand-play-btn",
+    STAND_DICTIONARY.PAUSE_ICON,
+    STAND_VISUAL_TOKENS.PLAY_BTN_X,
+    STAND_VISUAL_TOKENS.CONTROL_BG_COLOR,
+    STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+  );
+  const muteBtn = createControlButton(
+    "cv-stand-mute-btn",
+    STAND_DICTIONARY.UNMUTE_ICON,
+    STAND_VISUAL_TOKENS.MUTE_BTN_X,
+    STAND_VISUAL_TOKENS.CONTROL_BG_COLOR,
+    STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+  );
+  const closeBtn = createControlButton(
+    "cv-stand-close-btn",
+    EXHIBIT_DICTIONARY.CLOSE_ICON,
+    STAND_VISUAL_TOKENS.CLOSE_BTN_X,
+    STAND_VISUAL_TOKENS.CLOSE_BG_COLOR,
+    STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+  );
+
+  controlBar.append(prevBtn, counterText, nextBtn, playBtn, muteBtn, closeBtn);
+
+  const billboard = document.createElement("a-entity");
+  billboard.setAttribute("class", "cv-stand-billboard");
+  billboard.setAttribute("position", `0 ${STAND_DIMENSIONS.BILLBOARD_OFFSET_Y} 0.02`);
+  billboard.setAttribute("visible", "false");
+
+  const billboardBg = document.createElement("a-plane");
+  billboardBg.setAttribute("width", String(frameWidth));
+  billboardBg.setAttribute("height", String(STAND_DIMENSIONS.BILLBOARD_HEIGHT_M));
+  billboardBg.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  billboardBg.setAttribute("material", "shader: flat; side: double");
+
+  const billboardTitle = createCanvasTextPlane({
+    className: "cv-stand-billboard-title",
+    value: "",
+    align: "left",
+    baseline: "top",
+    color: accentColor,
+    width: 1.5,
+    height: 0.18,
+    fontSizePx: 48,
+    fontWeight: "700",
+    canvasWidth: 960,
+    canvasHeight: 116,
+    maxLines: 2,
+    paddingX: 20,
+    paddingY: 8,
+    position: "0 0.28 0.03",
+  });
+
+  const billboardCreator = createCanvasTextPlane({
+    className: "cv-stand-billboard-creator",
+    value: "",
+    align: "left",
+    baseline: "top",
+    color: STAND_VISUAL_TOKENS.TEXT_MUTED,
+    width: 1.5,
+    height: 0.14,
+    fontSizePx: 36,
+    fontWeight: "600",
+    canvasWidth: 960,
+    canvasHeight: 90,
+    maxLines: 2,
+    paddingX: 20,
+    paddingY: 6,
+    position: "0 0.08 0.035",
+    visible: "false",
+  });
+
+  const billboardDesc = createCanvasTextPlane({
+    className: "cv-stand-billboard-desc",
+    value: "",
+    align: "left",
+    baseline: "top",
+    color: STAND_VISUAL_TOKENS.TEXT_PRIMARY,
+    width: 1.5,
+    height: 0.36,
+    fontSizePx: 34,
+    fontWeight: "400",
+    canvasWidth: 960,
+    canvasHeight: 230,
+    maxLines: 5,
+    paddingX: 20,
+    paddingY: 8,
+    position: "0 -0.18 0.04",
+  });
+
+  billboard.append(billboardBg, billboardTitle, billboardCreator, billboardDesc);
+
+  root.replaceChildren(
+    frame,
+    headerBg,
+    headerText,
+    countBadge,
+    videoBadge,
+    emptyPlaceholder,
+    leftPlane,
+    rightPlane,
+    controlBar,
+    billboard,
+  );
+
+  return {
+    frame,
+    headerBg,
+    headerText,
+    countBadge,
+    videoBadge,
+    emptyPlaceholder,
+    leftPlane,
+    rightPlane,
+    controlBar,
+    prevBtn,
+    counterText,
+    nextBtn,
+    playBtn,
+    muteBtn,
+    closeBtn,
+    billboard,
+    billboardTitle,
+    billboardCreator,
+    billboardDesc,
+  };
+}
+
+function applyMaterialTexture(
+  plane: HTMLElement,
+  texture: DisposableVideoTexture | null,
+  fallbackSrc: string,
+): void {
+  const prevSrc = plane.getAttribute("src") ?? "";
+  if (texture) {
+    plane.setAttribute("color", "#ffffff");
+    plane.setAttribute("material", "shader: flat; color: #ffffff");
+  } else if (fallbackSrc.length === 0 || prevSrc !== fallbackSrc) {
+    plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+    plane.setAttribute(
+      "material",
+      `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+    );
+  }
+  plane.setAttribute("src", fallbackSrc);
+  const obj3D = (plane as unknown as {
+    object3D?: {
+      traverse?: (cb: (node: unknown) => void) => void;
+    };
+  }).object3D;
+
+  if (texture && obj3D && typeof obj3D.traverse === "function") {
+    obj3D.traverse((node: unknown) => {
+      const material = (node as { material?: { map?: unknown; needsUpdate?: boolean } })
+        ?.material;
+      if (material) {
+        material.map = texture;
+        material.needsUpdate = true;
+      }
+    });
+  }
+}
+
+export function createMediaStandComponentDefinition(
+  deps: MediaStandDependencies = {},
+) {
+  const resolveInspectionController = () =>
+    deps.getInspectionController?.() ?? getSharedInspectionController();
+  const resolveVideoController = () =>
+    deps.getVideoController?.() ?? getSharedVideoController();
+  const prefetchImage = deps.prefetchImage ?? defaultPrefetchImage;
+
+  function renderCarouselSlide(instance: MediaStandComponentInstance): void {
+    const els = instance.elements;
+    if (!els) {
+      return;
+    }
+
+    const isEmpty = instance.carousel.isEmpty();
+    const isInspecting = instance.localState === InspectionState.INSPECTING;
+    const item = instance.carousel.getCurrentItem();
+
+    if (isEmpty || !item) {
+      els.emptyPlaceholder.setAttribute("visible", "true");
+      els.countBadge.setAttribute("visible", "false");
+      els.videoBadge.setAttribute("visible", "false");
+      els.leftPlane.setAttribute("visible", "false");
+      els.rightPlane.setAttribute("visible", "false");
+      setToggleClass(els.leftPlane, "clickable", false);
+      setToggleClass(els.controlBar, "clickable", false);
+      els.controlBar.setAttribute("visible", "false");
+      els.billboard.setAttribute("visible", "false");
+
+      for (const btn of [
+        els.prevBtn,
+        els.nextBtn,
+        els.playBtn,
+        els.muteBtn,
+        els.closeBtn,
+      ]) {
+        btn.setAttribute("visible", "false");
+        setToggleClass(btn, "clickable", false);
+      }
+      return;
+    }
+
+    els.emptyPlaceholder.setAttribute("visible", "false");
+    els.countBadge.setAttribute("visible", "true");
+    setCanvasTextElement(els.countBadge, {
+      mode: "label",
+      value: formatItemCount(instance.carousel.getCount()),
+      align: "center",
+      baseline: "middle",
+      color: STAND_VISUAL_TOKENS.TEXT_MUTED,
+      fontSizePx: 44,
+      fontWeight: "600",
+      canvasWidth: 704,
+      canvasHeight: 60,
+      maxLines: 1,
+      paddingY: 4,
+    });
+
+    const isVideo = instance.carousel.isCurrentVideo();
+    const isHalfSBS = instance.carousel.isCurrentHalfSBS();
+    const isVR = instance.data.viewMode.toLowerCase() === "vr";
+
+    els.videoBadge.setAttribute("visible", String(!isInspecting && isVideo));
+
+    const dims = computeContainDimensions(
+      item.width ?? 0,
+      item.height ?? 0,
+      STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M,
+      STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M,
+    );
+
+    const stereoLeft = `eye: LEFT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
+    const stereoRight = `eye: RIGHT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
+
+    els.leftPlane.setAttribute("width", String(dims.width));
+    els.leftPlane.setAttribute("height", String(dims.height));
+    els.leftPlane.setAttribute("cv-stereo-media", stereoLeft);
+    els.leftPlane.setAttribute("visible", "true");
+    setToggleClass(els.leftPlane, "clickable", !isInspecting);
+
+    const showRightPlane = isHalfSBS && isVR;
+    els.rightPlane.setAttribute("width", String(dims.width));
+    els.rightPlane.setAttribute("height", String(dims.height));
+    els.rightPlane.setAttribute("cv-stereo-media", stereoRight);
+    els.rightPlane.setAttribute("visible", String(showRightPlane));
+
+    if (!isInspecting || !isVideo) {
+      const staticSrc = isVideo ? (item.posterUrl ?? "") : item.mediaUrl;
+      applyMaterialTexture(els.leftPlane, null, staticSrc);
+      applyMaterialTexture(els.rightPlane, null, staticSrc);
+    }
+
+    els.controlBar.setAttribute("visible", String(isInspecting));
+    setCanvasTextElement(els.counterText, {
+      mode: "label",
+      value: instance.carousel.getCounterLabel(),
+      align: "center",
+      baseline: "middle",
+      color: STAND_VISUAL_TOKENS.COUNTER_TEXT_COLOR,
+      fontSizePx: 54,
+      fontWeight: "600",
+      canvasWidth: 256,
+      canvasHeight: 96,
+      maxLines: 1,
+    });
+    els.prevBtn.setAttribute("visible", String(isInspecting));
+    els.nextBtn.setAttribute("visible", String(isInspecting));
+    els.closeBtn.setAttribute("visible", String(isInspecting));
+    setToggleClass(els.prevBtn, "clickable", isInspecting);
+    setToggleClass(els.nextBtn, "clickable", isInspecting);
+    setToggleClass(els.closeBtn, "clickable", isInspecting);
+
+    const showVideoControls = isInspecting && isVideo;
+    els.playBtn.setAttribute("visible", String(showVideoControls));
+    els.muteBtn.setAttribute("visible", String(showVideoControls));
+    setToggleClass(els.playBtn, "clickable", showVideoControls);
+    setToggleClass(els.muteBtn, "clickable", showVideoControls);
+
+    const playLabelEl = els.playBtn.querySelector<HTMLElement>(
+      ".cv-stand-play-btn-label",
+    );
+    if (playLabelEl) {
+      setCanvasTextElement(playLabelEl, {
+        mode: "label",
+        value: instance.carousel.isPlaying()
+          ? STAND_DICTIONARY.PAUSE_ICON
+          : STAND_DICTIONARY.PLAY_ICON,
+        align: "center",
+        baseline: "middle",
+        color: STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+        fontSizePx: 64,
+        fontWeight: "700",
+        canvasWidth: 128,
+        canvasHeight: 128,
+        maxLines: 1,
+      });
+    }
+    const muteLabelEl = els.muteBtn.querySelector<HTMLElement>(
+      ".cv-stand-mute-btn-label",
+    );
+    if (muteLabelEl) {
+      setCanvasTextElement(muteLabelEl, {
+        mode: "label",
+        value: instance.carousel.isMuted()
+          ? STAND_DICTIONARY.MUTE_ICON
+          : STAND_DICTIONARY.UNMUTE_ICON,
+        align: "center",
+        baseline: "middle",
+        color: STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
+        fontSizePx: 64,
+        fontWeight: "700",
+        canvasWidth: 128,
+        canvasHeight: 128,
+        maxLines: 1,
+      });
+    }
+
+    const cleanCreator = item.creatorName.trim();
+    const hasCreator = cleanCreator.length > 0;
+    const isLongTitle = item.title.trim().length > 34;
+    const isLongCreator =
+      hasCreator &&
+      `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${cleanCreator}`.length > 42;
+
+    const creatorTop = isLongTitle ? 0.15 : 0.235;
+    const creatorCenterY = creatorTop - 0.07;
+    const descTop = hasCreator
+      ? creatorTop - (isLongCreator ? 0.16 : 0.105)
+      : isLongTitle
+        ? 0.14
+        : 0.225;
+    const descCenterY = descTop - 0.18;
+
+    els.billboard.setAttribute("visible", String(isInspecting));
+    setCanvasTextElement(els.billboardTitle, {
+      mode: "label",
+      value: item.title,
+      align: "left",
+      baseline: "top",
+      color: instance.data.accentColor,
+      fontSizePx: 48,
+      fontWeight: "700",
+      canvasWidth: 960,
+      canvasHeight: 116,
+      maxLines: 2,
+      paddingX: 20,
+      paddingY: 8,
+    });
+    els.billboardCreator.setAttribute("position", `0 ${creatorCenterY} 0.035`);
+    els.billboardDesc.setAttribute("position", `0 ${descCenterY} 0.04`);
+    setCanvasTextElement(els.billboardDesc, {
+      mode: "label",
+      value: item.description,
+      align: "left",
+      baseline: "top",
+      color: STAND_VISUAL_TOKENS.TEXT_PRIMARY,
+      fontSizePx: 34,
+      fontWeight: "400",
+      canvasWidth: 960,
+      canvasHeight: 230,
+      maxLines: 5,
+      paddingX: 20,
+      paddingY: 8,
+    });
+
+    if (hasCreator) {
+      setCanvasTextElement(els.billboardCreator, {
+        mode: "label",
+        value: `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${cleanCreator}`,
+        align: "left",
+        baseline: "top",
+        color: STAND_VISUAL_TOKENS.TEXT_MUTED,
+        fontSizePx: 36,
+        fontWeight: "600",
+        canvasWidth: 960,
+        canvasHeight: 90,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 6,
+      });
+      els.billboardCreator.setAttribute("visible", "true");
+    } else {
+      setCanvasTextElement(els.billboardCreator, {
+        mode: "label",
+        value: "",
+        align: "left",
+        baseline: "top",
+        color: STAND_VISUAL_TOKENS.TEXT_MUTED,
+        fontSizePx: 36,
+        fontWeight: "600",
+        canvasWidth: 960,
+        canvasHeight: 90,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 6,
+      });
+      els.billboardCreator.setAttribute("visible", "false");
+    }
+  }
+
+  async function syncSlideMediaPlayback(
+    instance: MediaStandComponentInstance,
+  ): Promise<void> {
+    const videoController = resolveVideoController();
+    const item = instance.carousel.getCurrentItem();
+
+    if (
+      instance.localState !== InspectionState.INSPECTING ||
+      !item ||
+      !instance.carousel.isCurrentVideo()
+    ) {
+      if (instance.ownsActiveVideo) {
+        videoController.stopAndRelease();
+        instance.ownsActiveVideo = false;
+      }
+      instance.carousel.setPlaying(false);
+      renderCarouselSlide(instance);
+      return;
+    }
+
+    const activeSlideId = item.id;
+    instance.ownsActiveVideo = true;
+    const texture = await videoController.playVideo(item.mediaUrl);
+
+    if (
+      instance.localState !== InspectionState.INSPECTING ||
+      instance.carousel.getCurrentItem()?.id !== activeSlideId
+    ) {
+      return;
+    }
+
+    instance.carousel.setPlaying(videoController.isPlaying());
+    instance.carousel.setMuted(videoController.isMuted());
+
+    if (instance.elements) {
+      const videoSrcToken = `#${SHARED_VIDEO_ELEMENT_ID}`;
+      applyMaterialTexture(instance.elements.leftPlane, texture, videoSrcToken);
+      applyMaterialTexture(instance.elements.rightPlane, texture, videoSrcToken);
+    }
+    renderCarouselSlide(instance);
+  }
+
+  function prefetchNextSlideAsset(instance: MediaStandComponentInstance): void {
+    const nextUrl = instance.carousel.getNextPrefetchUrl();
+    if (nextUrl) {
+      prefetchImage(nextUrl);
+    }
+  }
+
+  function applyTransform(
+    el: HTMLElement,
+    pos: Vector3D,
+    rot: Vector3D,
+  ): void {
+    el.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+    el.setAttribute("rotation", `${rot.x} ${rot.y} ${rot.z}`);
+  }
+
+  function moveStandToInspectionCenter(
+    instance: MediaStandComponentInstance,
+    controller: ExhibitInspectionController,
+  ): void {
+    const target = controller.calculateRadialTargetPosition(
+      instance.data.galleryPosition,
+    );
+    const dx = -target.x;
+    const dz = -target.z;
+    const yawDeg =
+      Math.atan2(dx, dz) * STAND_VISUAL_TOKENS.ROTATION_RAD_TO_DEG;
+
+    applyTransform(instance.el, target, {
+      x: 0,
+      y: yawDeg,
+      z: 0,
+    });
+  }
+
+  function restoreGalleryTransform(instance: MediaStandComponentInstance): void {
+    applyTransform(
+      instance.el,
+      instance.data.galleryPosition,
+      instance.data.galleryRotation,
+    );
+  }
+
+  return {
+    schema: {
+      roomId: { type: "string", default: "" },
+      standId: { type: "string", default: "" },
+      label: { type: "string", default: "" },
+      accentColor: { type: "string", default: "#D99B26" },
+      viewMode: { type: "string", default: "vr" },
+      galleryPosition: { type: "vec3", default: { x: 0, y: 0, z: 0 } },
+      galleryRotation: { type: "vec3", default: { x: 0, y: 0, z: 0 } },
+      itemsJson: { type: "string", default: "[]" },
+    },
+
+    init: function (this: MediaStandComponentInstance) {
+      this.exhibitId = `${this.data.roomId}:${this.data.standId}`;
+      this.carousel = new MediaCarouselController(
+        parseStandItems(this.el, this.data.itemsJson),
+      );
+      this.localState = InspectionState.IDLE;
+      this.ownsActiveVideo = false;
+      this.cleanupListeners = [];
+
+      this.elements = buildStandDom(
+        this.el,
+        this.data.accentColor,
+        this.data.label,
+      );
+
+      const bindClick = (el: HTMLElement, handler: () => void) => {
+        const listener = (evt: Event) => {
+          evt.stopPropagation();
+          handler();
+        };
+        el.addEventListener("click", listener);
+        this.cleanupListeners.push(() => el.removeEventListener("click", listener));
+      };
+
+      const bindTextureReady = (plane: HTMLElement) => {
+        const readyListener = () => {
+          plane.setAttribute("color", "#ffffff");
+          plane.setAttribute("material", "shader: flat; color: #ffffff");
+        };
+        plane.addEventListener("materialtextureloaded", readyListener);
+        this.cleanupListeners.push(() =>
+          plane.removeEventListener("materialtextureloaded", readyListener),
+        );
+      };
+
+      bindTextureReady(this.elements.leftPlane);
+      bindTextureReady(this.elements.rightPlane);
+
+      bindClick(this.elements.leftPlane, () => {
+        if (this.localState === InspectionState.IDLE && !this.carousel.isEmpty()) {
+          void this.inspect();
+        }
+      });
+      bindClick(this.elements.prevBtn, () => {
+        if (this.localState === InspectionState.INSPECTING) {
+          void this.prevSlide();
+        }
+      });
+      bindClick(this.elements.nextBtn, () => {
+        if (this.localState === InspectionState.INSPECTING) {
+          void this.nextSlide();
+        }
+      });
+      bindClick(this.elements.playBtn, () => {
+        if (this.localState === InspectionState.INSPECTING) {
+          void this.togglePlay();
+        }
+      });
+      bindClick(this.elements.muteBtn, () => {
+        if (this.localState === InspectionState.INSPECTING) {
+          this.toggleMute();
+        }
+      });
+      bindClick(this.elements.closeBtn, () => {
+        if (this.localState === InspectionState.INSPECTING) {
+          this.returnToGallery();
+        }
+      });
+
+      const controller = resolveInspectionController();
+      this.unsubscribeInspection = controller.subscribe((_state, activeExhibit) => {
+        if (
+          activeExhibit?.id !== this.exhibitId &&
+          this.localState !== InspectionState.IDLE
+        ) {
+          if (this.ownsActiveVideo) {
+            resolveVideoController().stopAndRelease();
+            this.ownsActiveVideo = false;
+          }
+          this.carousel.reset();
+          this.localState = InspectionState.IDLE;
+          restoreGalleryTransform(this);
+          renderCarouselSlide(this);
+        }
+      });
+
+      renderCarouselSlide(this);
+    },
+
+    update: function (
+      this: MediaStandComponentInstance,
+      oldData: Partial<MediaStandComponentData>,
+    ) {
+      if (oldData.viewMode !== undefined && oldData.viewMode !== this.data.viewMode) {
+        renderCarouselSlide(this);
+      }
+      if (oldData.itemsJson !== undefined && oldData.itemsJson !== this.data.itemsJson) {
+        this.carousel = new MediaCarouselController(
+          parseStandItems(this.el, this.data.itemsJson),
+        );
+        renderCarouselSlide(this);
+      }
+    },
+
+    remove: function (this: MediaStandComponentInstance) {
+      for (const cleanup of this.cleanupListeners) {
+        cleanup();
+      }
+      this.cleanupListeners = [];
+      this.unsubscribeInspection?.();
+      this.unsubscribeInspection = null;
+
+      if (this.ownsActiveVideo) {
+        resolveVideoController().stopAndRelease();
+        this.ownsActiveVideo = false;
+      }
+    },
+
+    getLocalState: function (this: MediaStandComponentInstance) {
+      return this.localState;
+    },
+
+    inspect: async function (this: MediaStandComponentInstance) {
+      if (this.carousel.isEmpty() || this.localState === InspectionState.INSPECTING) {
+        return;
+      }
+
+      const controller = resolveInspectionController();
+      if (!controller.focus(this.exhibitId)) {
+        return;
+      }
+
+      this.localState = InspectionState.INSPECTING;
+      controller.completeFocus();
+      moveStandToInspectionCenter(this, controller);
+      renderCarouselSlide(this);
+      prefetchNextSlideAsset(this);
+      await syncSlideMediaPlayback(this);
+    },
+
+    returnToGallery: function (this: MediaStandComponentInstance) {
+      if (this.localState === InspectionState.IDLE) {
+        return;
+      }
+
+      const controller = resolveInspectionController();
+      controller.return();
+      controller.completeReturn();
+
+      if (this.ownsActiveVideo) {
+        resolveVideoController().stopAndRelease();
+        this.ownsActiveVideo = false;
+      }
+
+      this.carousel.reset();
+      this.localState = InspectionState.IDLE;
+      restoreGalleryTransform(this);
+      renderCarouselSlide(this);
+    },
+
+    nextSlide: async function (this: MediaStandComponentInstance) {
+      if (this.carousel.isEmpty() || this.localState !== InspectionState.INSPECTING) {
+        return;
+      }
+      this.carousel.next();
+      renderCarouselSlide(this);
+      prefetchNextSlideAsset(this);
+      await syncSlideMediaPlayback(this);
+    },
+
+    prevSlide: async function (this: MediaStandComponentInstance) {
+      if (this.carousel.isEmpty() || this.localState !== InspectionState.INSPECTING) {
+        return;
+      }
+      this.carousel.prev();
+      renderCarouselSlide(this);
+      prefetchNextSlideAsset(this);
+      await syncSlideMediaPlayback(this);
+    },
+
+    togglePlay: async function (this: MediaStandComponentInstance) {
+      if (!this.carousel.isCurrentVideo() || this.localState !== InspectionState.INSPECTING) {
+        return;
+      }
+      const videoController = resolveVideoController();
+      const nowPlaying = await videoController.togglePause();
+      this.carousel.setPlaying(nowPlaying);
+      this.carousel.setMuted(videoController.isMuted());
+      renderCarouselSlide(this);
+    },
+
+    toggleMute: function (this: MediaStandComponentInstance) {
+      if (!this.carousel.isCurrentVideo() || this.localState !== InspectionState.INSPECTING) {
+        return;
+      }
+      const videoController = resolveVideoController();
+      const nowMuted = videoController.toggleMute();
+      this.carousel.setMuted(nowMuted);
+      renderCarouselSlide(this);
+    },
+  };
+}
+
+export function registerMediaStandComponent(): void {
+  const globalAframe = (
+    globalThis as {
+      AFRAME?: {
+        registerComponent: (name: string, def: unknown) => void;
+        components?: Record<string, unknown>;
+      };
+    }
+  ).AFRAME;
+
+  if (globalAframe && !globalAframe.components?.["cv-media-stand"]) {
+    globalAframe.registerComponent(
+      "cv-media-stand",
+      createMediaStandComponentDefinition(),
+    );
+  }
+}
+
+registerMediaStandComponent();
+export { INSPECTION_TIMINGS };

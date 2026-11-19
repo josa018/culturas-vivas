@@ -3,17 +3,45 @@
  * Coordinates preloading of critical assets and WebGL scene readiness.
  */
 
-import { ROOM_DEFINITIONS } from "./constants";
+import { DEFAULT_ROOM_ID, ROOM_CATALOG } from "../shared/room-catalog";
+import {
+  emptyRoomMediaProvider,
+  isVideoMediaType,
+  type RoomMediaProvider,
+} from "./media-types";
 
-export function getCriticalRoomAssets(): string[] {
-  return Array.from(
-    new Set(Object.values(ROOM_DEFINITIONS).map((def) => def.skyboxUrl)),
-  );
+/**
+ * Resolves only the active Lobby skybox and Lobby cover/poster assets needed for Splash preload.
+ */
+export function getCriticalRoomAssets(
+  mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
+): string[] {
+  const lobbyEntry = ROOM_CATALOG[DEFAULT_ROOM_ID];
+  const uniqueAssets = new Set<string>([lobbyEntry.skyboxUrl]);
+
+  for (const stand of lobbyEntry.stands) {
+    const items = mediaProvider.getStandItems(DEFAULT_ROOM_ID, stand.standId);
+    const coverItem = items[0];
+    if (!coverItem) {
+      continue;
+    }
+    const coverUrl =
+      coverItem.posterUrl && coverItem.posterUrl.trim().length > 0
+        ? coverItem.posterUrl.trim()
+        : !isVideoMediaType(coverItem.mediaType)
+          ? coverItem.mediaUrl.trim()
+          : "";
+    if (coverUrl) {
+      uniqueAssets.add(coverUrl);
+    }
+  }
+
+  return Array.from(uniqueAssets);
 }
 
 export const PRELOAD_CONSTANTS = {
   DEFAULT_TIMEOUT_MS: 8000,
-  DEFAULT_CRITICAL_ASSETS: ["/scenes/scene1.webp", "/scenes/scene2.webp"],
+  DEFAULT_CRITICAL_ASSETS: [ROOM_CATALOG[DEFAULT_ROOM_ID].skyboxUrl],
   PERCENTAGE_COMPLETE: 100,
   PERCENTAGE_START: 0,
 } as const;

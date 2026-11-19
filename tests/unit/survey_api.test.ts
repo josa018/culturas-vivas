@@ -66,28 +66,27 @@ describe("POST /api/survey/submit & Schema Migrations", () => {
     expect(getStatus()).toBe(405);
   });
 
-  it("rejects non-object bodies, malformed sessionId, invalid rating, and oversized feedback with 400", async () => {
-    const invalidPayloads: unknown[] = [
-      "not-json",
-      [],
-      { sessionId: "bad-uuid", rating: 5 },
-      { sessionId: VALID_SESSION_ID, rating: 0 },
-      { sessionId: VALID_SESSION_ID, rating: 6 },
-      { sessionId: VALID_SESSION_ID, rating: 4.2 },
-      { sessionId: VALID_SESSION_ID, rating: "5" },
-      { sessionId: VALID_SESSION_ID, rating: 5, feedback: 123 },
-      {
+  it.each([
+    { label: "non-JSON string body", payload: "not-json" },
+    { label: "array body", payload: [] },
+    { label: "malformed sessionId", payload: { sessionId: "bad-uuid", rating: 5 } },
+    { label: "rating below minimum (0)", payload: { sessionId: VALID_SESSION_ID, rating: 0 } },
+    { label: "rating above maximum (6)", payload: { sessionId: VALID_SESSION_ID, rating: 6 } },
+    { label: "fractional rating (4.2)", payload: { sessionId: VALID_SESSION_ID, rating: 4.2 } },
+    { label: "string rating ('5')", payload: { sessionId: VALID_SESSION_ID, rating: "5" } },
+    { label: "non-string feedback", payload: { sessionId: VALID_SESSION_ID, rating: 5, feedback: 123 } },
+    {
+      label: "oversized feedback (> 500 chars)",
+      payload: {
         sessionId: VALID_SESSION_ID,
         rating: 5,
         feedback: "x".repeat(SURVEY_CONSTANTS.FEEDBACK.MAX_LENGTH + 1),
       },
-    ];
-
-    for (const payload of invalidPayloads) {
-      const { res, getStatus } = createMockResponse();
-      await handler({ method: "POST", body: payload }, res);
-      expect(getStatus()).toBe(400);
-    }
+    },
+  ])("rejects $label with 400", async ({ payload }) => {
+    const { res, getStatus } = createMockResponse();
+    await handler({ method: "POST", body: payload }, res);
+    expect(getStatus()).toBe(400);
   });
 
   it("returns 404 when sessionId does not exist in visitor_sessions", async () => {
@@ -107,7 +106,7 @@ describe("POST /api/survey/submit & Schema Migrations", () => {
     expect(Number(countRes.rows[0].cnt)).toBe(0);
   });
 
-  it("persists single-question survey with trimmed feedback for existing visitor_sessions row (201) and blocks duplicate (409)", async () => {
+  it("persists trimmed feedback (201) and blocks case-insensitive duplicate (409)", async () => {
     const first = createMockResponse();
     await handler(
       {
@@ -128,11 +127,10 @@ describe("POST /api/survey/submit & Schema Migrations", () => {
       sql: "SELECT session_uuid, rating, feedback FROM surveys WHERE session_uuid = ?",
       args: [VALID_SESSION_ID],
     });
-    expect(saved.rows.length).toBe(1);
+    expect(saved.rows).toHaveLength(1);
     expect(saved.rows[0].rating).toBe(4);
     expect(saved.rows[0].feedback).toBe("Gran recorrido cultural");
 
-    // Duplicate submission must return 409
     const duplicate = createMockResponse();
     await handler(
       {
@@ -141,11 +139,28 @@ describe("POST /api/survey/submit & Schema Migrations", () => {
       },
       duplicate.res,
     );
-
     expect(duplicate.getStatus()).toBe(409);
   });
 
-  it("enforces foreign key integrity and drops legacy idx_surveys_session_uuid", async () => {
+  it("persists whitespace-only feedback as NULL", async () => {
+    const mock = createMockResponse();
+    await handler(
+      {
+        method: "POST",
+        body: { sessionId: VALID_SESSION_ID, rating: 5, feedback: "   \n\t  " },
+      },
+      mock.res,
+    );
+
+    expect(mock.getStatus()).toBe(201);
+    const saved = await client.execute({
+      sql: "SELECT feedback FROM surveys WHERE session_uuid = ?",
+      args: [VALID_SESSION_ID],
+    });
+    expect(saved.rows[0].feedback).toBeNull();
+  });
+
+  it("enforces foreign key integrity and unique index on surveys.session_uuid", async () => {
     const idxCheck = await client.execute(
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'surveys'",
     );

@@ -65,6 +65,28 @@ export const ADMIN_UI_CLASSES = {
   TABLE_MODE_CHIP_VR: "cv-admin-mode-chip--vr",
   TABLE_MODE_CHIP_2D: "cv-admin-mode-chip--2d",
   TABLE_MODE_CHIP_UNKNOWN: "cv-admin-mode-chip--unknown",
+
+  // Dashboard Tabs & Multimedia CMS
+  TAB_BAR: "cv-admin-tabs",
+  TAB_BTN: "cv-admin-tab-btn",
+  TAB_BTN_ACTIVE: "cv-admin-tab-btn--active",
+  TAB_PANEL: "cv-admin-tab-panel",
+  TAB_PANEL_HIDDEN: "cv-admin-tab-panel--hidden",
+  MEDIA_WIDGET: "cv-admin-media-widget",
+  MEDIA_QUOTA_BAR: "cv-admin-media-quota",
+  MEDIA_QUOTA_FILL: "cv-admin-media-quota-fill",
+  MEDIA_QUOTA_LABEL: "cv-admin-media-quota-label",
+  MEDIA_FILTERS: "cv-admin-media-filters",
+  MEDIA_FORM: "cv-admin-media-form",
+  MEDIA_LIST: "cv-admin-media-list",
+  MEDIA_ITEM_CARD: "cv-admin-media-item",
+  MEDIA_ITEM_THUMB: "cv-admin-media-thumb",
+  MEDIA_ITEM_ACTIONS: "cv-admin-media-item-actions",
+  MEDIA_FORMAT_CHIP: "cv-admin-media-format-chip",
+  MEDIA_EDIT_FORM: "cv-admin-media-edit-form",
+  MEDIA_FIELD_COUNTER: "cv-admin-media-counter",
+  MEDIA_POSTER_CONTROLS: "cv-admin-media-poster-controls",
+  MEDIA_POSTER_PREVIEW: "cv-admin-media-poster-preview",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -112,6 +134,54 @@ export const ADMIN_UI_TEXT = {
   STAR_EMPTY: "☆",
   FEEDBACK_EMPTY: "—",
   RATING_SCALE_SUFFIX: " / 5.0",
+
+  // Tabs & Multimedia CMS
+  TAB_TELEMETRY: "Telemetría y Encuestas",
+  TAB_MEDIA: "Gestión Multimedia",
+  MEDIA_SECTION_TITLE: "Multimedia por Sala y Stand",
+  MEDIA_ROOM_LABEL: "Sala / Cultura",
+  MEDIA_STAND_LABEL: "Categoría (Stand)",
+  MEDIA_FILE_LABEL: "Archivo (Foto JPG/PNG/WebP o Video MP4)",
+  MEDIA_TITLE_LABEL: "Título",
+  MEDIA_CREATOR_LABEL: "Autor / Artista / Fotógrafo (opcional)",
+  MEDIA_DESC_LABEL: "Descripción breve",
+  MEDIA_FORMAT_LABEL: "Formato visual",
+  MEDIA_FORMAT_2D: "Estándar 2D",
+  MEDIA_FORMAT_HALF_SBS: "Estereoscópico Half-SBS (VR)",
+  MEDIA_UPLOAD_BTN: "Subir al Stand",
+  MEDIA_UPLOADING_BTN: "Optimizando y subiendo...",
+  MEDIA_EMPTY_STAND: "No hay elementos multimedia en este stand.",
+  MEDIA_MOVE_UP: "↑",
+  MEDIA_MOVE_DOWN: "↓",
+  MEDIA_EDIT_BTN: "Editar",
+  MEDIA_SAVE_BTN: "Guardar",
+  MEDIA_CANCEL_BTN: "Cancelar",
+  MEDIA_DELETE_BTN: "Eliminar",
+  MEDIA_CREATOR_PREFIX: "Crédito: ",
+  MEDIA_POSTER_TIME_LABEL: "Segundo para capturar miniatura del video (seg)",
+  MEDIA_POSTER_CAPTURE_BTN: "Capturar vista previa",
+  MEDIA_POSTER_CUSTOM_LABEL: "Miniatura personalizada (opcional, JPG/PNG/WebP)",
+  MEDIA_CHANGE_POSTER_BTN: "Cambiar miniatura",
+} as const;
+
+export const ADMIN_MEDIA_ENDPOINTS = {
+  MEDIA: "/api/admin/media",
+  PRESIGN: "/api/admin/media/presign",
+} as const;
+
+export const ADMIN_MEDIA_LIMITS = {
+  MAX_TOTAL_BYTES: 8_589_934_592,
+  MAX_IMAGE_BYTES: 5_242_880,
+  MAX_VIDEO_BYTES: 104_857_600,
+  MAX_POSTER_BYTES: 1_048_576,
+  MAX_IMAGE_EDGE_PX: 2048,
+  IMAGE_WEBP_QUALITY: 0.85,
+  POSTER_MAX_WIDTH_PX: 1024,
+  POSTER_SEEK_SECONDS: 0.5,
+  MAX_TITLE_LENGTH: 80,
+  MAX_CREATOR_LENGTH: 80,
+  MAX_DESCRIPTION_LENGTH: 240,
+  OUTPUT_IMAGE_MIME: "image/webp",
 } as const;
 
 export const ADMIN_THRESHOLDS = {

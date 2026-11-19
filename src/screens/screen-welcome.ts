@@ -1,6 +1,7 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT, CULTURAL_ASSETS } from "./constants";
+import { getSharedVideoController } from "../experience/shared-video-controller";
 
 export class WelcomeScreenView implements ScreenView {
   public readonly id = ScreenId.WELCOME;
@@ -67,6 +68,7 @@ export class WelcomeScreenView implements ScreenView {
 
     vrButton.addEventListener("click", (event) => {
       event.stopPropagation();
+      void getSharedVideoController().unlockFromUserGesture();
       this.dispatch(NavigationAction.SELECT_VR);
     });
 
@@ -99,6 +101,7 @@ export class WelcomeScreenView implements ScreenView {
 
     touchButton.addEventListener("click", (event) => {
       event.stopPropagation();
+      void getSharedVideoController().unlockFromUserGesture();
       this.dispatch(NavigationAction.SELECT_2D);
     });
 

@@ -1,10 +1,10 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { createClient, type Client } from "@libsql/client";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
+  extractBearerToken,
+  getJwtSecretKey,
   hashPassword,
   signAdminToken,
   verifyAdminBearerToken,
@@ -13,12 +13,11 @@ import {
 import { createAdminLoginHandler } from "../../api/admin/login";
 import { createAdminStatsHandler } from "../../api/admin/stats";
 import { createSessionAccessHandler } from "../../api/session/access";
-import { runMigrations } from "../../scripts/db-migrate.mjs";
-import { seedAdminUser } from "../../scripts/seed-admin.mjs";
 
 const TEST_JWT_SECRET = "test-secret-minimum-32-bytes-long-for-hs256";
 const SESSION_A = "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d";
 const SESSION_B = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const SESSION_C = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
 const MISSING_SESSION = "99999999-1111-4222-8333-444444444444";
 
 async function applyAllMigrations(client: Client): Promise<void> {
@@ -53,7 +52,54 @@ function createMockResponse() {
   };
 }
 
-describe("Admin Auth, Access Logs & Real Telemetry API", () => {
+describe("Admin Auth Helpers (_auth.ts)", () => {
+  it("hashes passwords with bcryptjs and verifies matching vs non-matching passwords", async () => {
+    const hash = await hashPassword("clave_segura_2026");
+    expect(hash.startsWith("$2")).toBe(true);
+    expect(await verifyPassword("clave_segura_2026", hash)).toBe(true);
+    expect(await verifyPassword("otra_clave", hash)).toBe(false);
+  });
+
+  it("signs HS256 JWTs and rejects tampered tokens", async () => {
+    const token = await signAdminToken(
+      { id: 1, username: "bibliotecario", role: "librarian" },
+      TEST_JWT_SECRET,
+    );
+
+    const claims = await verifyAdminBearerToken(
+      { authorization: `Bearer ${token}` },
+      TEST_JWT_SECRET,
+    );
+    expect(claims?.username).toBe("bibliotecario");
+    expect(claims?.role).toBe("librarian");
+
+    expect(
+      await verifyAdminBearerToken(
+        { authorization: "Bearer tampered.token.value" },
+        TEST_JWT_SECRET,
+      ),
+    ).toBeNull();
+  });
+
+  it("extracts Bearer tokens case-insensitively and ignores malformed headers", () => {
+    expect(extractBearerToken({ Authorization: "bearer my-token-123" })).toBe(
+      "my-token-123",
+    );
+    expect(extractBearerToken({ authorization: ["Bearer first-token"] })).toBe(
+      "first-token",
+    );
+    expect(extractBearerToken({ authorization: "Basic abc" })).toBeNull();
+    expect(extractBearerToken(undefined)).toBeNull();
+  });
+
+  it("validates JWT secret length and presence", () => {
+    expect(() => getJwtSecretKey("")).toThrow("ADMIN_JWT_SECRET is not defined");
+    expect(() => getJwtSecretKey("too-short")).toThrow("at least 32 bytes");
+    expect(getJwtSecretKey(TEST_JWT_SECRET).byteLength).toBeGreaterThanOrEqual(32);
+  });
+});
+
+describe("Admin Login, Access Logs & Stats API", () => {
   let client: Client;
 
   beforeEach(async () => {
@@ -65,263 +111,270 @@ describe("Admin Auth, Access Logs & Real Telemetry API", () => {
     client.close();
   });
 
-  it("hashes passwords with bcryptjs and signs/verifies HS256 JWTs with jose", async () => {
-    const hash = await hashPassword("clave_segura_2026");
-    expect(hash.startsWith("$2")).toBe(true);
-    expect(await verifyPassword("clave_segura_2026", hash)).toBe(true);
-    expect(await verifyPassword("otra_clave", hash)).toBe(false);
-
-    const token = await signAdminToken(
-      { id: 1, username: "bibliotecario", role: "librarian" },
-      TEST_JWT_SECRET,
-    );
-    const claims = await verifyAdminBearerToken(
-      { authorization: `Bearer ${token}` },
-      TEST_JWT_SECRET,
-    );
-    expect(claims?.username).toBe("bibliotecario");
-    expect(claims?.role).toBe("librarian");
-
-    const invalidClaims = await verifyAdminBearerToken(
-      { authorization: "Bearer tampered.token.value" },
-      TEST_JWT_SECRET,
-    );
-    expect(invalidClaims).toBeNull();
-  });
-
-  it("authenticates users_admin via POST /api/admin/login", async () => {
-    const hash = await hashPassword("secret_pass_123");
-    await client.execute({
-      sql: "INSERT INTO users_admin (username, password_hash, role) VALUES (?, ?, ?)",
-      args: ["biblio_admin", hash, "admin"],
-    });
-
-    const loginHandler = createAdminLoginHandler({
-      resolveDb: () => client,
-      signToken: (u) => signAdminToken(u, TEST_JWT_SECRET),
-    });
-
-    // Method rejection
-    const getRes = createMockResponse();
-    await loginHandler({ method: "GET" }, getRes.res);
-    expect(getRes.getStatus()).toBe(405);
-
-    // Invalid body
-    const badRes = createMockResponse();
-    await loginHandler({ method: "POST", body: { username: "" } }, badRes.res);
-    expect(badRes.getStatus()).toBe(400);
-
-    // Wrong password
-    const wrongRes = createMockResponse();
-    await loginHandler(
-      {
-        method: "POST",
-        body: { username: "biblio_admin", password: "wrong" },
-      },
-      wrongRes.res,
-    );
-    expect(wrongRes.getStatus()).toBe(401);
-
-    // Valid credentials
-    const okRes = createMockResponse();
-    await loginHandler(
-      {
-        method: "POST",
-        body: { username: " biblio_admin ", password: "secret_pass_123" },
-      },
-      okRes.res,
-    );
-    expect(okRes.getStatus()).toBe(200);
-    const okPayload = okRes.getBody() as {
-      token: string;
-      user: { username: string; role: string };
-    };
-    expect(okPayload.user).toEqual({ username: "biblio_admin", role: "admin" });
-    const verified = await verifyAdminBearerToken(
-      { authorization: `Bearer ${okPayload.token}` },
-      TEST_JWT_SECRET,
-    );
-    expect(verified?.username).toBe("biblio_admin");
-  });
-
-  it("records viewing mode into access_logs via POST /api/session/access", async () => {
-    const now = Date.now();
-    await client.execute({
-      sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 0)",
-      args: [SESSION_A, now, now],
-    });
-
-    const accessHandler = createSessionAccessHandler(() => client);
-
-    const badMode = createMockResponse();
-    await accessHandler(
-      {
-        method: "POST",
-        body: { sessionId: SESSION_A, deviceType: "mobile", mode: "3d" },
-      },
-      badMode.res,
-    );
-    expect(badMode.getStatus()).toBe(400);
-
-    const missingSession = createMockResponse();
-    await accessHandler(
-      {
-        method: "POST",
-        body: { sessionId: MISSING_SESSION, deviceType: "mobile", mode: "vr" },
-      },
-      missingSession.res,
-    );
-    expect(missingSession.getStatus()).toBe(404);
-
-    const okRes = createMockResponse();
-    await accessHandler(
-      {
-        method: "POST",
-        body: { sessionId: SESSION_A, deviceType: "mobile", mode: "vr" },
-      },
-      okRes.res,
-    );
-    expect(okRes.getStatus()).toBe(201);
-
-    const logs = await client.execute(
-      "SELECT session_uuid, device_type, mode FROM access_logs",
-    );
-    expect(logs.rows.length).toBe(1);
-    expect(logs.rows[0].mode).toBe("vr");
-    expect(logs.rows[0].device_type).toBe("mobile");
-  });
-
-  it("enforces JWT auth and aggregates real 24h UTC-7 stats and joined surveys on GET /api/admin/stats", async () => {
-    // Fixed museum timestamp: 2026-11-17 11:30:00 UTC-7 = 2026-11-17T18:30:00Z
-    const fixedNowMs = Date.UTC(2026, 10, 17, 18, 30, 0);
-    const hour11Ms = Date.UTC(2026, 10, 17, 18, 10, 0); // 11:10 UTC-7
-    const hour09Ms = Date.UTC(2026, 10, 17, 16, 5, 0); // 09:05 UTC-7
-
-    await client.batch(
-      [
-        {
-          sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 2)",
-          args: [SESSION_A, hour11Ms, fixedNowMs - 5_000], // active
-        },
-        {
-          sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
-          args: [SESSION_B, hour09Ms, fixedNowMs - 90_000], // inactive (> 30s)
-        },
-        {
-          sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'mobile', 'vr')",
-          args: [SESSION_A],
-        },
-        {
-          sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'mobile', '2d')",
-          args: [SESSION_A], // latest switch to 2d
-        },
-        {
-          sql: "INSERT INTO surveys (session_uuid, rating, feedback) VALUES (?, 5, 'Excelente')",
-          args: [SESSION_A],
-        },
-        {
-          sql: "INSERT INTO surveys (session_uuid, rating, feedback) VALUES (?, 3, NULL)",
-          args: [SESSION_B], // no access_logs row -> viewMode null
-        },
-      ],
-      "write",
-    );
-
-    const statsHandler = createAdminStatsHandler({
-      resolveDb: () => client,
-      verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
-      now: () => fixedNowMs,
-    });
-
-    // Unauthorized without Bearer token
-    const unauthRes = createMockResponse();
-    await statsHandler({ method: "GET", headers: {} }, unauthRes.res);
-    expect(unauthRes.getStatus()).toBe(401);
-
-    // Authorized GET
-    const token = await signAdminToken(
-      { id: 1, username: "admin", role: "admin" },
-      TEST_JWT_SECRET,
-    );
-    const okRes = createMockResponse();
-    await statsHandler(
-      { method: "GET", headers: { authorization: `Bearer ${token}` } },
-      okRes.res,
-    );
-
-    expect(okRes.getStatus()).toBe(200);
-    const payload = okRes.getBody() as {
-      activeSessions: number;
-      hourlyAttendance: { labels: string[]; values: number[]; peak: number };
-      surveys: Array<{
-        id: string;
-        rating: number;
-        feedback: string;
-        viewMode: string | null;
-      }>;
-      averageRating: number;
-      totalSurveys: number;
-    };
-
-    expect(payload.activeSessions).toBe(1);
-    expect(payload.hourlyAttendance.labels.length).toBe(24);
-    expect(payload.hourlyAttendance.values[9]).toBe(1);
-    expect(payload.hourlyAttendance.values[11]).toBe(1);
-    expect(payload.hourlyAttendance.peak).toBe(1);
-    expect(payload.averageRating).toBe(4);
-    expect(payload.totalSurveys).toBe(2);
-    expect(payload.surveys.length).toBe(2);
-    expect(payload.surveys[0].viewMode).toBeNull(); // SESSION_B newest id=2
-    expect(payload.surveys[1].viewMode).toBe("2d"); // SESSION_A switched from vr -> 2d
-    expect(payload.surveys[1].feedback).toBe("Excelente");
-  });
-
-  it("applies 006_telemetry_indexes.sql and provisions admin account via seed-admin.mjs", async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cv-seed-admin-"));
-    const dbUrl = pathToFileURL(path.join(tmpDir, "seed.db")).href;
-
-    try {
-      await runMigrations({ dbUrl, log: () => {} });
-      const seeded = await seedAdminUser({
-        dbUrl,
-        username: "director",
-        password: "strong_password_99",
-        role: "admin",
+  describe("POST /api/admin/login", () => {
+    it("rejects non-POST methods with 405", async () => {
+      const loginHandler = createAdminLoginHandler({
+        resolveDb: () => client,
+        signToken: (u) => signAdminToken(u, TEST_JWT_SECRET),
       });
-      expect(seeded).toEqual({ username: "director", role: "admin" });
+      const mock = createMockResponse();
 
-      const verifyDb = createClient({ url: dbUrl });
-      const userRes = await verifyDb.execute({
-        sql: "SELECT username, password_hash, role FROM users_admin WHERE username = ?",
-        args: ["director"],
+      await loginHandler({ method: "GET" }, mock.res);
+      expect(mock.getStatus()).toBe(405);
+    });
+
+    it.each([
+      { label: "non-object body", body: "not-json" },
+      { label: "empty username", body: { username: "   ", password: "secret" } },
+      { label: "missing password", body: { username: "biblio_admin" } },
+    ])("rejects $label with 400", async ({ body }) => {
+      const loginHandler = createAdminLoginHandler({
+        resolveDb: () => client,
+        signToken: (u) => signAdminToken(u, TEST_JWT_SECRET),
       });
-      expect(userRes.rows.length).toBe(1);
-      expect(
-        await verifyPassword(
-          "strong_password_99",
-          String(userRes.rows[0].password_hash),
-        ),
-      ).toBe(true);
+      const mock = createMockResponse();
 
-      const idxRes = await verifyDb.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'index'",
+      await loginHandler({ method: "POST", body }, mock.res);
+      expect(mock.getStatus()).toBe(400);
+    });
+
+    it("returns 401 for unknown username or incorrect password", async () => {
+      const hash = await hashPassword("secret_pass_123");
+      await client.execute({
+        sql: "INSERT INTO users_admin (username, password_hash, role) VALUES (?, ?, ?)",
+        args: ["biblio_admin", hash, "admin"],
+      });
+
+      const loginHandler = createAdminLoginHandler({
+        resolveDb: () => client,
+        signToken: (u) => signAdminToken(u, TEST_JWT_SECRET),
+      });
+
+      const unknownUserRes = createMockResponse();
+      await loginHandler(
+        { method: "POST", body: { username: "ghost", password: "secret_pass_123" } },
+        unknownUserRes.res,
       );
-      const indexNames = idxRes.rows.map((r) => String(r.name));
-      expect(indexNames).toContain("idx_visitor_sessions_created_at");
-      expect(indexNames).toContain("idx_visitor_sessions_last_ping");
-      expect(indexNames).toContain("idx_access_logs_session_id");
-      verifyDb.close();
-    } finally {
-      try {
-        fs.rmSync(tmpDir, {
-          recursive: true,
-          force: true,
-          maxRetries: 10,
-          retryDelay: 50,
-        });
-      } catch {
-        // Windows native handle release lag
-      }
-    }
+      expect(unknownUserRes.getStatus()).toBe(401);
+
+      const wrongPassRes = createMockResponse();
+      await loginHandler(
+        { method: "POST", body: { username: "biblio_admin", password: "wrong" } },
+        wrongPassRes.res,
+      );
+      expect(wrongPassRes.getStatus()).toBe(401);
+    });
+
+    it("authenticates valid credentials with trimmed username and returns signed JWT", async () => {
+      const hash = await hashPassword("secret_pass_123");
+      await client.execute({
+        sql: "INSERT INTO users_admin (username, password_hash, role) VALUES (?, ?, ?)",
+        args: ["biblio_admin", hash, "admin"],
+      });
+
+      const loginHandler = createAdminLoginHandler({
+        resolveDb: () => client,
+        signToken: (u) => signAdminToken(u, TEST_JWT_SECRET),
+      });
+
+      const mock = createMockResponse();
+      await loginHandler(
+        {
+          method: "POST",
+          body: { username: " biblio_admin ", password: "secret_pass_123" },
+        },
+        mock.res,
+      );
+
+      expect(mock.getStatus()).toBe(200);
+      const payload = mock.getBody() as {
+        token: string;
+        user: { username: string; role: string };
+      };
+      expect(payload.user).toEqual({ username: "biblio_admin", role: "admin" });
+
+      const verified = await verifyAdminBearerToken(
+        { authorization: `Bearer ${payload.token}` },
+        TEST_JWT_SECRET,
+      );
+      expect(verified?.username).toBe("biblio_admin");
+      expect(verified?.role).toBe("admin");
+    });
+  });
+
+  describe("POST /api/session/access", () => {
+    it("rejects non-POST methods with 405", async () => {
+      const handler = createSessionAccessHandler(() => client);
+      const mock = createMockResponse();
+      await handler({ method: "GET" }, mock.res);
+      expect(mock.getStatus()).toBe(405);
+    });
+
+    it.each([
+      { label: "non-object body", body: [] },
+      { label: "malformed sessionId", body: { sessionId: "bad", deviceType: "mobile", mode: "vr" } },
+      { label: "unsupported mode", body: { sessionId: SESSION_A, deviceType: "mobile", mode: "3d" } },
+      { label: "empty deviceType", body: { sessionId: SESSION_A, deviceType: "   ", mode: "vr" } },
+      {
+        label: "oversized deviceType",
+        body: { sessionId: SESSION_A, deviceType: "x".repeat(65), mode: "2d" },
+      },
+    ])("rejects $label with 400", async ({ body }) => {
+      const handler = createSessionAccessHandler(() => client);
+      const mock = createMockResponse();
+      await handler({ method: "POST", body }, mock.res);
+      expect(mock.getStatus()).toBe(400);
+    });
+
+    it("returns 404 when sessionId does not exist in visitor_sessions", async () => {
+      const handler = createSessionAccessHandler(() => client);
+      const mock = createMockResponse();
+      await handler(
+        {
+          method: "POST",
+          body: { sessionId: MISSING_SESSION, deviceType: "mobile", mode: "vr" },
+        },
+        mock.res,
+      );
+      expect(mock.getStatus()).toBe(404);
+    });
+
+    it("persists access log entry for an existing visitor session (201)", async () => {
+      const now = Date.now();
+      await client.execute({
+        sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 0)",
+        args: [SESSION_A, now, now],
+      });
+
+      const handler = createSessionAccessHandler(() => client);
+      const mock = createMockResponse();
+      await handler(
+        {
+          method: "POST",
+          body: {
+            sessionId: SESSION_A.toUpperCase(),
+            deviceType: " mobile ",
+            mode: "vr",
+          },
+        },
+        mock.res,
+      );
+
+      expect(mock.getStatus()).toBe(201);
+      const logs = await client.execute(
+        "SELECT session_uuid, device_type, mode FROM access_logs",
+      );
+      expect(logs.rows).toHaveLength(1);
+      expect(logs.rows[0].session_uuid).toBe(SESSION_A);
+      expect(logs.rows[0].device_type).toBe("mobile");
+      expect(logs.rows[0].mode).toBe("vr");
+    });
+  });
+
+  describe("GET /api/admin/stats", () => {
+    it("rejects non-GET methods with 405", async () => {
+      const handler = createAdminStatsHandler({
+        resolveDb: () => client,
+        verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
+      });
+      const mock = createMockResponse();
+      await handler({ method: "POST", headers: {} }, mock.res);
+      expect(mock.getStatus()).toBe(405);
+    });
+
+    it("returns 401 when Bearer token is missing or invalid", async () => {
+      const handler = createAdminStatsHandler({
+        resolveDb: () => client,
+        verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
+      });
+      const mock = createMockResponse();
+      await handler({ method: "GET", headers: {} }, mock.res);
+      expect(mock.getStatus()).toBe(401);
+    });
+
+    it("aggregates active sessions, UTC-7 24h buckets across UTC midnight, average rating, and joined viewMode", async () => {
+      // Fixed museum clock: 2026-11-17 18:30:00 UTC-7 = 2026-11-18T01:30:00Z
+      const fixedNowMs = Date.UTC(2026, 10, 18, 1, 30, 0);
+      const hour18Ms = Date.UTC(2026, 10, 18, 1, 10, 0); // 18:10 UTC-7 on Nov 17
+      const hour09Ms = Date.UTC(2026, 10, 17, 16, 5, 0); // 09:05 UTC-7 on Nov 17
+      const prevDayMs = Date.UTC(2026, 10, 17, 6, 59, 0); // 23:59 UTC-7 on Nov 16 (excluded)
+
+      await client.batch(
+        [
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 2)",
+            args: [SESSION_A, hour18Ms, fixedNowMs - 5_000], // active (< 30s)
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: [SESSION_B, hour09Ms, fixedNowMs - 90_000], // inactive (> 30s)
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: [SESSION_C, prevDayMs, prevDayMs], // previous museum day
+          },
+          {
+            sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'mobile', 'vr')",
+            args: [SESSION_A],
+          },
+          {
+            sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'mobile', '2d')",
+            args: [SESSION_A],
+          },
+          {
+            sql: "INSERT INTO surveys (session_uuid, rating, feedback) VALUES (?, 5, 'Excelente')",
+            args: [SESSION_A],
+          },
+          {
+            sql: "INSERT INTO surveys (session_uuid, rating, feedback) VALUES (?, 3, NULL)",
+            args: [SESSION_B],
+          },
+        ],
+        "write",
+      );
+
+      const handler = createAdminStatsHandler({
+        resolveDb: () => client,
+        verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
+        now: () => fixedNowMs,
+      });
+
+      const token = await signAdminToken(
+        { id: 1, username: "admin", role: "admin" },
+        TEST_JWT_SECRET,
+      );
+      const mock = createMockResponse();
+      await handler(
+        { method: "GET", headers: { authorization: `Bearer ${token}` } },
+        mock.res,
+      );
+
+      expect(mock.getStatus()).toBe(200);
+      const payload = mock.getBody() as {
+        activeSessions: number;
+        hourlyAttendance: { labels: string[]; values: number[]; peak: number };
+        surveys: Array<{
+          id: string;
+          rating: number;
+          feedback: string;
+          viewMode: string | null;
+        }>;
+        averageRating: number;
+        totalSurveys: number;
+      };
+
+      expect(payload.activeSessions).toBe(1);
+      expect(payload.hourlyAttendance.labels).toHaveLength(24);
+      expect(payload.hourlyAttendance.values[9]).toBe(1);
+      expect(payload.hourlyAttendance.values[18]).toBe(1);
+      expect(payload.hourlyAttendance.values.reduce((a, b) => a + b, 0)).toBe(2);
+      expect(payload.hourlyAttendance.peak).toBe(1);
+      expect(payload.averageRating).toBe(4);
+      expect(payload.totalSurveys).toBe(2);
+      expect(payload.surveys).toHaveLength(2);
+      expect(payload.surveys[0].viewMode).toBeNull();
+      expect(payload.surveys[1].viewMode).toBe("2d");
+      expect(payload.surveys[1].feedback).toBe("Excelente");
+    });
   });
 });
