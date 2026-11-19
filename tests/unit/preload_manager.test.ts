@@ -89,10 +89,10 @@ describe("ScenePreloadManager", () => {
       onProgress: (p) => progressLog.push(p),
     });
 
-    const result = await manager.preloadAll(["/scenes/scene1.webp", "/scenes/scene2.webp"]);
+    const result = await manager.preloadAll(["/scenes/lobby.webp", "/scenes/wixarika.webp"]);
 
     expect(result.success).toBe(true);
-    expect(result.loaded).toEqual(["/scenes/scene1.webp", "/scenes/scene2.webp"]);
+    expect(result.loaded).toEqual(["/scenes/lobby.webp", "/scenes/wixarika.webp"]);
     expect(result.failed).toEqual([]);
     expect(MockImage.createdInstances.every((img) => img.crossOrigin === "anonymous")).toBe(true);
     expect(progressLog).toEqual([
@@ -101,14 +101,14 @@ describe("ScenePreloadManager", () => {
         loadedCount: 1,
         totalCount: 2,
         percentage: 50,
-        currentAsset: "/scenes/scene1.webp",
+        currentAsset: "/scenes/lobby.webp",
         isComplete: false,
       },
       {
         loadedCount: 2,
         totalCount: 2,
         percentage: 100,
-        currentAsset: "/scenes/scene2.webp",
+        currentAsset: "/scenes/wixarika.webp",
         isComplete: true,
       },
     ]);
@@ -119,7 +119,7 @@ describe("ScenePreloadManager", () => {
     vi.stubGlobal("Image", MockImage);
     const manager = new ScenePreloadManager({ timeoutMs: 1000 });
 
-    const ok = await manager.preloadAsset("/scenes/scene1.webp");
+    const ok = await manager.preloadAsset("/scenes/lobby.webp");
     expect(ok).toBe(true);
   });
 
@@ -180,10 +180,10 @@ describe("ScenePreloadManager", () => {
       },
     });
 
-    const result = await manager.preloadAll(["/scenes/scene1.webp"]);
+    const result = await manager.preloadAll(["/scenes/lobby.webp"]);
 
     expect(result.success).toBe(true);
-    expect(result.loaded).toEqual(["/scenes/scene1.webp"]);
+    expect(result.loaded).toEqual(["/scenes/lobby.webp"]);
     expect(errorSpy).toHaveBeenCalled();
   });
 
