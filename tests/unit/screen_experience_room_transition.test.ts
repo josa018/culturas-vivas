@@ -12,10 +12,13 @@ import {
   getSharedInspectionController,
 } from "../../src/experience/components/inspectable";
 import {
+  ExhibitMediaType,
   InspectionState,
   ROOM_DEFINITIONS,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
+import type { RoomMediaProvider } from "../../src/experience/media-types";
+import { StandId } from "../../src/shared/room-catalog";
 import { RoomAssetCache } from "../../src/experience/room-asset-cache";
 import { UI_TEXT } from "../../src/screens/constants";
 
@@ -122,8 +125,33 @@ describe("ExperienceScreenView Room Transition", () => {
         return true;
       },
     });
+    const stubProvider: RoomMediaProvider = {
+      getStandItems: vi.fn((roomId, standId) =>
+        roomId === RoomId.WIXARIKA && standId === StandId.ARTE
+          ? [
+              {
+                id: "wix-cover",
+                roomId,
+                standId,
+                mediaType: ExhibitMediaType.IMAGE_2D,
+                title: "Arte",
+                creatorName: "Autor",
+                description: "Desc",
+                mediaUrl: "https://cdn.example.com/wix-stand-cover.jpg",
+                sortOrder: 0,
+              },
+            ]
+          : [],
+      ),
+    };
     screen.unmount();
-    screen = new ExperienceScreenView(() => {}, "vr", undefined, assetCache);
+    screen = new ExperienceScreenView(
+      () => {},
+      "vr",
+      undefined,
+      assetCache,
+      stubProvider,
+    );
     screen.mount(container);
     screen.show();
 
@@ -164,7 +192,10 @@ describe("ExperienceScreenView Room Transition", () => {
     await vi.waitFor(() => {
       expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     });
-    expect(loadedUrls).toEqual([ROOM_DEFINITIONS[RoomId.WIXARIKA].skyboxUrl]);
+    expect(loadedUrls).toEqual([
+      ROOM_DEFINITIONS[RoomId.WIXARIKA].skyboxUrl,
+      "https://cdn.example.com/wix-stand-cover.jpg",
+    ]);
     expect(screen.getTransitionStateMachine().getState()).toBe(
       RoomTransitionState.FADING_IN,
     );

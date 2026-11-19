@@ -3,6 +3,12 @@ import {
   ROOM_CATALOG,
   type RoomId,
 } from "../shared/room-catalog";
+import { ExhibitMediaType } from "./constants";
+import {
+  emptyRoomMediaProvider,
+  isVideoMediaType,
+  type RoomMediaProvider,
+} from "./media-types";
 
 export const ROOM_ASSET_CACHE_DEFAULTS = {
   LOAD_TIMEOUT_MS: 8000,
@@ -144,8 +150,44 @@ export class RoomAssetCache {
     return loadPromise;
   }
 
-  public async ensureRoomAssets(roomId: RoomId): Promise<boolean> {
+  public async ensureRoomAssets(
+    roomId: RoomId,
+    mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
+  ): Promise<boolean> {
     const entry = ROOM_CATALOG[roomId] ?? ROOM_CATALOG[DEFAULT_ROOM_ID];
-    return this.ensureAsset(entry.skyboxUrl);
+    const uniqueUrls: string[] = [];
+    const seen = new Set<string>();
+    const addUrl = (url: string | undefined) => {
+      const trimmed = (url ?? "").trim();
+      if (trimmed.length > 0 && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        uniqueUrls.push(trimmed);
+      }
+    };
+
+    addUrl(entry.skyboxUrl);
+
+    for (const stand of entry.stands) {
+      try {
+        const items = mediaProvider.getStandItems(entry.id, stand.standId);
+        const firstItem = items[0];
+        if (!firstItem) {
+          continue;
+        }
+        const coverUrl = isVideoMediaType(
+          firstItem.mediaType as ExhibitMediaType,
+        )
+          ? firstItem.posterUrl
+          : firstItem.mediaUrl;
+        addUrl(coverUrl);
+      } catch {
+        // Stand cover lookup failures must not abort destination room entry
+      }
+    }
+
+    const results = await Promise.all(
+      uniqueUrls.map((url) => this.ensureAsset(url)),
+    );
+    return results[0] === true;
   }
 }

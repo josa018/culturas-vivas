@@ -1670,3 +1670,37 @@ a-scene canvas.a-canvas {
   color: var(--md-sys-color-on-surface);
   cursor: pointer;
 }
+
+.cv-admin-media-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cv-admin-media-counter {
+  align-self: flex-end;
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.cv-admin-media-poster-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--cv-radius-medium);
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px dashed var(--md-sys-color-outline-variant);
+}
+
+.cv-admin-media-poster-controls[hidden] {
+  display: none;
+}
+
+.cv-admin-media-poster-preview {
+  width: 96px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 6px;
+}

@@ -38,6 +38,8 @@ export interface UploadMediaInput {
   readonly roomId: RoomId;
   readonly standId: StandId;
   readonly file: Blob;
+  readonly customPosterFile?: Blob | null;
+  readonly posterSeekSeconds?: number;
   readonly mediaKind: StandMediaType;
   readonly title: string;
   readonly creatorName: string;
@@ -50,6 +52,7 @@ export interface UpdateMediaMetadataInput {
   readonly creatorName?: string;
   readonly description?: string;
   readonly mediaKind?: StandMediaType;
+  readonly posterKey?: string;
 }
 
 export interface AdminMediaStoreOptions {
@@ -194,7 +197,47 @@ export class AdminMediaStore {
       const isVideo = isVideoMediaType(input.mediaKind);
 
       if (isVideo) {
-        const extracted = await this.processor.extractVideoPoster(input.file);
+        const preparedVideo =
+          typeof this.processor.prepareMp4ForUpload === "function"
+            ? (await this.processor.prepareMp4ForUpload(input.file)).file
+            : input.file;
+
+        let posterBlob: Blob;
+        let posterMimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
+        let videoWidth: number;
+        let videoHeight: number;
+
+        if (input.customPosterFile) {
+          if (typeof this.processor.optimizePosterImage === "function") {
+            const customPoster = await this.processor.optimizePosterImage(
+              input.customPosterFile,
+            );
+            posterBlob = customPoster.posterBlob;
+            posterMimeType = customPoster.posterMimeType;
+          } else {
+            const customImg = await this.processor.optimizeImage(
+              input.customPosterFile,
+            );
+            posterBlob = customImg.blob;
+            posterMimeType = customImg.mimeType;
+          }
+          const extractedDims = await this.processor.extractVideoPoster(
+            preparedVideo,
+            input.posterSeekSeconds,
+          );
+          videoWidth = extractedDims.videoWidth;
+          videoHeight = extractedDims.videoHeight;
+        } else {
+          const extracted = await this.processor.extractVideoPoster(
+            preparedVideo,
+            input.posterSeekSeconds,
+          );
+          posterBlob = extracted.posterBlob;
+          posterMimeType = extracted.posterMimeType;
+          videoWidth = extracted.videoWidth;
+          videoHeight = extracted.videoHeight;
+        }
+
         const presign = await this.fetcher.post<PresignResponsePayload>(
           ADMIN_MEDIA_ENDPOINTS.PRESIGN,
           {
@@ -202,22 +245,22 @@ export class AdminMediaStore {
             standId: input.standId,
             mediaKind: input.mediaKind,
             mimeType: "video/mp4",
-            fileSizeBytes: input.file.size,
-            posterMimeType: extracted.posterMimeType,
-            posterSizeBytes: extracted.posterBlob.size,
+            fileSizeBytes: preparedVideo.size,
+            posterMimeType,
+            posterSizeBytes: posterBlob.size,
           },
           headers,
         );
 
         await this.fetcher.putBinary(
           presign.media.uploadUrl,
-          input.file,
+          preparedVideo,
           presign.media.headers,
         );
         if (presign.poster) {
           await this.fetcher.putBinary(
             presign.poster.uploadUrl,
-            extracted.posterBlob,
+            posterBlob,
             presign.poster.headers,
           );
         }
@@ -234,9 +277,9 @@ export class AdminMediaStore {
             mediaKey: presign.media.key,
             posterKey: presign.poster?.key ?? null,
             mimeType: "video/mp4",
-            fileSizeBytes: input.file.size,
-            width: extracted.videoWidth,
-            height: extracted.videoHeight,
+            fileSizeBytes: preparedVideo.size,
+            width: videoWidth,
+            height: videoHeight,
           },
           headers,
         );
@@ -245,7 +288,7 @@ export class AdminMediaStore {
           items: [...this.state.items, created.item],
           storageUsageBytes:
             created.storageUsageBytes ??
-            this.state.storageUsageBytes + input.file.size,
+            this.state.storageUsageBytes + preparedVideo.size,
           maxStorageBytes:
             created.maxStorageBytes ?? this.state.maxStorageBytes,
           isUploading: false,
@@ -300,6 +343,93 @@ export class AdminMediaStore {
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo subir el archivo multimedia.", {
+        isUploading: false,
+      });
+    }
+  }
+
+  public async previewVideoPoster(
+    file: Blob,
+    seekSeconds?: number,
+  ): Promise<Blob | null> {
+    if (typeof this.processor.extractVideoPoster !== "function") {
+      return null;
+    }
+    const extracted = await this.processor.extractVideoPoster(file, seekSeconds);
+    return extracted.posterBlob;
+  }
+
+  public async replaceVideoPoster(id: string, posterFile: Blob): Promise<void> {
+    const headers = this.buildAuthHeaders();
+    if (!headers || !this.fetcher.putBinary || !this.fetcher.patch) {
+      return;
+    }
+    const targetItem = this.state.items.find((item) => item.id === id);
+    if (!targetItem || !isVideoMediaType(targetItem.mediaType)) {
+      this.updateState({
+        error: "Hubo un error: solo se puede cambiar la miniatura de los videos.",
+      });
+      return;
+    }
+
+    this.updateState({ isUploading: true, error: null });
+    try {
+      let posterBlob: Blob;
+      let posterMimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
+      if (typeof this.processor.optimizePosterImage === "function") {
+        const optimizedPoster =
+          await this.processor.optimizePosterImage(posterFile);
+        posterBlob = optimizedPoster.posterBlob;
+        posterMimeType = optimizedPoster.posterMimeType;
+      } else {
+        const optimizedImg = await this.processor.optimizeImage(posterFile);
+        posterBlob = optimizedImg.blob;
+        posterMimeType = optimizedImg.mimeType;
+      }
+
+      const presign = await this.fetcher.post<{
+        poster?: PresignTargetPayload;
+      }>(
+        ADMIN_MEDIA_ENDPOINTS.PRESIGN,
+        {
+          posterOnly: true,
+          roomId: targetItem.roomId,
+          standId: targetItem.standId,
+          posterMimeType,
+          posterSizeBytes: posterBlob.size,
+        },
+        headers,
+      );
+
+      if (!presign.poster) {
+        throw new Error(
+          "Hubo un error al preparar la subida de la miniatura. Inténtalo de nuevo.",
+        );
+      }
+
+      await this.fetcher.putBinary(
+        presign.poster.uploadUrl,
+        posterBlob,
+        presign.poster.headers,
+      );
+
+      const response = await this.fetcher.patch<{ item: AdminMediaItemRecord }>(
+        ADMIN_MEDIA_ENDPOINTS.MEDIA,
+        {
+          id,
+          posterKey: presign.poster.key,
+        },
+        headers,
+      );
+
+      this.updateState({
+        items: this.state.items.map((item) =>
+          item.id === id && response?.item ? response.item : item,
+        ),
+        isUploading: false,
+      });
+    } catch (error) {
+      this.handleApiError(error, "No se pudo actualizar la miniatura.", {
         isUploading: false,
       });
     }

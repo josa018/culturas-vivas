@@ -75,13 +75,13 @@ describe("A-Frame Inspectable Component", () => {
     expect(instance.billboardEl?.getAttribute("position")).toBe("0 -0.925 0");
     expect(instance.billboardEl?.getAttribute("scale")).toBe("0.001 0.001 0.001");
 
-    const titleText = instance.billboardEl?.querySelector("a-text");
+    const titleText = instance.billboardEl?.querySelector("[cv-canvas-text]");
+    expect(titleText).not.toBeNull();
+    expect(titleText?.getAttribute("value")).toBe("Lienzo de Prueba");
     expect(titleText?.getAttribute("width")).toBe(
       String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
     );
-    expect(titleText?.getAttribute("wrap-count")).toBe(
-      String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WRAP_COUNT),
-    );
+    expect(instance.billboardEl?.querySelector("a-text")).toBeNull();
   });
 
   it("performs radial inspection focal animation, counter-translates pedestal, auto-rotates, and restores on return", () => {
@@ -512,6 +512,11 @@ describe("A-Frame Inspectable Component", () => {
     expect(creatorText?.getAttribute("value")).toBe(
       "Crédito: Artesano Wixárika",
     );
+    expect(creatorText?.hasAttribute("cv-canvas-text")).toBe(true);
+    expect(withCreator.returnBtnEl?.querySelector("[cv-canvas-text]")?.getAttribute("value")).toBe(
+      "✕",
+    );
+    expect(withCreator.billboardEl?.querySelector("a-text")).toBeNull();
 
     const withoutCreatorEl = createMockEntity({ x: 0, y: 1.4, z: -3.2 });
     const withoutCreator: InspectableComponentInstance = Object.create(def);

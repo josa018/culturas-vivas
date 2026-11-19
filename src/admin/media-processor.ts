@@ -1,4 +1,5 @@
 import { ADMIN_MEDIA_LIMITS } from "./constants";
+import { relocateMp4MoovToStart } from "./mp4-faststart";
 
 export interface ScaledDimensions {
   readonly width: number;
@@ -10,6 +11,11 @@ export interface OptimizedImageResult {
   readonly width: number;
   readonly height: number;
   readonly mimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
+}
+
+export interface PreparedMp4UploadResult {
+  readonly file: File;
+  readonly relocated: boolean;
 }
 
 export interface ExtractedVideoPosterResult {
@@ -51,7 +57,10 @@ export interface DecodedVideoHandle {
 export interface AdminMediaProcessorDeps {
   readonly createCanvas?: (width: number, height: number) => ProcessorCanvas;
   readonly decodeImage?: (file: Blob) => Promise<DecodedImageHandle>;
-  readonly extractVideoFrame?: (file: Blob) => Promise<DecodedVideoHandle>;
+  readonly extractVideoFrame?: (
+    file: Blob,
+    seekSeconds?: number,
+  ) => Promise<DecodedVideoHandle>;
 }
 
 const BYTES_PER_MIB = 1024 * 1024;
@@ -104,7 +113,7 @@ function defaultCreateCanvas(width: number, height: number): ProcessorCanvas {
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject(new Error(`Failed to encode ${mimeType} output.`));
+              reject(new Error("Hubo un error al procesar la imagen seleccionada."));
               return;
             }
             resolve(blob);
@@ -130,13 +139,20 @@ function defaultDecodeImage(file: Blob): Promise<DecodedImageHandle> {
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Could not decode image file."));
+      reject(
+        new Error(
+          "Hubo un error al abrir la imagen: es posible que el archivo esté dañado o no sea compatible.",
+        ),
+      );
     };
     img.src = objectUrl;
   });
 }
 
-function defaultExtractVideoFrame(file: Blob): Promise<DecodedVideoHandle> {
+function defaultExtractVideoFrame(
+  file: Blob,
+  seekSeconds?: number,
+): Promise<DecodedVideoHandle> {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const video = document.createElement("video");
@@ -149,12 +165,21 @@ function defaultExtractVideoFrame(file: Blob): Promise<DecodedVideoHandle> {
       reject(new Error(message));
     };
 
-    video.onerror = () => fail("Could not decode MP4 video metadata.");
+    video.onerror = () =>
+      fail(
+        "Hubo un error al leer el video: el archivo parece estar dañado o no es compatible.",
+      );
 
     video.onloadedmetadata = () => {
+      const requestedTime =
+        typeof seekSeconds === "number" &&
+        Number.isFinite(seekSeconds) &&
+        seekSeconds >= 0
+          ? seekSeconds
+          : ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS;
       const targetTime =
         Number.isFinite(video.duration) && video.duration > 0
-          ? Math.min(ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS, video.duration / 2)
+          ? Math.min(requestedTime, Math.max(0, video.duration - 0.05))
           : 0;
       video.currentTime = targetTime;
     };
@@ -187,6 +212,7 @@ export class AdminMediaProcessor {
   private readonly decodeImage: (file: Blob) => Promise<DecodedImageHandle>;
   private readonly extractVideoFrame: (
     file: Blob,
+    seekSeconds?: number,
   ) => Promise<DecodedVideoHandle>;
 
   constructor(deps: AdminMediaProcessorDeps = {}) {
@@ -195,13 +221,16 @@ export class AdminMediaProcessor {
     this.extractVideoFrame = deps.extractVideoFrame ?? defaultExtractVideoFrame;
   }
 
-  public async optimizeImage(file: Blob): Promise<OptimizedImageResult> {
+  private async encodeImageToMaxEdge(
+    file: Blob,
+    maxEdge: number,
+  ): Promise<OptimizedImageResult> {
     const handle = await this.decodeImage(file);
     try {
       const scaled = computeScaledDimensions(
         handle.width,
         handle.height,
-        ADMIN_MEDIA_LIMITS.MAX_IMAGE_EDGE_PX,
+        maxEdge,
       );
       const canvas = this.createCanvas(scaled.width, scaled.height);
       canvas.drawImage(handle.source, 0, 0, scaled.width, scaled.height);
@@ -220,20 +249,84 @@ export class AdminMediaProcessor {
     }
   }
 
-  public async extractVideoPoster(
+  public async optimizeImage(file: Blob): Promise<OptimizedImageResult> {
+    return this.encodeImageToMaxEdge(
+      file,
+      ADMIN_MEDIA_LIMITS.MAX_IMAGE_EDGE_PX,
+    );
+  }
+
+  public async optimizePosterImage(
     file: Blob,
   ): Promise<ExtractedVideoPosterResult> {
+    const encoded = await this.encodeImageToMaxEdge(
+      file,
+      ADMIN_MEDIA_LIMITS.POSTER_MAX_WIDTH_PX,
+    );
+    return {
+      posterBlob: encoded.blob,
+      videoWidth: encoded.width,
+      videoHeight: encoded.height,
+      posterWidth: encoded.width,
+      posterHeight: encoded.height,
+      posterMimeType: encoded.mimeType,
+    };
+  }
+
+  private validateMp4File(file: Blob): void {
     if (file.type && file.type !== "video/mp4") {
-      throw new Error("El video debe estar en formato MP4 (video/mp4).");
+      throw new Error(
+        "Hubo un error con el formato: el video debe ser un archivo MP4.",
+      );
     }
     const maxMb = Math.round(
       ADMIN_MEDIA_LIMITS.MAX_VIDEO_BYTES / BYTES_PER_MIB,
     );
     if (file.size > ADMIN_MEDIA_LIMITS.MAX_VIDEO_BYTES) {
-      throw new Error(`El video excede el límite máximo de ${maxMb} MiB.`);
+      throw new Error(
+        `Hubo un error con el archivo: el video supera el peso máximo permitido (${maxMb} MB).`,
+      );
+    }
+  }
+
+  public async prepareMp4ForUpload(file: Blob): Promise<PreparedMp4UploadResult> {
+    this.validateMp4File(file);
+
+    const fileName =
+      typeof File !== "undefined" && file instanceof File
+        ? file.name
+        : "video.mp4";
+    const lastModified =
+      typeof File !== "undefined" && file instanceof File
+        ? file.lastModified
+        : Date.now();
+
+    const relocated = await relocateMp4MoovToStart(file);
+    if (!relocated.relocated) {
+      const preserved =
+        typeof File !== "undefined" && file instanceof File
+          ? file
+          : new File([file], fileName, {
+              type: file.type || "video/mp4",
+              lastModified,
+            });
+      return { file: preserved, relocated: false };
     }
 
-    const handle = await this.extractVideoFrame(file);
+    const nextFile = new File([relocated.blob], fileName, {
+      type: file.type || "video/mp4",
+      lastModified,
+    });
+    return { file: nextFile, relocated: true };
+  }
+
+  public async extractVideoPoster(
+    file: Blob,
+    seekSeconds?: number,
+  ): Promise<ExtractedVideoPosterResult> {
+    this.validateMp4File(file);
+
+    const handle = await this.extractVideoFrame(file, seekSeconds);
     try {
       const posterScaled = computeScaledDimensions(
         handle.videoWidth,

@@ -44,6 +44,7 @@ import {
   AdminController,
 } from "../../src/admin/index";
 import type { AdminMediaProcessor } from "../../src/admin/media-processor";
+import { MediaManagerWidget } from "../../src/admin/views/media-manager-widget";
 import { ExhibitMediaType } from "../../src/experience/constants";
 import { RoomId, StandId } from "../../src/shared/room-catalog";
 import type { StorageAdapter } from "../../src/navigation/index";
@@ -858,5 +859,170 @@ describe("Admin UI Widgets & AdminController", () => {
 
     dashboardStore.stopPolling();
     dashboardView.unmount();
+  });
+
+  it("enforces 80 / 80 / 240 maxLength live counters and provides video thumbnail picker + inline poster replacement", async () => {
+    const mediaFetcher = {
+      get: vi.fn(async () => ({
+        items: [
+          {
+            id: "v-1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.VIDEO_2D,
+            title: "Video Original",
+            creatorName: "Autor",
+            description: "Desc",
+            mediaUrl: "https://pub.r2.dev/v1.mp4",
+            posterUrl: "https://pub.r2.dev/v1-old.webp",
+            sortOrder: 0,
+          },
+        ],
+        storageUsageBytes: 1_000_000,
+        maxStorageBytes: 8_589_934_592,
+      })),
+      post: vi.fn(async (url: string, body: unknown) => {
+        if (
+          url.includes("presign") &&
+          (body as { posterOnly?: boolean }).posterOnly
+        ) {
+          return {
+            poster: {
+              key: "rooms/wixarika/arte/v1-replaced-poster.webp",
+              uploadUrl: "https://r2.example.com/v1-replaced-poster.webp",
+              headers: { "Content-Type": "image/webp" },
+            },
+          };
+        }
+        return {};
+      }),
+      patch: vi.fn(async (_url: string, body: unknown) => ({
+        item: {
+          id: "v-1",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaType: ExhibitMediaType.VIDEO_2D,
+          title: "Video Original",
+          creatorName: "Autor",
+          description: "Desc",
+          mediaUrl: "https://pub.r2.dev/v1.mp4",
+          posterKey: (body as { posterKey?: string }).posterKey,
+          posterUrl: "https://pub.r2.dev/rooms/wixarika/arte/v1-replaced-poster.webp",
+          sortOrder: 0,
+        },
+      })),
+      delete: vi.fn(async () => ({ ok: true })),
+      putBinary: vi.fn(async () => {}),
+    };
+
+    const mockProcessor = {
+      optimizeImage: vi.fn(),
+      optimizePosterImage: vi.fn(async () => ({
+        posterBlob: new Blob(["new-poster"], { type: "image/webp" }),
+        videoWidth: 1024,
+        videoHeight: 576,
+        posterWidth: 1024,
+        posterHeight: 576,
+        posterMimeType: "image/webp" as const,
+      })),
+      extractVideoPoster: vi.fn(async () => ({
+        posterBlob: new Blob(["frame-poster"], { type: "image/webp" }),
+        videoWidth: 1280,
+        videoHeight: 720,
+        posterWidth: 1024,
+        posterHeight: 576,
+        posterMimeType: "image/webp" as const,
+      })),
+    } as unknown as AdminMediaProcessor;
+
+    const mediaStore = new AdminMediaStore({
+      getToken: () => "jwt-token",
+      onUnauthorized: () => {},
+      fetcher: mediaFetcher,
+      processor: mockProcessor,
+    });
+    const widget = new MediaManagerWidget(mediaStore);
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    widget.mount(parent);
+    await mediaStore.fetchCatalog();
+
+    const titleInput = parent.querySelector(
+      '[data-upload-field="title"]',
+    ) as HTMLInputElement;
+    const creatorInput = parent.querySelector(
+      '[data-upload-field="creatorName"]',
+    ) as HTMLInputElement;
+    const descInput = parent.querySelector(
+      '[data-upload-field="description"]',
+    ) as HTMLInputElement;
+
+    expect(titleInput.maxLength).toBe(80);
+    expect(creatorInput.maxLength).toBe(80);
+    expect(descInput.maxLength).toBe(240);
+
+    const titleCounter = parent.querySelector('[data-counter-for="title"]');
+    const descCounter = parent.querySelector('[data-counter-for="description"]');
+    expect(titleCounter?.textContent).toBe("0 / 80");
+    expect(descCounter?.textContent).toBe("0 / 240");
+
+    titleInput.value = "Hola";
+    titleInput.dispatchEvent(new Event("input", { bubbles: true }));
+    descInput.value = "Texto breve";
+    descInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(titleCounter?.textContent).toBe("4 / 80");
+    expect(descCounter?.textContent).toBe("11 / 240");
+
+    // Selecting a video reveals timestamp & custom poster picker controls
+    const fileInput = parent.querySelector(
+      '[data-upload-field="file"]',
+    ) as HTMLInputElement;
+    const posterControls = parent.querySelector(
+      "[data-video-poster-controls]",
+    ) as HTMLElement;
+    expect(posterControls.hidden).toBe(true);
+
+    const videoFile = new File(["mp4"], "danza.mp4", { type: "video/mp4" });
+    Object.defineProperty(fileInput, "files", {
+      value: [videoFile],
+      configurable: true,
+    });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(posterControls.hidden).toBe(false);
+
+    // Inline edit on video reveals poster file replacement
+    mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+    const editBtn = parent.querySelector(
+      '[data-item-id="v-1"] [data-action="edit"]',
+    ) as HTMLButtonElement;
+    editBtn.click();
+
+    const editPosterInput = parent.querySelector(
+      '[data-item-id="v-1"] [data-edit-field="posterFile"]',
+    ) as HTMLInputElement;
+    const replacePosterBtn = parent.querySelector(
+      '[data-item-id="v-1"] [data-action="replace-poster"]',
+    ) as HTMLButtonElement;
+    expect(editPosterInput).not.toBeNull();
+
+    const thumbFile = new File(["img"], "nueva.png", { type: "image/png" });
+    Object.defineProperty(editPosterInput, "files", {
+      value: [thumbFile],
+      configurable: true,
+    });
+    replacePosterBtn.click();
+
+    await vi.waitFor(() => {
+      expect(mediaFetcher.patch).toHaveBeenCalledWith(
+        expect.any(String),
+        {
+          id: "v-1",
+          posterKey: "rooms/wixarika/arte/v1-replaced-poster.webp",
+        },
+        expect.any(Object),
+      );
+    });
+
+    widget.unmount();
   });
 });

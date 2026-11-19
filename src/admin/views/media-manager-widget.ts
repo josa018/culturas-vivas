@@ -5,7 +5,11 @@ import {
   type StandMediaType,
 } from "../../experience/media-types";
 import { ROOM_CATALOG, RoomId, StandId } from "../../shared/room-catalog";
-import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
+import {
+  ADMIN_MEDIA_LIMITS,
+  ADMIN_UI_CLASSES,
+  ADMIN_UI_TEXT,
+} from "../constants";
 import type {
   AdminMediaItemRecord,
   AdminMediaState,
@@ -33,6 +37,30 @@ function formatMegabytes(bytes: number): number {
   return Math.round(bytes / BYTES_PER_MIB);
 }
 
+function createFieldWithCounter(
+  input: HTMLInputElement,
+  fieldName: string,
+  maxLength: number,
+): { wrapper: HTMLElement; syncCounter: () => void } {
+  input.maxLength = maxLength;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "cv-admin-media-field";
+
+  const counter = document.createElement("span");
+  counter.className = ADMIN_UI_CLASSES.MEDIA_FIELD_COUNTER;
+  counter.setAttribute("data-counter-for", fieldName);
+
+  const syncCounter = () => {
+    counter.textContent = `${input.value.length} / ${maxLength}`;
+  };
+  syncCounter();
+
+  input.addEventListener("input", syncCounter);
+  wrapper.append(input, counter);
+  return { wrapper, syncCounter };
+}
+
 /**
  * Interactive /admin panel widget for uploading, editing, reordering, and deleting stand media.
  */
@@ -48,6 +76,7 @@ export class MediaManagerWidget {
   private listEl: HTMLElement | null = null;
   private unsubscribe: (() => void) | null = null;
   private editingItemId: string | null = null;
+  private posterPreviewObjectUrl: string | null = null;
 
   constructor(store: AdminMediaStore) {
     this.store = store;
@@ -137,18 +166,131 @@ export class MediaManagerWidget {
     titleInput.required = true;
     titleInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     titleInput.setAttribute("data-upload-field", "title");
+    const titleField = createFieldWithCounter(
+      titleInput,
+      "title",
+      ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
+    );
 
     const creatorInput = document.createElement("input");
     creatorInput.type = "text";
     creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL;
     creatorInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     creatorInput.setAttribute("data-upload-field", "creatorName");
+    const creatorField = createFieldWithCounter(
+      creatorInput,
+      "creatorName",
+      ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
+    );
 
     const descInput = document.createElement("input");
     descInput.type = "text";
     descInput.placeholder = ADMIN_UI_TEXT.MEDIA_DESC_LABEL;
     descInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     descInput.setAttribute("data-upload-field", "description");
+    const descField = createFieldWithCounter(
+      descInput,
+      "description",
+      ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
+    );
+
+    const posterControls = document.createElement("div");
+    posterControls.className = ADMIN_UI_CLASSES.MEDIA_POSTER_CONTROLS;
+    posterControls.setAttribute("data-video-poster-controls", "true");
+    posterControls.hidden = true;
+
+    const seekInput = document.createElement("input");
+    seekInput.type = "number";
+    seekInput.min = "0";
+    seekInput.step = "0.1";
+    seekInput.value = String(ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS);
+    seekInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
+    seekInput.setAttribute("data-upload-field", "posterSeekSeconds");
+    seekInput.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_POSTER_TIME_LABEL);
+
+    const capturePreviewBtn = document.createElement("button");
+    capturePreviewBtn.type = "button";
+    capturePreviewBtn.textContent = ADMIN_UI_TEXT.MEDIA_POSTER_CAPTURE_BTN;
+    capturePreviewBtn.setAttribute("data-action", "capture-poster-preview");
+
+    const customPosterInput = document.createElement("input");
+    customPosterInput.type = "file";
+    customPosterInput.accept = "image/jpeg,image/png,image/webp";
+    customPosterInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
+    customPosterInput.setAttribute("data-upload-field", "customPoster");
+    customPosterInput.setAttribute(
+      "aria-label",
+      ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
+    );
+
+    const posterPreviewImg = document.createElement("img");
+    posterPreviewImg.className = ADMIN_UI_CLASSES.MEDIA_POSTER_PREVIEW;
+    posterPreviewImg.setAttribute("data-poster-preview", "true");
+    posterPreviewImg.alt = ADMIN_UI_TEXT.MEDIA_POSTER_CAPTURE_BTN;
+    posterPreviewImg.hidden = true;
+
+    const setPreviewBlob = (blob: Blob) => {
+      if (this.posterPreviewObjectUrl && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(this.posterPreviewObjectUrl);
+      }
+      if (typeof URL.createObjectURL === "function") {
+        this.posterPreviewObjectUrl = URL.createObjectURL(blob);
+        posterPreviewImg.src = this.posterPreviewObjectUrl;
+        posterPreviewImg.hidden = false;
+      }
+    };
+
+    const clearPreview = () => {
+      if (this.posterPreviewObjectUrl && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(this.posterPreviewObjectUrl);
+      }
+      this.posterPreviewObjectUrl = null;
+      posterPreviewImg.hidden = true;
+      posterPreviewImg.removeAttribute("src");
+    };
+
+    fileInput.addEventListener("change", () => {
+      const selectedFile = fileInput.files?.[0];
+      const isSelectedVideo = Boolean(selectedFile?.type.startsWith("video/"));
+      posterControls.hidden = !isSelectedVideo;
+      if (!isSelectedVideo) {
+        clearPreview();
+      }
+    });
+
+    capturePreviewBtn.addEventListener("click", () => {
+      const selectedFile = fileInput.files?.[0];
+      if (!selectedFile || !selectedFile.type.startsWith("video/")) {
+        return;
+      }
+      const parsedSeek = Number(seekInput.value);
+      const seekSeconds =
+        Number.isFinite(parsedSeek) && parsedSeek >= 0
+          ? parsedSeek
+          : ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS;
+      void this.store
+        .previewVideoPoster(selectedFile, seekSeconds)
+        .then((blob) => {
+          if (blob) {
+            setPreviewBlob(blob);
+          }
+        })
+        .catch(() => {});
+    });
+
+    customPosterInput.addEventListener("change", () => {
+      const customPoster = customPosterInput.files?.[0];
+      if (customPoster) {
+        setPreviewBlob(customPoster);
+      }
+    });
+
+    posterControls.append(
+      seekInput,
+      capturePreviewBtn,
+      customPosterInput,
+      posterPreviewImg,
+    );
 
     const formatSelect = document.createElement("select");
     formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
@@ -168,9 +310,10 @@ export class MediaManagerWidget {
 
     form.append(
       fileInput,
-      titleInput,
-      creatorInput,
-      descInput,
+      titleField.wrapper,
+      creatorField.wrapper,
+      descField.wrapper,
+      posterControls,
       formatSelect,
       submitBtn,
     );
@@ -186,12 +329,22 @@ export class MediaManagerWidget {
       const state = this.store.getState();
       const isVideo = selectedFile.type.startsWith("video/");
       const isHalfSbs = formatSelect.value === "SBS";
+      const parsedSeek = Number(seekInput.value);
+      const posterSeekSeconds =
+        Number.isFinite(parsedSeek) && parsedSeek >= 0
+          ? parsedSeek
+          : undefined;
+      const customPosterFile = isVideo
+        ? (customPosterInput.files?.[0] ?? null)
+        : null;
 
       void this.store
         .uploadMedia({
           roomId: state.selectedRoomId,
           standId: state.selectedStandId,
           file: selectedFile,
+          customPosterFile,
+          posterSeekSeconds,
           mediaKind: resolveMediaKind(isVideo, isHalfSbs),
           title: cleanTitle,
           creatorName: creatorInput.value.trim(),
@@ -200,6 +353,11 @@ export class MediaManagerWidget {
         .then(() => {
           if (!this.store.getState().error) {
             form.reset();
+            titleField.syncCounter();
+            creatorField.syncCounter();
+            descField.syncCounter();
+            posterControls.hidden = true;
+            clearPreview();
           }
         });
     });
@@ -227,6 +385,13 @@ export class MediaManagerWidget {
   public unmount(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    if (
+      this.posterPreviewObjectUrl &&
+      typeof URL.revokeObjectURL === "function"
+    ) {
+      URL.revokeObjectURL(this.posterPreviewObjectUrl);
+    }
+    this.posterPreviewObjectUrl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -405,6 +570,11 @@ export class MediaManagerWidget {
     titleInput.value = item.title;
     titleInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     titleInput.setAttribute("data-edit-field", "title");
+    const titleField = createFieldWithCounter(
+      titleInput,
+      "edit-title",
+      ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
+    );
 
     const creatorInput = document.createElement("input");
     creatorInput.type = "text";
@@ -412,12 +582,22 @@ export class MediaManagerWidget {
     creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL;
     creatorInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     creatorInput.setAttribute("data-edit-field", "creatorName");
+    const creatorField = createFieldWithCounter(
+      creatorInput,
+      "edit-creatorName",
+      ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
+    );
 
     const descInput = document.createElement("input");
     descInput.type = "text";
     descInput.value = item.description;
     descInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     descInput.setAttribute("data-edit-field", "description");
+    const descField = createFieldWithCounter(
+      descInput,
+      "edit-description",
+      ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
+    );
 
     const formatSelect = document.createElement("select");
     formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
@@ -460,13 +640,37 @@ export class MediaManagerWidget {
     });
 
     form.append(
-      titleInput,
-      creatorInput,
-      descInput,
+      titleField.wrapper,
+      creatorField.wrapper,
+      descField.wrapper,
       formatSelect,
       saveBtn,
       cancelBtn,
     );
+
+    if (isVideoMediaType(item.mediaType)) {
+      const posterFileInput = document.createElement("input");
+      posterFileInput.type = "file";
+      posterFileInput.accept = "image/jpeg,image/png,image/webp";
+      posterFileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
+      posterFileInput.setAttribute("data-edit-field", "posterFile");
+
+      const replacePosterBtn = document.createElement("button");
+      replacePosterBtn.type = "button";
+      replacePosterBtn.textContent = ADMIN_UI_TEXT.MEDIA_CHANGE_POSTER_BTN;
+      replacePosterBtn.setAttribute("data-action", "replace-poster");
+      replacePosterBtn.addEventListener("click", () => {
+        const posterFile = posterFileInput.files?.[0];
+        if (!posterFile) {
+          return;
+        }
+        this.editingItemId = null;
+        void this.store.replaceVideoPoster(item.id, posterFile);
+      });
+
+      form.append(posterFileInput, replacePosterBtn);
+    }
+
     return form;
   }
 }

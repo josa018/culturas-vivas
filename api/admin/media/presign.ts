@@ -11,6 +11,7 @@ import {
 import {
   MEDIA_STORAGE_LIMITS,
   MIME_TO_EXTENSION,
+  validatePosterPresignRequest,
   validatePresignRequest,
   validateQuotaCapacity,
 } from "../../_media-validation.js";
@@ -57,6 +58,70 @@ export function createPresignMediaHandler(deps: PresignMediaHandlerDeps = {}) {
       res.status(API_HTTP_STATUS.BAD_REQUEST).json({
         error: "Request body must be a JSON object.",
       });
+      return;
+    }
+
+    if (body.posterOnly === true) {
+      const posterValidation = validatePosterPresignRequest({
+        roomId: body.roomId,
+        standId: body.standId,
+        posterMimeType: body.posterMimeType,
+        posterSizeBytes: body.posterSizeBytes,
+      });
+      if (!posterValidation.ok) {
+        res
+          .status(posterValidation.status)
+          .json({ error: posterValidation.error });
+        return;
+      }
+
+      const validatedPoster = posterValidation.value;
+      try {
+        const db = resolveDb();
+        const usageRes = await db.execute(
+          "SELECT COALESCE(SUM(file_size_bytes), 0) AS usedBytes FROM room_media_items",
+        );
+        const storageUsageBytes = Number(usageRes.rows[0]?.usedBytes ?? 0);
+        const quotaCheck = validateQuotaCapacity(
+          storageUsageBytes,
+          validatedPoster.posterSizeBytes,
+        );
+        if (!quotaCheck.ok) {
+          res.status(quotaCheck.status).json({
+            error: quotaCheck.error,
+            storageUsageBytes,
+            maxStorageBytes: MEDIA_STORAGE_LIMITS.MAX_TOTAL_BYTES,
+          });
+          return;
+        }
+
+        const storage = resolveStorage();
+        const itemId = generateId();
+        const roomSegment = validatedPoster.roomId.toLowerCase();
+        const standSegment = validatedPoster.standId.toLowerCase();
+        const posterExt =
+          MIME_TO_EXTENSION[validatedPoster.posterMimeType] ?? "webp";
+        const posterKey = `rooms/${roomSegment}/${standSegment}/${itemId}-poster.${posterExt}`;
+        const poster = await storage.createPresignedUpload({
+          objectKey: posterKey,
+          contentType: validatedPoster.posterMimeType,
+          contentLength: validatedPoster.posterSizeBytes,
+          expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+        });
+
+        res.status(API_HTTP_STATUS.OK).json({
+          itemId,
+          storageProvider: storage.getProviderId(),
+          poster,
+          storageUsageBytes,
+          maxStorageBytes: MEDIA_STORAGE_LIMITS.MAX_TOTAL_BYTES,
+        });
+      } catch (error) {
+        console.error("[/api/admin/media/presign] Poster-only Error:", error);
+        res.status(API_HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          error: "Failed to generate poster upload signature.",
+        });
+      }
       return;
     }
 

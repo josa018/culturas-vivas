@@ -368,7 +368,7 @@ export class ExperienceScreenView implements ScreenView {
         };
 
         void this.roomAssetCache
-          .ensureRoomAssets(targetRoomId)
+          .ensureRoomAssets(targetRoomId, this.mediaProvider)
           .finally(performSwap);
       });
     } else {

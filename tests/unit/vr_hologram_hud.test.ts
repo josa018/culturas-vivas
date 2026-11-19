@@ -4,6 +4,7 @@ import {
   InspectionState,
   ROOM_DEFINITIONS,
   VR_HUD_ANIMATION_DURATION_MS,
+  VR_HUD_DICTIONARY,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
 import { RoomId } from "../../src/experience/types";
@@ -876,5 +877,32 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(hudInstance.isOpen).toBe(false);
 
     screen.unmount();
+  });
+
+  it("uses cv-canvas-text instead of ASCII a-text for room chip, action buttons, and dismiss glyph", () => {
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+
+    const roomChip = el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
+    expect(roomChip?.hasAttribute("cv-canvas-text")).toBe(true);
+    expect(roomChip?.getAttribute("value")).toBe(
+      ROOM_DEFINITIONS[DEFAULT_ROOM_ID].title,
+    );
+
+    instance.setRoomTitle(RoomId.NAAYERI);
+    expect(roomChip?.getAttribute("value")).toBe("Cultura Náayeri");
+    expect(roomChip?.getAttribute("cv-canvas-text")).toContain(
+      "Cultura Náayeri",
+    );
+
+    const dismissLabel = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.DISMISS_BTN} [cv-canvas-text]`,
+    );
+    expect(dismissLabel?.getAttribute("value")).toBe(
+      VR_HUD_DICTIONARY.DISMISS_LABEL,
+    );
+    expect(el.querySelectorAll("[cv-canvas-text]").length).toBeGreaterThanOrEqual(5);
+    expect(el.querySelector("a-text")).toBeNull();
   });
 });

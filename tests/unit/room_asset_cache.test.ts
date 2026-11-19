@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { RoomAssetCache } from "../../src/experience/room-asset-cache";
-import { ROOM_CATALOG, RoomId } from "../../src/shared/room-catalog";
+import { ExhibitMediaType } from "../../src/experience/constants";
+import type { RoomMediaProvider } from "../../src/experience/media-types";
+import { ROOM_CATALOG, RoomId, StandId } from "../../src/shared/room-catalog";
 
 describe("RoomAssetCache", () => {
   beforeEach(() => {
@@ -78,5 +80,99 @@ describe("RoomAssetCache", () => {
     const stalledPromise = stalledCache.ensureRoomAssets(RoomId.MEXICANERO);
     await vi.advanceTimersByTimeAsync(150);
     expect(await stalledPromise).toBe(false);
+  });
+
+  it("preloads unique destination stand item[0] covers/posters alongside skyboxUrl and ignores mediaProvider errors", async () => {
+    const loadedUrls: string[] = [];
+    const cache = new RoomAssetCache({
+      preloadImage: async (url) => {
+        loadedUrls.push(url);
+        return true;
+      },
+    });
+
+    const stubProvider: RoomMediaProvider = {
+      getStandItems: vi.fn((roomId, standId) => {
+        if (roomId !== RoomId.WIXARIKA) {
+          return [];
+        }
+        if (standId === StandId.ARTE) {
+          return [
+            {
+              id: "art-img",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Arte 1",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/wix-art-0.jpg",
+              sortOrder: 0,
+            },
+            {
+              id: "art-img-2",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Arte 2",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/wix-art-1-ignored.jpg",
+              sortOrder: 1,
+            },
+          ];
+        }
+        if (standId === StandId.COSMOVISION) {
+          return [
+            {
+              id: "cosmo-vid",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.VIDEO_2D,
+              title: "Cosmovisión",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/wix-dance.mp4",
+              posterUrl: "https://cdn.example.com/wix-dance-poster.jpg",
+              sortOrder: 0,
+            },
+          ];
+        }
+        if (standId === StandId.VESTIMENTA) {
+          return [
+            {
+              id: "dup-img",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Vestimenta",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/wix-art-0.jpg",
+              sortOrder: 0,
+            },
+          ];
+        }
+        return [];
+      }),
+    };
+
+    const ok = await cache.ensureRoomAssets(RoomId.WIXARIKA, stubProvider);
+    expect(ok).toBe(true);
+    expect(loadedUrls).toEqual([
+      ROOM_CATALOG[RoomId.WIXARIKA].skyboxUrl,
+      "https://cdn.example.com/wix-dance-poster.jpg",
+      "https://cdn.example.com/wix-art-0.jpg",
+    ]);
+
+    // mediaProvider exception must NOT fail room skybox readiness
+    const failingProvider: RoomMediaProvider = {
+      getStandItems: vi.fn(() => {
+        throw new Error("provider failure");
+      }),
+    };
+    const fallbackOk = await cache.ensureRoomAssets(RoomId.NAAYERI, failingProvider);
+    expect(fallbackOk).toBe(true);
+    expect(loadedUrls).toContain(ROOM_CATALOG[RoomId.NAAYERI].skyboxUrl);
   });
 });

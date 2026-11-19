@@ -18,9 +18,9 @@ export const MEDIA_STORAGE_LIMITS = {
   MAX_IMAGE_BYTES: 5_242_880, // 5 MiB
   MAX_VIDEO_BYTES: 104_857_600, // 100 MiB
   MAX_POSTER_BYTES: 1_048_576, // 1 MiB
-  MAX_TITLE_LENGTH: 120,
-  MAX_CREATOR_LENGTH: 120,
-  MAX_DESCRIPTION_LENGTH: 500,
+  MAX_TITLE_LENGTH: 80,
+  MAX_CREATOR_LENGTH: 80,
+  MAX_DESCRIPTION_LENGTH: 240,
   PRESIGN_TTL_SECONDS: 300,
 } as const;
 
@@ -47,6 +47,20 @@ export interface PresignRequestInput {
   readonly fileSizeBytes: unknown;
   readonly posterMimeType?: unknown;
   readonly posterSizeBytes?: unknown;
+}
+
+export interface PosterPresignRequestInput {
+  readonly roomId: unknown;
+  readonly standId: unknown;
+  readonly posterMimeType: unknown;
+  readonly posterSizeBytes: unknown;
+}
+
+export interface ValidatedPosterPresignRequest {
+  readonly roomId: RoomId;
+  readonly standId: StandId;
+  readonly posterMimeType: string;
+  readonly posterSizeBytes: number;
 }
 
 export interface ValidatedPresignRequest {
@@ -147,6 +161,74 @@ export function isSafeRoomObjectKey(
   return key.startsWith(buildMediaKeyPrefix(roomId, standId));
 }
 
+function validatePosterFields(
+  posterMimeType: unknown,
+  posterSizeBytes: unknown,
+): ValidationResult<{
+  readonly posterMimeType: string;
+  readonly posterSizeBytes: number;
+}> {
+  if (!isAllowedImageMime(posterMimeType)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Unsupported poster MIME type.",
+    };
+  }
+  if (!isPositiveInteger(posterSizeBytes)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "posterSizeBytes must be a positive integer.",
+    };
+  }
+  if (posterSizeBytes > MEDIA_STORAGE_LIMITS.MAX_POSTER_BYTES) {
+    return {
+      ok: false,
+      status: 413,
+      error: "Poster exceeds maximum 1 MiB limit.",
+    };
+  }
+  return {
+    ok: true,
+    value: { posterMimeType, posterSizeBytes },
+  };
+}
+
+export function validatePosterPresignRequest(
+  input: PosterPresignRequestInput,
+): ValidationResult<ValidatedPosterPresignRequest> {
+  if (
+    typeof input.roomId !== "string" ||
+    typeof input.standId !== "string" ||
+    !isValidRoomStand(input.roomId, input.standId)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid roomId and standId combination.",
+    };
+  }
+
+  const posterCheck = validatePosterFields(
+    input.posterMimeType,
+    input.posterSizeBytes,
+  );
+  if (!posterCheck.ok) {
+    return posterCheck;
+  }
+
+  return {
+    ok: true,
+    value: {
+      roomId: input.roomId as RoomId,
+      standId: input.standId as StandId,
+      posterMimeType: posterCheck.value.posterMimeType,
+      posterSizeBytes: posterCheck.value.posterSizeBytes,
+    },
+  };
+}
+
 export function validateQuotaCapacity(
   usedBytes: number,
   incomingBytes: number,
@@ -232,29 +314,15 @@ export function validatePresignRequest(
     input.posterMimeType !== undefined ||
     input.posterSizeBytes !== undefined
   ) {
-    if (!isAllowedImageMime(input.posterMimeType)) {
-      return {
-        ok: false,
-        status: 400,
-        error: "Unsupported poster MIME type.",
-      };
+    const posterCheck = validatePosterFields(
+      input.posterMimeType,
+      input.posterSizeBytes,
+    );
+    if (!posterCheck.ok) {
+      return posterCheck;
     }
-    if (!isPositiveInteger(input.posterSizeBytes)) {
-      return {
-        ok: false,
-        status: 400,
-        error: "posterSizeBytes must be a positive integer.",
-      };
-    }
-    if (input.posterSizeBytes > MEDIA_STORAGE_LIMITS.MAX_POSTER_BYTES) {
-      return {
-        ok: false,
-        status: 413,
-        error: "Poster exceeds maximum 1 MiB limit.",
-      };
-    }
-    posterMimeType = input.posterMimeType;
-    posterSizeBytes = input.posterSizeBytes;
+    posterMimeType = posterCheck.value.posterMimeType;
+    posterSizeBytes = posterCheck.value.posterSizeBytes;
   }
 
   return {

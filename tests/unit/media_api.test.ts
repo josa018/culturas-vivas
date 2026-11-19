@@ -383,4 +383,126 @@ describe("Media Catalog & Admin Media CMS API", () => {
     const afterDeleteRes = await db.execute("SELECT id FROM room_media_items");
     expect(afterDeleteRes.rows.map((r) => r.id)).toEqual(["item-b"]);
   });
+
+  it("supports posterOnly presign, PATCH posterKey replacement on videos with R2 cleanup, and rejects posterKey on images", async () => {
+    const presign = createPresignMediaHandler({
+      resolveDb: () => db,
+      resolveStorage: () => storageProvider,
+      generateId: () => "poster-replacement-1",
+    });
+    const adminMedia = createAdminMediaHandler({
+      resolveDb: () => db,
+      resolveStorage: () => storageProvider,
+      now: () => ++clockMs,
+    });
+
+    // Seed one video (with existing poster) and one image
+    await adminMedia(
+      {
+        method: "POST",
+        headers: { authorization: authHeader },
+        body: {
+          id: "vid-item",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaKind: "VIDEO_2D",
+          title: "Video Ceremonial",
+          creatorName: "Autor",
+          description: "Descripción.",
+          mediaKey: "rooms/wixarika/arte/vid.mp4",
+          posterKey: "rooms/wixarika/arte/old-poster.webp",
+          mimeType: "video/mp4",
+          fileSizeBytes: 5_000_000,
+        },
+      },
+      createMockResponse().res,
+    );
+    await adminMedia(
+      {
+        method: "POST",
+        headers: { authorization: authHeader },
+        body: {
+          id: "img-item",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaKind: "IMAGE_2D",
+          title: "Fotografía",
+          creatorName: "Autor",
+          description: "Imagen.",
+          mediaKey: "rooms/wixarika/arte/pic.webp",
+          mimeType: "image/webp",
+          fileSizeBytes: 250_000,
+        },
+      },
+      createMockResponse().res,
+    );
+
+    // 1. posterOnly presign
+    const posterPresignMock = createMockResponse();
+    await presign(
+      {
+        method: "POST",
+        headers: { authorization: authHeader },
+        body: {
+          posterOnly: true,
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          posterMimeType: "image/webp",
+          posterSizeBytes: 48_000,
+        },
+      },
+      posterPresignMock.res,
+    );
+    expect(posterPresignMock.getStatus()).toBe(200);
+    const presignBody = posterPresignMock.getBody() as {
+      poster?: { key: string; uploadUrl: string };
+      media?: unknown;
+    };
+    expect(presignBody.poster?.key).toBe(
+      "rooms/wixarika/arte/poster-replacement-1-poster.webp",
+    );
+    expect(presignBody.media).toBeUndefined();
+
+    // 2. PATCH image item with posterKey must return 400
+    const badImagePatch = createMockResponse();
+    await adminMedia(
+      {
+        method: "PATCH",
+        headers: { authorization: authHeader },
+        body: {
+          id: "img-item",
+          posterKey: "rooms/wixarika/arte/poster-replacement-1-poster.webp",
+        },
+      },
+      badImagePatch.res,
+    );
+    expect(badImagePatch.getStatus()).toBe(400);
+
+    // 3. PATCH video item with valid posterKey updates DB & deletes old poster object in R2
+    const videoPatchMock = createMockResponse();
+    await adminMedia(
+      {
+        method: "PATCH",
+        headers: { authorization: authHeader },
+        body: {
+          id: "vid-item",
+          posterKey: "rooms/wixarika/arte/poster-replacement-1-poster.webp",
+        },
+      },
+      videoPatchMock.res,
+    );
+    expect(videoPatchMock.getStatus()).toBe(200);
+    const patchBody = videoPatchMock.getBody() as {
+      item: { posterKey?: string; posterUrl?: string };
+    };
+    expect(patchBody.item.posterKey).toBe(
+      "rooms/wixarika/arte/poster-replacement-1-poster.webp",
+    );
+    expect(patchBody.item.posterUrl).toBe(
+      `${PUBLIC_BASE_URL}/rooms/wixarika/arte/poster-replacement-1-poster.webp`,
+    );
+    expect(storageProvider.deletedKeys).toEqual([
+      "rooms/wixarika/arte/old-poster.webp",
+    ]);
+  });
 });

@@ -84,6 +84,9 @@ export const ADMIN_UI_CLASSES = {
   MEDIA_ITEM_ACTIONS: "cv-admin-media-item-actions",
   MEDIA_FORMAT_CHIP: "cv-admin-media-format-chip",
   MEDIA_EDIT_FORM: "cv-admin-media-edit-form",
+  MEDIA_FIELD_COUNTER: "cv-admin-media-counter",
+  MEDIA_POSTER_CONTROLS: "cv-admin-media-poster-controls",
+  MEDIA_POSTER_PREVIEW: "cv-admin-media-poster-preview",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -155,6 +158,10 @@ export const ADMIN_UI_TEXT = {
   MEDIA_CANCEL_BTN: "Cancelar",
   MEDIA_DELETE_BTN: "Eliminar",
   MEDIA_CREATOR_PREFIX: "Crédito: ",
+  MEDIA_POSTER_TIME_LABEL: "Segundo para capturar miniatura del video (seg)",
+  MEDIA_POSTER_CAPTURE_BTN: "Capturar vista previa",
+  MEDIA_POSTER_CUSTOM_LABEL: "Miniatura personalizada (opcional, JPG/PNG/WebP)",
+  MEDIA_CHANGE_POSTER_BTN: "Cambiar miniatura",
 } as const;
 
 export const ADMIN_MEDIA_ENDPOINTS = {
@@ -166,10 +173,14 @@ export const ADMIN_MEDIA_LIMITS = {
   MAX_TOTAL_BYTES: 8_589_934_592,
   MAX_IMAGE_BYTES: 5_242_880,
   MAX_VIDEO_BYTES: 104_857_600,
+  MAX_POSTER_BYTES: 1_048_576,
   MAX_IMAGE_EDGE_PX: 2048,
   IMAGE_WEBP_QUALITY: 0.85,
   POSTER_MAX_WIDTH_PX: 1024,
   POSTER_SEEK_SECONDS: 0.5,
+  MAX_TITLE_LENGTH: 80,
+  MAX_CREATOR_LENGTH: 80,
+  MAX_DESCRIPTION_LENGTH: 240,
   OUTPUT_IMAGE_MIME: "image/webp",
 } as const;
 

@@ -1,4 +1,5 @@
 import "aframe";
+import "./experience/components/canvas-text";
 import "./experience/components/glb-model";
 import "./experience/components/inspectable";
 import "./experience/components/media-stand";

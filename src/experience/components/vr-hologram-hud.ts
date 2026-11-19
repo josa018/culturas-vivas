@@ -15,6 +15,10 @@ import {
   type Vector3D,
 } from "../constants";
 import { RoomId } from "../types";
+import {
+  createCanvasTextPlane,
+  setCanvasTextElement,
+} from "./canvas-text";
 import { getSharedInspectionController } from "./inspectable";
 
 export const VR_HUD_SWITCH_2D_EVENT = "cv-vr-hud-switch-2d";
@@ -223,12 +227,20 @@ function createHudButtonEntity(options: {
   accentBar.setAttribute("color", options.borderColor);
   accentBar.setAttribute("material", "shader: flat");
 
-  const labelEl = document.createElement("a-text");
-  labelEl.setAttribute("value", options.label);
-  labelEl.setAttribute("align", "center");
-  labelEl.setAttribute("color", VR_HUD_COLORS.TEXT_BONE);
-  labelEl.setAttribute("width", "1.35");
-  labelEl.setAttribute("position", "0 0 0.01");
+  const labelEl = createCanvasTextPlane({
+    value: options.label,
+    align: "center",
+    baseline: "middle",
+    color: VR_HUD_COLORS.TEXT_BONE,
+    width: width * 0.9,
+    height: height * 0.68,
+    fontSizePx: 44,
+    fontWeight: "600",
+    canvasWidth: 512,
+    canvasHeight: 128,
+    maxLines: 1,
+    position: "0 0 0.01",
+  });
 
   btn.append(accentBar, labelEl);
   return btn;
@@ -295,12 +307,21 @@ export function createVrHologramHudComponentDefinition() {
       topTrim.setAttribute("material", "shader: flat");
 
       // Active room title chip
-      const roomChip = document.createElement("a-text");
-      roomChip.setAttribute("id", VR_HUD_ELEMENT_IDS.ROOM_CHIP);
-      roomChip.setAttribute("align", "center");
-      roomChip.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
-      roomChip.setAttribute("width", "1.75");
-      roomChip.setAttribute("position", "0 0.27 0.04");
+      const roomChip = createCanvasTextPlane({
+        id: VR_HUD_ELEMENT_IDS.ROOM_CHIP,
+        value: "",
+        align: "center",
+        baseline: "middle",
+        color: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+        width: 1.25,
+        height: 0.14,
+        fontSizePx: 46,
+        fontWeight: "700",
+        canvasWidth: 1024,
+        canvasHeight: 128,
+        maxLines: 1,
+        position: "0 0.27 0.04",
+      });
       this.roomChipEl = roomChip;
 
       // Direct Switch to 2D Touch button
@@ -388,12 +409,20 @@ export function createVrHologramHudComponentDefinition() {
         `shader: flat; color: ${VR_HUD_COLORS.ACCENT_COCHINILLA}`,
       );
 
-      const dismissLabel = document.createElement("a-text");
-      dismissLabel.setAttribute("value", VR_HUD_DICTIONARY.DISMISS_LABEL);
-      dismissLabel.setAttribute("align", "center");
-      dismissLabel.setAttribute("color", VR_HUD_COLORS.TEXT_BONE);
-      dismissLabel.setAttribute("width", "1.4");
-      dismissLabel.setAttribute("position", "0 0 0.01");
+      const dismissLabel = createCanvasTextPlane({
+        value: VR_HUD_DICTIONARY.DISMISS_LABEL,
+        align: "center",
+        baseline: "middle",
+        color: VR_HUD_COLORS.TEXT_BONE,
+        width: 0.12,
+        height: 0.12,
+        fontSizePx: 64,
+        fontWeight: "700",
+        canvasWidth: 128,
+        canvasHeight: 128,
+        maxLines: 1,
+        position: "0 0 0.01",
+      });
       dismissBtn.appendChild(dismissLabel);
 
       dismissBtn.addEventListener?.("click", (evt) => {
@@ -457,7 +486,18 @@ export function createVrHologramHudComponentDefinition() {
       const roomDef =
         ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
       if (this.roomChipEl) {
-        this.roomChipEl.setAttribute("value", roomDef.title);
+        setCanvasTextElement(this.roomChipEl, {
+          mode: "label",
+          value: roomDef.title,
+          color: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+          align: "center",
+          baseline: "middle",
+          fontSizePx: 46,
+          fontWeight: "700",
+          canvasWidth: 1024,
+          canvasHeight: 128,
+          maxLines: 1,
+        });
       }
       if (this.returnLobbyBtnEl) {
         const showReturnLobby = roomId !== RoomId.LOBBY;

@@ -51,6 +51,10 @@ describe("PortalWaypoint Component", () => {
     expect(portalEl.querySelector("a-box")?.getAttribute("color")).toBe(
       "#D99B26",
     );
+    const labelPlane = portalEl.querySelector("[cv-canvas-text]");
+    expect(labelPlane).not.toBeNull();
+    expect(labelPlane?.getAttribute("value")).toBe("Cultura Wixárika");
+    expect(portalEl.querySelector("a-text")).toBeNull();
   });
 
   it("triggers cv-portal-activated event on click", () => {

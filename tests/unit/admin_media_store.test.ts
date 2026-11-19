@@ -215,4 +215,168 @@ describe("AdminMediaStore", () => {
     await store.fetchCatalog();
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
+
+  it("uploads video with custom poster file or seek timestamp and supports replaceVideoPoster(id, file)", async () => {
+    const customPosterBlob = new Blob(["custom-webp"], { type: "image/webp" });
+    const replacementPosterBlob = new Blob(["new-poster-webp"], {
+      type: "image/webp",
+    });
+
+    (processor as unknown as { optimizePosterImage: ReturnType<typeof vi.fn> }).optimizePosterImage =
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          posterBlob: customPosterBlob,
+          videoWidth: 1280,
+          videoHeight: 720,
+          posterWidth: 1024,
+          posterHeight: 576,
+          posterMimeType: "image/webp",
+        })
+        .mockResolvedValueOnce({
+          posterBlob: replacementPosterBlob,
+          videoWidth: 1024,
+          videoHeight: 576,
+          posterWidth: 1024,
+          posterHeight: 576,
+          posterMimeType: "image/webp",
+        });
+
+    (fetcher.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      items: [
+        {
+          id: "vid-existing",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.COSMOVISION,
+          mediaType: ExhibitMediaType.VIDEO_2D,
+          title: "Canto Ceremonial",
+          creatorName: "Marakame",
+          description: "Grabación tradicional.",
+          mediaKey: "rooms/wixarika/cosmovision/canto.mp4",
+          posterKey: "rooms/wixarika/cosmovision/canto-old-poster.webp",
+          mediaUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/canto.mp4",
+          posterUrl:
+            "https://pub.r2.dev/rooms/wixarika/cosmovision/canto-old-poster.webp",
+          sortOrder: 0,
+        },
+      ],
+      storageUsageBytes: 2_000_000,
+      maxStorageBytes: 8_589_934_592,
+    });
+
+    (fetcher.post as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        media: {
+          key: "rooms/wixarika/cosmovision/v2.mp4",
+          uploadUrl: "https://r2.example.com/v2.mp4",
+          headers: { "Content-Type": "video/mp4" },
+        },
+        poster: {
+          key: "rooms/wixarika/cosmovision/v2-poster.webp",
+          uploadUrl: "https://r2.example.com/v2-poster.webp",
+          headers: { "Content-Type": "image/webp" },
+        },
+      })
+      .mockResolvedValueOnce({
+        item: {
+          id: "v2",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.COSMOVISION,
+          mediaType: ExhibitMediaType.VIDEO_2D,
+          title: "Video con portada propia",
+          creatorName: "",
+          description: "Desc.",
+          mediaUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/v2.mp4",
+          posterUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/v2-poster.webp",
+          sortOrder: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        poster: {
+          key: "rooms/wixarika/cosmovision/canto-new-poster.webp",
+          uploadUrl: "https://r2.example.com/canto-new-poster.webp",
+          headers: { "Content-Type": "image/webp" },
+        },
+      });
+
+    (fetcher.patch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      item: {
+        id: "vid-existing",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.COSMOVISION,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Canto Ceremonial",
+        creatorName: "Marakame",
+        description: "Grabación tradicional.",
+        mediaKey: "rooms/wixarika/cosmovision/canto.mp4",
+        posterKey: "rooms/wixarika/cosmovision/canto-new-poster.webp",
+        mediaUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/canto.mp4",
+        posterUrl:
+          "https://pub.r2.dev/rooms/wixarika/cosmovision/canto-new-poster.webp",
+        sortOrder: 0,
+      },
+    });
+
+    const store = new AdminMediaStore({
+      fetcher,
+      getToken: () => "jwt-token",
+      onUnauthorized,
+      processor,
+    });
+    await store.fetchCatalog();
+
+    // 1. Upload with customPosterFile bypasses extractVideoPoster and uploads optimized custom poster
+    const videoFile = new File(["mp4"], "video.mp4", { type: "video/mp4" });
+    const customCoverFile = new File(["png"], "cover.png", { type: "image/png" });
+    await store.uploadMedia({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.COSMOVISION,
+      file: videoFile,
+      customPosterFile: customCoverFile,
+      posterSeekSeconds: 3.2,
+      mediaKind: ExhibitMediaType.VIDEO_2D,
+      title: "Video con portada propia",
+      creatorName: "",
+      description: "Desc.",
+    });
+
+    expect(fetcher.putBinary).toHaveBeenCalledWith(
+      "https://r2.example.com/v2-poster.webp",
+      customPosterBlob,
+      expect.any(Object),
+    );
+
+    // 2. replaceVideoPoster runs posterOnly presign -> binary PUT -> PATCH
+    const newThumbFile = new File(["jpg"], "thumb.jpg", { type: "image/jpeg" });
+    await store.replaceVideoPoster("vid-existing", newThumbFile);
+
+    expect(fetcher.post).toHaveBeenLastCalledWith(
+      ADMIN_MEDIA_ENDPOINTS.PRESIGN,
+      expect.objectContaining({
+        posterOnly: true,
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.COSMOVISION,
+        posterMimeType: "image/webp",
+        posterSizeBytes: replacementPosterBlob.size,
+      }),
+      { Authorization: "Bearer jwt-token" },
+    );
+    expect(fetcher.putBinary).toHaveBeenLastCalledWith(
+      "https://r2.example.com/canto-new-poster.webp",
+      replacementPosterBlob,
+      { "Content-Type": "image/webp" },
+    );
+    expect(fetcher.patch).toHaveBeenLastCalledWith(
+      ADMIN_MEDIA_ENDPOINTS.MEDIA,
+      {
+        id: "vid-existing",
+        posterKey: "rooms/wixarika/cosmovision/canto-new-poster.webp",
+      },
+      { Authorization: "Bearer jwt-token" },
+    );
+    store.setSelection(RoomId.WIXARIKA, StandId.COSMOVISION);
+    expect(store.getSelectedItems()[0]?.posterUrl).toContain(
+      "canto-new-poster.webp",
+    );
+  });
 });

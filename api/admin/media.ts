@@ -10,6 +10,7 @@ import {
   type ServerlessResponse,
 } from "../_http.js";
 import {
+  isSafeRoomObjectKey,
   isStandMediaKind,
   isVideoMediaKind,
   MEDIA_STORAGE_LIMITS,
@@ -20,7 +21,11 @@ import {
   createMediaStorageProviderFromEnv,
   type MediaStorageProvider,
 } from "../_storage.js";
-import { isValidRoomStand } from "../../src/shared/room-catalog.js";
+import {
+  isValidRoomStand,
+  type RoomId,
+  type StandId,
+} from "../../src/shared/room-catalog.js";
 import { serializeMediaRow, type MediaCatalogRow } from "../media.js";
 
 export interface AdminMediaHandlerDeps {
@@ -390,12 +395,53 @@ export function createAdminMediaHandler(deps: AdminMediaHandlerDeps = {}) {
       mediaKind = body.mediaKind;
     }
 
+    let posterKey = existing.poster_key;
+    if (body.posterKey !== undefined) {
+      const targetIsVideo = isStandMediaKind(mediaKind)
+        ? isVideoMediaKind(mediaKind)
+        : false;
+      if (!targetIsVideo) {
+        res.status(API_HTTP_STATUS.BAD_REQUEST).json({
+          error: "posterKey can only be updated on video items.",
+        });
+        return;
+      }
+      if (typeof body.posterKey !== "string" || body.posterKey.trim().length === 0) {
+        res.status(API_HTTP_STATUS.BAD_REQUEST).json({
+          error: "Invalid posterKey.",
+        });
+        return;
+      }
+      const trimmedPosterKey = body.posterKey.trim();
+      if (
+        !isSafeRoomObjectKey(
+          trimmedPosterKey,
+          existing.room_id as RoomId,
+          existing.stand_id as StandId,
+        )
+      ) {
+        res.status(API_HTTP_STATUS.BAD_REQUEST).json({
+          error: "posterKey does not match the target room and stand prefix.",
+        });
+        return;
+      }
+      posterKey = trimmedPosterKey;
+    }
+
     await db.execute({
       sql: `UPDATE room_media_items
-            SET title = ?, creator_name = ?, description = ?, media_kind = ?, updated_at = ?
+            SET title = ?, creator_name = ?, description = ?, media_kind = ?, poster_key = ?, updated_at = ?
             WHERE id = ?`,
-      args: [title, creatorName, description, mediaKind, timestampMs, id],
+      args: [title, creatorName, description, mediaKind, posterKey, timestampMs, id],
     });
+
+    if (
+      existing.poster_key &&
+      posterKey &&
+      existing.poster_key !== posterKey
+    ) {
+      await resolveStorage().deleteObject(existing.poster_key);
+    }
 
     const updatedRow: MediaCatalogRow = {
       ...existing,
@@ -403,6 +449,7 @@ export function createAdminMediaHandler(deps: AdminMediaHandlerDeps = {}) {
       creator_name: creatorName,
       description,
       media_kind: mediaKind,
+      poster_key: posterKey,
       updated_at: timestampMs,
     };
 

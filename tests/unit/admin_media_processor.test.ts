@@ -109,7 +109,38 @@ describe("AdminMediaProcessor", () => {
       size: ADMIN_MEDIA_LIMITS.MAX_VIDEO_BYTES + 1,
     } as File;
     await expect(processor.extractVideoPoster(oversizedMp4)).rejects.toThrow(
-      /100 MiB/i,
+      /supera el peso máximo permitido \(100 MB\)/i,
+    );
+  });
+
+  it("prepareMp4ForUpload relocates trailing moov MP4 File to faststart and rejects disguised FLV containers", async () => {
+    const ftyp = new Uint8Array([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+    const mdat = new Uint8Array([0, 0, 0, 12, 0x6d, 0x64, 0x61, 0x74, 1, 2, 3, 4]);
+    const moov = new Uint8Array([
+      0, 0, 0, 16, 0x6d, 0x6f, 0x6f, 0x76,
+      0, 0, 0, 8, 0x6d, 0x76, 0x68, 0x64,
+    ]);
+    const combined = new Uint8Array(ftyp.length + mdat.length + moov.length);
+    combined.set(ftyp, 0);
+    combined.set(mdat, ftyp.length);
+    combined.set(moov, ftyp.length + mdat.length);
+
+    const processor = new AdminMediaProcessor();
+    const file = new File([combined], "trailer.mp4", { type: "video/mp4" });
+    const prepared = await processor.prepareMp4ForUpload(file);
+
+    expect(prepared.relocated).toBe(true);
+    expect(prepared.file.name).toBe("trailer.mp4");
+    expect(prepared.file.size).toBe(file.size);
+    const outBuf = new Uint8Array(await prepared.file.arrayBuffer());
+    // moov must now immediately follow 12-byte ftyp
+    expect(String.fromCharCode(...outBuf.slice(16, 20))).toBe("moov");
+
+    const flvFile = new File(["FLV\x01test-bytes"], "disguised.mp4", {
+      type: "video/mp4",
+    });
+    await expect(processor.prepareMp4ForUpload(flvFile)).rejects.toThrow(
+      /no es un video MP4 válido/i,
     );
   });
 });

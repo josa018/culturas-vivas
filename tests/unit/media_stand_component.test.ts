@@ -330,4 +330,127 @@ describe("cv-media-stand A-Frame Component", () => {
     );
     expect(el.querySelector(".cv-stand-right-plane")?.getAttribute("visible")).toBe("false");
   });
+
+  it("renders centered two-row header, dark anti-flash media surfaces, Unicode cv-canvas-text, and direct-mesh clickable buttons", () => {
+    const items: StandMediaItem[] = [
+      {
+        id: "img-1",
+        roomId: RoomId.NAAYERI,
+        standId: StandId.COSMOVISION,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Cosmovisión y Tradición",
+        creatorName: "Artesana Náayeri",
+        description: "Texto con diacrí­ticos.",
+        mediaUrl: "https://cdn.example.com/cosmo.jpg",
+        sortOrder: 0,
+      },
+    ];
+
+    const { el } = createStandHost(items, StandId.COSMOVISION, RoomId.NAAYERI, {
+      inspectionController,
+    });
+
+    // Zero ASCII <a-text> nodes remain anywhere inside the stand
+    expect(el.querySelector("a-text")).toBeNull();
+    expect(el.querySelectorAll("[cv-canvas-text]").length).toBeGreaterThanOrEqual(10);
+
+    // Two-row centered header: category title sits strictly above count badge
+    const header = el.querySelector(".cv-stand-header");
+    const countBadge = el.querySelector(".cv-stand-count-badge");
+    const parseY = (pos: string | null | undefined) => Number((pos ?? "0 0 0").split(/\s+/)[1]);
+    const parseX = (pos: string | null | undefined) => Number((pos ?? "0 0 0").split(/\s+/)[0]);
+
+    expect(header?.hasAttribute("cv-canvas-text")).toBe(true);
+    expect(parseX(header?.getAttribute("position"))).toBe(0);
+    expect(parseX(countBadge?.getAttribute("position"))).toBe(0);
+    expect(parseY(header?.getAttribute("position"))).toBeGreaterThan(
+      parseY(countBadge?.getAttribute("position")),
+    );
+
+    // Planes initialize with dark surface color (#0f172a) so they never flash white
+    const leftPlane = el.querySelector(".cv-stand-left-plane");
+    const rightPlane = el.querySelector(".cv-stand-right-plane");
+    expect(leftPlane?.getAttribute("color")).toBe("#0f172a");
+    expect(leftPlane?.getAttribute("material")).toContain("#0f172a");
+    expect(rightPlane?.getAttribute("color")).toBe("#0f172a");
+    expect(rightPlane?.getAttribute("material")).toContain("#0f172a");
+
+    // Control buttons must own direct geometry + material for A-Frame cursor raycaster hit-testing
+    for (const selector of [
+      ".cv-stand-prev-btn",
+      ".cv-stand-next-btn",
+      ".cv-stand-play-btn",
+      ".cv-stand-mute-btn",
+      ".cv-stand-close-btn",
+    ]) {
+      const btn = el.querySelector(selector);
+      expect(btn).not.toBeNull();
+      expect(btn?.getAttribute("geometry")).toContain("primitive: plane");
+      expect(btn?.getAttribute("material")).toContain("shader: flat");
+      expect(btn?.querySelector("[cv-canvas-text]")?.getAttribute("value")).toBeTruthy();
+    }
+  });
+
+  it("keeps billboard title, credits, and description well-spaced inside card bounds even on maximum-length entries", async () => {
+    const items: StandMediaItem[] = [
+      {
+        id: "long-item",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Título extenso de dos líneas para verificar separación vertical en el visor VR",
+        creatorName: "Colectivo de Maestras y Maestros Artesanos de Santa Catarina Nayarit",
+        description:
+          "Descripción larga de prueba para comprobar que el texto completo cabe cómodamente dentro de la tarjeta sin encimarse con los créditos ni salirse del borde inferior del card.",
+        mediaUrl: "https://cdn.example.com/long.jpg",
+        sortOrder: 0,
+      },
+    ];
+
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Colección Arte",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        galleryPosition: { x: 0, y: 1.6, z: -3.2 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+    });
+    await instance.inspect();
+
+    const billboard = el.querySelector(".cv-stand-billboard")!;
+    const bgPlane = billboard.querySelector("a-plane")!;
+    const titlePlane = billboard.querySelector(".cv-stand-billboard-title")!;
+    const creatorPlane = billboard.querySelector(".cv-stand-billboard-creator")!;
+    const descPlane = billboard.querySelector(".cv-stand-billboard-desc")!;
+
+    const parseY = (node: Element) =>
+      Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[1]);
+    const parseH = (node: Element) => Number(node.getAttribute("height") ?? 0);
+
+    const bgHalf = parseH(bgPlane) / 2;
+    const creatorCenterY = parseY(creatorPlane);
+    const descCenterY = parseY(descPlane);
+    const creatorTop = creatorCenterY + parseH(creatorPlane) / 2;
+    const descTop = descCenterY + parseH(descPlane) / 2;
+    const descBottom = descCenterY - parseH(descPlane) / 2;
+
+    // Header & count badge must be legible size
+    expect(el.querySelector(".cv-stand-header")?.getAttribute("cv-canvas-text")).toContain(
+      "fontSizePx: 66",
+    );
+    expect(descPlane.getAttribute("cv-canvas-text")).toContain("fontSizePx: 34");
+
+    // Distinct vertical separation between title, creator, and description inside card bounds
+    expect(parseY(titlePlane)).toBeGreaterThan(creatorTop);
+    expect(creatorCenterY).toBeGreaterThan(descTop);
+    expect(descBottom).toBeGreaterThanOrEqual(-bgHalf);
+  });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MEDIA_STORAGE_LIMITS,
+  validateMediaRecordCreate,
+  validatePosterPresignRequest,
   validatePresignRequest,
 } from "../../api/_media-validation";
 import {
@@ -152,6 +154,70 @@ describe("api/_storage & api/_media-validation", () => {
     expect(tooLargeVideo.ok).toBe(false);
     if (!tooLargeVideo.ok) {
       expect(tooLargeVideo.status).toBe(413);
+    }
+  });
+
+  it("enforces calibrated 80 / 80 / 240 metadata limits and validates poster-only presign requests", () => {
+    expect(MEDIA_STORAGE_LIMITS.MAX_TITLE_LENGTH).toBe(80);
+    expect(MEDIA_STORAGE_LIMITS.MAX_CREATOR_LENGTH).toBe(80);
+    expect(MEDIA_STORAGE_LIMITS.MAX_DESCRIPTION_LENGTH).toBe(240);
+
+    const overTitle = validateMediaRecordCreate({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "a".repeat(81),
+      creatorName: "Autor",
+      description: "Desc",
+      mediaKey: "rooms/wixarika/arte/a.webp",
+      mimeType: "image/webp",
+      fileSizeBytes: 5000,
+    });
+    expect(overTitle.ok).toBe(false);
+
+    const overCreator = validateMediaRecordCreate({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Obra",
+      creatorName: "b".repeat(81),
+      description: "Desc",
+      mediaKey: "rooms/wixarika/arte/a.webp",
+      mimeType: "image/webp",
+      fileSizeBytes: 5000,
+    });
+    expect(overCreator.ok).toBe(false);
+
+    const overDesc = validateMediaRecordCreate({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Obra",
+      creatorName: "Autor",
+      description: "c".repeat(241),
+      mediaKey: "rooms/wixarika/arte/a.webp",
+      mimeType: "image/webp",
+      fileSizeBytes: 5000,
+    });
+    expect(overDesc.ok).toBe(false);
+
+    const validPosterPresign = validatePosterPresignRequest({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      posterMimeType: "image/webp",
+      posterSizeBytes: 64_000,
+    });
+    expect(validPosterPresign.ok).toBe(true);
+
+    const badPosterPresign = validatePosterPresignRequest({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      posterMimeType: "video/mp4",
+      posterSizeBytes: 64_000,
+    });
+    expect(badPosterPresign.ok).toBe(false);
+    if (!badPosterPresign.ok) {
+      expect(badPosterPresign.status).toBe(400);
     }
   });
 });

@@ -1,5 +1,6 @@
 import { PORTAL_COLORS, PORTAL_DIMENSIONS } from "../constants";
 import type { RoomId, RoomPortalConfig } from "../types";
+import { createCanvasTextPlane } from "./canvas-text";
 
 export const PORTAL_ACTIVATED_EVENT = "cv-portal-activated";
 
@@ -160,15 +161,20 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   aperture.setAttribute("material", "shader: flat; side: double");
 
   // Floating room title billboard
-  const labelText = document.createElement("a-text");
-  labelText.setAttribute("value", config.title);
-  labelText.setAttribute("align", "center");
-  labelText.setAttribute("color", PORTAL_COLORS.TEXT);
-  labelText.setAttribute("width", String(PORTAL_DIMENSIONS.LABEL_WIDTH));
-  labelText.setAttribute(
-    "position",
-    `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
-  );
+  const labelText = createCanvasTextPlane({
+    value: config.title,
+    color: PORTAL_COLORS.TEXT,
+    align: "center",
+    baseline: "middle",
+    width: PORTAL_DIMENSIONS.LABEL_WIDTH,
+    height: 0.36,
+    fontSizePx: 52,
+    fontWeight: "700",
+    canvasWidth: 1024,
+    canvasHeight: 160,
+    maxLines: 2,
+    position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
+  });
 
   portalRoot.append(leftPillar, rightPillar, lintel, aperture, labelText);
   return portalRoot;

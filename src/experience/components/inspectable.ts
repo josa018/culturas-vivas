@@ -10,6 +10,7 @@ import {
   ROOM_CENTER_COORDINATE,
 } from "../constants";
 import { ExhibitInspectionController } from "../inspection-controller";
+import { createCanvasTextPlane } from "./canvas-text";
 
 let sharedInspectionController: ExhibitInspectionController | null = null;
 
@@ -191,52 +192,81 @@ export function createInspectableComponentDefinition() {
       plane.setAttribute("width", String(EXHIBIT_DIMENSIONS.BILLBOARD_WIDTH));
       plane.setAttribute("height", String(EXHIBIT_DIMENSIONS.BILLBOARD_HEIGHT));
       plane.setAttribute("color", "#0f172a");
-      plane.setAttribute("opacity", "0.95");
       plane.setAttribute("material", "shader: flat; side: double");
-
-      const titleEl = document.createElement("a-text");
-      titleEl.setAttribute("value", this.data.title);
-      titleEl.setAttribute("color", "#38bdf8");
-      titleEl.setAttribute("align", "left");
-      titleEl.setAttribute("baseline", "top");
-      titleEl.setAttribute("position", "-0.70 0.22 0.02");
-      titleEl.setAttribute(
-        "width",
-        String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
-      );
-      titleEl.setAttribute(
-        "wrap-count",
-        String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WRAP_COUNT),
-      );
 
       const trimmedCreator = (this.data.creatorName ?? "").trim();
       const hasCreator = trimmedCreator.length > 0;
+      const estimatedTitleLines = (this.data.title ?? "").trim().length > 34 ? 2 : 1;
+      const estimatedCreatorLines =
+        hasCreator && (`${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}`).length > 42
+          ? 2
+          : 1;
 
-      const creatorEl = document.createElement("a-text");
-      creatorEl.setAttribute("class", "cv-billboard-creator");
-      creatorEl.setAttribute(
-        "value",
-        hasCreator ? `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}` : "",
-      );
-      creatorEl.setAttribute("visible", hasCreator ? "true" : "false");
-      creatorEl.setAttribute("color", "#D99B26");
-      creatorEl.setAttribute("align", "left");
-      creatorEl.setAttribute("baseline", "top");
-      creatorEl.setAttribute("position", "-0.70 0.08 0.02");
-      creatorEl.setAttribute("width", "1.35");
-      creatorEl.setAttribute("wrap-count", "40");
+      const creatorTop = estimatedTitleLines > 1 ? 0.13 : 0.21;
+      const creatorCenterY = creatorTop - 0.07;
+      const descTop = hasCreator
+        ? creatorTop - (estimatedCreatorLines > 1 ? 0.15 : 0.10)
+        : estimatedTitleLines > 1
+          ? 0.125
+          : 0.205;
+      const descCenterY = descTop - 0.18;
 
-      const descEl = document.createElement("a-text");
-      descEl.setAttribute("value", this.data.description);
-      descEl.setAttribute("color", "#f1f5f9");
-      descEl.setAttribute("align", "left");
-      descEl.setAttribute("baseline", "top");
-      descEl.setAttribute(
-        "position",
-        hasCreator ? "-0.70 -0.03 0.02" : "-0.70 0.04 0.02",
-      );
-      descEl.setAttribute("width", "1.45");
-      descEl.setAttribute("wrap-count", "44");
+      const titleEl = createCanvasTextPlane({
+        className: "cv-billboard-title",
+        value: this.data.title,
+        color: "#38bdf8",
+        align: "left",
+        baseline: "top",
+        width: EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH,
+        height: 0.18,
+        fontSizePx: 48,
+        fontWeight: "700",
+        canvasWidth: 800,
+        canvasHeight: 116,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 8,
+        position: "-0.12 0.26 0.03",
+      });
+
+      const creatorEl = createCanvasTextPlane({
+        className: "cv-billboard-creator",
+        value: hasCreator
+          ? `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}`
+          : "",
+        visible: hasCreator ? "true" : "false",
+        color: "#D99B26",
+        align: "left",
+        baseline: "top",
+        width: 1.46,
+        height: 0.14,
+        fontSizePx: 36,
+        fontWeight: "600",
+        canvasWidth: 936,
+        canvasHeight: 90,
+        maxLines: 2,
+        paddingX: 20,
+        paddingY: 6,
+        position: `0 ${creatorCenterY} 0.035`,
+      });
+
+      const descEl = createCanvasTextPlane({
+        className: "cv-billboard-description",
+        value: this.data.description,
+        color: "#f1f5f9",
+        align: "left",
+        baseline: "top",
+        width: 1.46,
+        height: 0.36,
+        fontSizePx: 34,
+        fontWeight: "400",
+        canvasWidth: 936,
+        canvasHeight: 230,
+        maxLines: 5,
+        paddingX: 20,
+        paddingY: 8,
+        position: `0 ${descCenterY} 0.04`,
+      });
 
       // Top-right circular close button (becomes .clickable only when billboard is open)
       const returnBtn = document.createElement("a-entity");
@@ -246,15 +276,23 @@ export function createInspectableComponentDefinition() {
         `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}`,
       );
       returnBtn.setAttribute("material", "color: #e11d48; shader: flat");
-      returnBtn.setAttribute("position", "0.68 0.18 0.03");
+      returnBtn.setAttribute("position", "0.68 0.27 0.05");
       returnBtn.setAttribute("data-action", "return-exhibit");
 
-      const returnText = document.createElement("a-text");
-      returnText.setAttribute("value", EXHIBIT_DICTIONARY.CLOSE_ICON);
-      returnText.setAttribute("align", "center");
-      returnText.setAttribute("color", "#ffffff");
-      returnText.setAttribute("width", "1.5");
-      returnText.setAttribute("position", "0 0 0.01");
+      const returnText = createCanvasTextPlane({
+        value: EXHIBIT_DICTIONARY.CLOSE_ICON,
+        color: "#ffffff",
+        align: "center",
+        baseline: "middle",
+        width: 0.11,
+        height: 0.11,
+        fontSizePx: 64,
+        fontWeight: "700",
+        canvasWidth: 128,
+        canvasHeight: 128,
+        maxLines: 1,
+        position: "0 0 0.01",
+      });
       returnBtn.appendChild(returnText);
 
       returnBtn.addEventListener?.("click", (evt) => {
