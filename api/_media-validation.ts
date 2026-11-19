@@ -16,7 +16,7 @@ export type StandMediaKind = (typeof StandMediaKindValues)[number];
 export const MEDIA_STORAGE_LIMITS = {
   MAX_TOTAL_BYTES: 8_589_934_592, // 8 GiB free-tier ceiling (2 GiB buffer under 10 GiB R2)
   MAX_IMAGE_BYTES: 5_242_880, // 5 MiB
-  MAX_VIDEO_BYTES: 52_428_800, // 50 MiB
+  MAX_VIDEO_BYTES: 104_857_600, // 100 MiB
   MAX_POSTER_BYTES: 1_048_576, // 1 MiB
   MAX_TITLE_LENGTH: 120,
   MAX_CREATOR_LENGTH: 120,
@@ -205,7 +205,7 @@ export function validatePresignRequest(
       return {
         ok: false,
         status: 413,
-        error: "Video exceeds maximum 50 MiB limit.",
+        error: "Video exceeds maximum 100 MiB limit.",
       };
     }
   } else {
@@ -379,7 +379,7 @@ export function validateMediaRecordCreate(
       return {
         ok: false,
         status: 413,
-        error: "Video exceeds maximum 50 MiB limit.",
+        error: "Video exceeds maximum 100 MiB limit.",
       };
     }
   } else {

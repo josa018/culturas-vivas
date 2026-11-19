@@ -109,7 +109,7 @@ describe("AdminMediaProcessor", () => {
       size: ADMIN_MEDIA_LIMITS.MAX_VIDEO_BYTES + 1,
     } as File;
     await expect(processor.extractVideoPoster(oversizedMp4)).rejects.toThrow(
-      /50 MiB/i,
+      /100 MiB/i,
     );
   });
 });

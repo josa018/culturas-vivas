@@ -132,5 +132,26 @@ describe("api/_storage & api/_media-validation", () => {
     if (!tooLargePoster.ok) {
       expect(tooLargePoster.status).toBe(413);
     }
+
+    const maxAllowedVideo = validatePresignRequest({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      mediaKind: ExhibitMediaType.VIDEO_2D,
+      mimeType: "video/mp4",
+      fileSizeBytes: MEDIA_STORAGE_LIMITS.MAX_VIDEO_BYTES,
+    });
+    expect(maxAllowedVideo.ok).toBe(true);
+
+    const tooLargeVideo = validatePresignRequest({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      mediaKind: ExhibitMediaType.VIDEO_2D,
+      mimeType: "video/mp4",
+      fileSizeBytes: MEDIA_STORAGE_LIMITS.MAX_VIDEO_BYTES + 1,
+    });
+    expect(tooLargeVideo.ok).toBe(false);
+    if (!tooLargeVideo.ok) {
+      expect(tooLargeVideo.status).toBe(413);
+    }
   });
 });
