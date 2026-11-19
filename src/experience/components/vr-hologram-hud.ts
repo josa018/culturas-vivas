@@ -14,15 +14,17 @@ import {
   VR_HUD_VISIBLE_SCALE,
   type Vector3D,
 } from "../constants";
-import type { RoomId } from "../types";
+import { RoomId } from "../types";
 import { getSharedInspectionController } from "./inspectable";
 
 export const VR_HUD_SWITCH_2D_EVENT = "cv-vr-hud-switch-2d";
+export const VR_HUD_RETURN_LOBBY_EVENT = "cv-vr-hud-return-lobby";
 export const VR_HUD_EXIT_EVENT = "cv-vr-hud-exit";
 export const VR_HUD_DISMISS_EVENT = "cv-vr-hud-dismiss";
 
 export interface VrHudActionCallbacks {
   readonly onSwitchTo2D?: () => void;
+  readonly onReturnToLobby?: () => void;
   readonly onRequestExit?: () => void;
   readonly onDismiss?: () => void;
 }
@@ -57,6 +59,7 @@ export interface VrHologramHudComponentInstance {
   activeRoomId: RoomId;
   callbacks: VrHudActionCallbacks;
   roomChipEl: HTMLElement | null;
+  returnLobbyBtnEl?: HTMLElement | null;
   hudEpoch?: number;
   dismissTimer?: ReturnType<typeof setTimeout> | null;
   hudOutCompleteHandler?: (() => void) | null;
@@ -89,8 +92,13 @@ function setHudInteractiveClickable(
   if (!instance.interactiveEls) {
     return;
   }
+  const canReturnToLobby = instance.activeRoomId !== RoomId.LOBBY;
   for (const el of instance.interactiveEls) {
-    setElementClickable(el, enabled);
+    if (el === instance.returnLobbyBtnEl) {
+      setElementClickable(el, enabled && canReturnToLobby);
+    } else {
+      setElementClickable(el, enabled);
+    }
   }
 }
 
@@ -292,16 +300,15 @@ export function createVrHologramHudComponentDefinition() {
       roomChip.setAttribute("align", "center");
       roomChip.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
       roomChip.setAttribute("width", "1.75");
-      roomChip.setAttribute("position", "0 0.22 0.04");
+      roomChip.setAttribute("position", "0 0.27 0.04");
       this.roomChipEl = roomChip;
-      this.setRoomTitle(this.activeRoomId);
 
       // Direct Switch to 2D Touch button
       const switch2dBtn = createHudButtonEntity({
         id: VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
         action: "switch-to-touch",
         label: VR_HUD_DICTIONARY.SWITCH_TO_2D_LABEL,
-        position: "-0.34 -0.05 0.06",
+        position: "-0.34 0.0 0.06",
         rotation: "0 10 0",
         backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
         borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
@@ -323,7 +330,7 @@ export function createVrHologramHudComponentDefinition() {
         id: VR_HUD_ELEMENT_IDS.EXIT_BTN,
         action: "request-exit",
         label: VR_HUD_DICTIONARY.EXIT_TOUR_LABEL,
-        position: "0.34 -0.05 0.06",
+        position: "0.34 0.0 0.06",
         rotation: "0 -10 0",
         backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
         borderColor: VR_HUD_COLORS.ACCENT_COCHINILLA,
@@ -340,12 +347,37 @@ export function createVrHologramHudComponentDefinition() {
         );
       });
 
+      // Conditional Return to Lobby button (hidden when activeRoomId === LOBBY)
+      const returnLobbyBtn = createHudButtonEntity({
+        id: VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
+        action: "return-lobby",
+        label: VR_HUD_DICTIONARY.RETURN_LOBBY_LABEL,
+        position: "0 -0.28 0.06",
+        width: VR_HUD_GEOMETRY.LOBBY_BUTTON_WIDTH_M,
+        height: VR_HUD_GEOMETRY.LOBBY_BUTTON_HEIGHT_M,
+        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+      });
+      this.returnLobbyBtnEl = returnLobbyBtn;
+      this.setRoomTitle(this.activeRoomId);
+
+      returnLobbyBtn.addEventListener?.("click", (evt) => {
+        evt?.stopPropagation?.();
+        this.dismiss();
+        if (this.callbacks.onReturnToLobby) {
+          this.callbacks.onReturnToLobby();
+        }
+        this.el.dispatchEvent?.(
+          new CustomEvent(VR_HUD_RETURN_LOBBY_EVENT, { bubbles: true }),
+        );
+      });
+
       // Top-right circular dismiss button
       const dismissBtn = document.createElement("a-entity");
       dismissBtn.setAttribute("id", VR_HUD_ELEMENT_IDS.DISMISS_BTN);
       dismissBtn.setAttribute("class", "cv-hud-control");
       dismissBtn.setAttribute("data-action", "dismiss-hud");
-      dismissBtn.setAttribute("position", "0.60 0.24 0.08");
+      dismissBtn.setAttribute("position", "0.60 0.28 0.08");
       dismissBtn.setAttribute("rotation", "0 -14 0");
       dismissBtn.setAttribute(
         "geometry",
@@ -369,8 +401,22 @@ export function createVrHologramHudComponentDefinition() {
         this.dismiss();
       });
 
-      this.interactiveEls = [backdrop, switch2dBtn, exitBtn, dismissBtn];
-      this.el.append(backdrop, topTrim, roomChip, switch2dBtn, exitBtn, dismissBtn);
+      this.interactiveEls = [
+        backdrop,
+        switch2dBtn,
+        exitBtn,
+        returnLobbyBtn,
+        dismissBtn,
+      ];
+      this.el.append(
+        backdrop,
+        topTrim,
+        roomChip,
+        switch2dBtn,
+        exitBtn,
+        returnLobbyBtn,
+        dismissBtn,
+      );
 
       this.unsubscribeInspection?.();
       this.unsubscribeInspection = getSharedInspectionController().subscribe(
@@ -412,6 +458,17 @@ export function createVrHologramHudComponentDefinition() {
         ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
       if (this.roomChipEl) {
         this.roomChipEl.setAttribute("value", roomDef.title);
+      }
+      if (this.returnLobbyBtnEl) {
+        const showReturnLobby = roomId !== RoomId.LOBBY;
+        this.returnLobbyBtnEl.setAttribute(
+          "visible",
+          showReturnLobby ? "true" : "false",
+        );
+        setElementClickable(
+          this.returnLobbyBtnEl,
+          this.isOpen && showReturnLobby,
+        );
       }
     },
 
@@ -545,6 +602,7 @@ export function createVrHologramHudComponentDefinition() {
       setHudInteractiveClickable(this, false);
       this.isOpen = false;
       this.roomChipEl = null;
+      this.returnLobbyBtnEl = null;
       this.interactiveEls = [];
     },
   };

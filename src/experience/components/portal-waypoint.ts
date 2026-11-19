@@ -112,6 +112,8 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     `id: ${config.id}; targetRoomId: ${config.targetRoomId}; title: ${config.title}`,
   );
 
+  const frameColor = config.accentColor ?? PORTAL_COLORS.FRAME;
+
   // Archway frame left pillar
   const leftPillar = document.createElement("a-box");
   leftPillar.setAttribute("width", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
@@ -121,7 +123,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     "position",
     `${-(PORTAL_DIMENSIONS.FRAME_WIDTH / 2)} 0 0`,
   );
-  leftPillar.setAttribute("color", PORTAL_COLORS.FRAME);
+  leftPillar.setAttribute("color", frameColor);
   leftPillar.setAttribute("material", "shader: flat");
 
   // Archway frame right pillar
@@ -133,7 +135,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     "position",
     `${PORTAL_DIMENSIONS.FRAME_WIDTH / 2} 0 0`,
   );
-  rightPillar.setAttribute("color", PORTAL_COLORS.FRAME);
+  rightPillar.setAttribute("color", frameColor);
   rightPillar.setAttribute("material", "shader: flat");
 
   // Archway top lintel
@@ -145,7 +147,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   lintel.setAttribute("height", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
   lintel.setAttribute("depth", "0.08");
   lintel.setAttribute("position", `0 ${PORTAL_DIMENSIONS.FRAME_HEIGHT / 2} 0`);
-  lintel.setAttribute("color", PORTAL_COLORS.FRAME);
+  lintel.setAttribute("color", frameColor);
   lintel.setAttribute("material", "shader: flat");
 
   // Portal gateway aperture plane (interactive target)

@@ -228,8 +228,9 @@ describe("ScenePreloadManager", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("extracts unique critical room skybox assets", () => {
+  it("extracts only the critical LOBBY skybox asset for initial Splash preload", () => {
     const assets = getCriticalRoomAssets();
-    expect(assets).toEqual(["/scenes/scene1.webp", "/scenes/scene2.webp"]);
+    expect(assets).toEqual(["/scenes/lobby.webp"]);
+    expect(assets).toHaveLength(1);
   });
 });

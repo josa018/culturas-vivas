@@ -24,12 +24,12 @@ describe("RoomTransitionStateMachine", () => {
       history.push({ state, active, target });
     });
 
-    // Step A: Trigger transition to TEXTILES
-    const triggered = sm.triggerTransition(RoomId.TEXTILES);
+    // Step A: Trigger transition to WIXARIKA
+    const triggered = sm.triggerTransition(RoomId.WIXARIKA);
     expect(triggered).toBe(true);
     expect(sm.getState()).toBe(RoomTransitionState.FADING_OUT);
-    expect(sm.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
-    expect(sm.getTargetRoomId()).toBe(RoomId.TEXTILES);
+    expect(sm.getActiveRoomId()).toBe(RoomId.LOBBY);
+    expect(sm.getTargetRoomId()).toBe(RoomId.WIXARIKA);
     expect(sm.isInputLocked()).toBe(true);
 
     // Step B: Curtain becomes opaque
@@ -40,14 +40,14 @@ describe("RoomTransitionStateMachine", () => {
     // Step C: Room swapping finishes and ready
     sm.notifyRoomReady();
     expect(sm.getState()).toBe(RoomTransitionState.FADING_IN);
-    expect(sm.getActiveRoomId()).toBe(RoomId.TEXTILES);
-    expect(sm.getTargetRoomId()).toBe(RoomId.TEXTILES);
+    expect(sm.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(sm.getTargetRoomId()).toBe(RoomId.WIXARIKA);
     expect(sm.isInputLocked()).toBe(true);
 
     // Step D: Curtain becomes transparent
     sm.notifyFadeInComplete();
     expect(sm.getState()).toBe(RoomTransitionState.IDLE);
-    expect(sm.getActiveRoomId()).toBe(RoomId.TEXTILES);
+    expect(sm.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     expect(sm.getTargetRoomId()).toBeNull();
     expect(sm.isInputLocked()).toBe(false);
 
@@ -60,16 +60,16 @@ describe("RoomTransitionStateMachine", () => {
 
   it("correctly rejects illegal transitions with state guards", () => {
     const sm = new RoomTransitionStateMachine();
-    sm.triggerTransition(RoomId.TEXTILES);
+    sm.triggerTransition(RoomId.WIXARIKA);
 
     // Concurrent trigger must be rejected
-    const concurrent = sm.triggerTransition(RoomId.ARCHAEOLOGY);
+    const concurrent = sm.triggerTransition(RoomId.LOBBY);
     expect(concurrent).toBe(false);
     expect(sm.getState()).toBe(RoomTransitionState.FADING_OUT);
 
     // Transition to active room must be rejected
-    const smIdle = new RoomTransitionStateMachine(RoomId.ARCHAEOLOGY);
-    const selfTransition = smIdle.triggerTransition(RoomId.ARCHAEOLOGY);
+    const smIdle = new RoomTransitionStateMachine(RoomId.LOBBY);
+    const selfTransition = smIdle.triggerTransition(RoomId.LOBBY);
     expect(selfTransition).toBe(false);
 
     // Transition to unregistered room must be rejected
@@ -98,16 +98,16 @@ describe("RoomTransitionStateMachine", () => {
       callCount++;
     });
 
-    sm.triggerTransition(RoomId.TEXTILES);
+    sm.triggerTransition(RoomId.WIXARIKA);
     expect(callCount).toBe(1);
 
     unsub();
     sm.notifyFadeOutComplete();
     expect(callCount).toBe(1);
 
-    sm.reset(RoomId.ARCHAEOLOGY);
+    sm.reset(RoomId.LOBBY);
     expect(sm.getState()).toBe(RoomTransitionState.IDLE);
-    expect(sm.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(sm.getActiveRoomId()).toBe(RoomId.LOBBY);
     expect(sm.getTargetRoomId()).toBeNull();
   });
 });

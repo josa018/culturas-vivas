@@ -876,6 +876,13 @@ body {
   backdrop-filter: blur(8px);
 }
 
+.cv-hud-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-hud-lobby-btn,
 .cv-hud-exit-btn {
   width: auto !important;
   min-height: 40px !important;

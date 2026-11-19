@@ -21,6 +21,7 @@ import { getSharedInspectionController } from "../experience/components/inspecta
 import {
   ensureVrHologramHud,
   VR_HUD_EXIT_EVENT,
+  VR_HUD_RETURN_LOBBY_EVENT,
   VR_HUD_SWITCH_2D_EVENT,
   type VrHologramHudComponentInstance,
 } from "../experience/components/vr-hologram-hud";
@@ -30,6 +31,7 @@ import {
   VR_TAP_OUTSIDE_HUD_EVENT,
   type VrTapTriggerComponentInstance,
 } from "../experience/components/vr-tap-trigger";
+import { RoomAssetCache } from "../experience/room-asset-cache";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -57,6 +59,7 @@ export class ExperienceScreenView implements ScreenView {
   private container: HTMLElement | null = null;
   private topBarEl: HTMLElement | null = null;
   private roomBadgeEl: HTMLElement | null = null;
+  private returnLobbyBtnEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
   private isProgrammaticExit: boolean = false;
@@ -65,18 +68,22 @@ export class ExperienceScreenView implements ScreenView {
   private tapHudToggleHandler: (() => void) | null = null;
   private tapOutsideHudHandler: (() => void) | null = null;
   private hudSwitch2dHandler: (() => void) | null = null;
+  private hudReturnLobbyHandler: (() => void) | null = null;
   private hudExitHandler: (() => void) | null = null;
   private readonly transitionStateMachine: RoomTransitionStateMachine;
+  private readonly roomAssetCache: RoomAssetCache;
 
   constructor(
     dispatch: NavigationDispatcher,
     viewMode: string = "vr",
     transitionStateMachine?: RoomTransitionStateMachine,
+    roomAssetCache?: RoomAssetCache,
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
     this.transitionStateMachine =
       transitionStateMachine ?? new RoomTransitionStateMachine();
+    this.roomAssetCache = roomAssetCache ?? new RoomAssetCache();
   }
 
   public getTransitionStateMachine(): RoomTransitionStateMachine {
@@ -102,6 +109,13 @@ export class ExperienceScreenView implements ScreenView {
       ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
     if (this.roomBadgeEl) {
       this.roomBadgeEl.textContent = roomDef.title;
+    }
+    if (this.returnLobbyBtnEl) {
+      const showLobbyBtn = roomId !== RoomId.LOBBY;
+      this.returnLobbyBtnEl.style.display = showLobbyBtn
+        ? "inline-flex"
+        : "none";
+      this.returnLobbyBtnEl.hidden = !showLobbyBtn;
     }
     if (typeof document !== "undefined") {
       const hudEl = document.getElementById(VR_HUD_ELEMENT_IDS.HUD_ROOT);
@@ -137,6 +151,21 @@ export class ExperienceScreenView implements ScreenView {
     const badge = document.createElement("span");
     badge.className = "cv-badge";
     this.roomBadgeEl = badge;
+
+    const actionsGroup = document.createElement("div");
+    actionsGroup.className = "cv-hud-topbar-actions";
+
+    const returnLobbyButton = document.createElement("button");
+    returnLobbyButton.type = "button";
+    returnLobbyButton.className = `${UI_CLASSES.BUTTON_OUTLINE} cv-hud-lobby-btn`;
+    returnLobbyButton.setAttribute("data-action", "return-lobby");
+    returnLobbyButton.textContent = UI_TEXT.EXPERIENCE_RETURN_LOBBY;
+    returnLobbyButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.transitionToRoom(RoomId.LOBBY);
+    });
+    this.returnLobbyBtnEl = returnLobbyButton;
+
     this.updateRoomBadge(
       ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
     );
@@ -155,7 +184,8 @@ export class ExperienceScreenView implements ScreenView {
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
 
-    topBar.append(badge, exitButton);
+    actionsGroup.append(returnLobbyButton, exitButton);
+    topBar.append(badge, actionsGroup);
     hudOverlay.appendChild(topBar);
 
     parent.appendChild(hudOverlay);
@@ -169,6 +199,7 @@ export class ExperienceScreenView implements ScreenView {
     this.teardownSceneListeners();
     this.topBarEl = null;
     this.roomBadgeEl = null;
+    this.returnLobbyBtnEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -306,25 +337,31 @@ export class ExperienceScreenView implements ScreenView {
       curtain.fadeOut(() => {
         this.transitionStateMachine.notifyFadeOutComplete();
 
-        // 4. Mount target room and update skybox
-        const roomGroup = ExhibitRoomBuilder.mountRoom(
-          scene,
-          targetRoomId,
-          this.viewMode,
-        );
-        const skyEl = scene.querySelector("a-sky");
-
-        const hasAFrame =
-          typeof globalThis !== "undefined" &&
-          Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
-
-        if (hasAFrame) {
-          void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
-            finishSwap,
+        const performSwap = () => {
+          // 4. Mount target room and update skybox
+          const roomGroup = ExhibitRoomBuilder.mountRoom(
+            scene,
+            targetRoomId,
+            this.viewMode,
           );
-        } else {
-          finishSwap();
-        }
+          const skyEl = scene.querySelector("a-sky");
+
+          const hasAFrame =
+            typeof globalThis !== "undefined" &&
+            Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
+
+          if (hasAFrame) {
+            void ExhibitRoomBuilder.waitForRoomReady(roomGroup, skyEl).then(
+              finishSwap,
+            );
+          } else {
+            finishSwap();
+          }
+        };
+
+        void this.roomAssetCache
+          .ensureRoomAssets(targetRoomId)
+          .finally(performSwap);
       });
     } else {
       // Direct synchronous execution fallback (headless or no animation support)
@@ -559,6 +596,21 @@ export class ExperienceScreenView implements ScreenView {
       scene.addEventListener(VR_HUD_SWITCH_2D_EVENT, this.hudSwitch2dHandler);
     }
 
+    if (!this.hudReturnLobbyHandler) {
+      this.hudReturnLobbyHandler = () => {
+        if (
+          this.viewMode === "vr" &&
+          ExhibitRoomBuilder.getActiveRoomId() !== RoomId.LOBBY
+        ) {
+          this.transitionToRoom(RoomId.LOBBY);
+        }
+      };
+      scene.addEventListener(
+        VR_HUD_RETURN_LOBBY_EVENT,
+        this.hudReturnLobbyHandler,
+      );
+    }
+
     if (!this.hudExitHandler) {
       this.hudExitHandler = () => {
         if (this.viewMode === "vr") {
@@ -610,6 +662,14 @@ export class ExperienceScreenView implements ScreenView {
         this.hudSwitch2dHandler,
       );
       this.hudSwitch2dHandler = null;
+    }
+
+    if (this.hudReturnLobbyHandler) {
+      scene.removeEventListener(
+        VR_HUD_RETURN_LOBBY_EVENT,
+        this.hudReturnLobbyHandler,
+      );
+      this.hudReturnLobbyHandler = null;
     }
 
     if (this.hudExitHandler) {

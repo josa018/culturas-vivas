@@ -1,4 +1,5 @@
 import "aframe";
+import "./experience/components/glb-model";
 import "./experience/components/inspectable";
 import "./experience/components/stereo-media";
 import "./experience/components/vr-hologram-hud";

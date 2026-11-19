@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ExperienceScreenView } from "../../src/screens/screen-experience";
 import { RoomId, RoomTransitionState } from "../../src/experience/types";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
@@ -7,11 +7,17 @@ import {
   type PortalActivatedEventDetail,
 } from "../../src/experience/components/portal-waypoint";
 import { CAMERA_CURTAIN_ID } from "../../src/experience/components/camera-curtain";
-import { setSharedInspectionController, getSharedInspectionController } from "../../src/experience/components/inspectable";
+import {
+  setSharedInspectionController,
+  getSharedInspectionController,
+} from "../../src/experience/components/inspectable";
 import {
   InspectionState,
+  ROOM_DEFINITIONS,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
+import { RoomAssetCache } from "../../src/experience/room-asset-cache";
+import { UI_TEXT } from "../../src/screens/constants";
 
 describe("ExperienceScreenView Room Transition", () => {
   let scene: HTMLElement;
@@ -38,71 +44,99 @@ describe("ExperienceScreenView Room Transition", () => {
 
   afterEach(() => {
     screen.unmount();
-    ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(scene, RoomId.LOBBY);
     setSharedInspectionController(null);
     document.body.innerHTML = "";
   });
 
-  it("aborts active inspection, swaps room, and updates HUD on portal activation", () => {
+  it("initializes in LOBBY, swaps rooms via portal and Return to Lobby button, and aborts active inspection", () => {
     const stateMachine = screen.getTransitionStateMachine();
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
-    expect(stateMachine.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(stateMachine.getActiveRoomId()).toBe(RoomId.LOBBY);
 
     screen.mount(container);
     screen.show();
 
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
-    expect(container.querySelector(".cv-badge")?.textContent).toBe("Sala de Arqueologia");
-    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)).toBeTruthy();
-    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`)).toBeTruthy();
+    const returnLobbyBtn = container.querySelector(
+      '[data-action="return-lobby"]',
+    ) as HTMLElement;
+    expect(returnLobbyBtn).toBeTruthy();
+    expect(returnLobbyBtn.style.display).toBe("none");
 
-    const inspectionController = getSharedInspectionController();
-    inspectionController.focus("exhibit-statue-3d");
-    expect(inspectionController.getState()).toBe(InspectionState.FOCUSING);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      ROOM_DEFINITIONS[RoomId.LOBBY].title,
+    );
+    expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)).toBeTruthy();
+    expect(
+      scene.querySelector(`#${VR_HUD_ELEMENT_IDS.TAP_TRIGGER}`),
+    ).toBeTruthy();
 
     scene.dispatchEvent(
       new CustomEvent<PortalActivatedEventDetail>(PORTAL_ACTIVATED_EVENT, {
         detail: {
-          portalId: "portal-archaeology-to-textiles",
-          targetRoomId: RoomId.TEXTILES,
+          portalId: "portal-lobby-to-wixarika",
+          targetRoomId: RoomId.WIXARIKA,
         },
         bubbles: true,
       }),
     );
+
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(stateMachine.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      ROOM_DEFINITIONS[RoomId.WIXARIKA].title,
+    );
+    expect(returnLobbyBtn.style.display).not.toBe("none");
+    expect(returnLobbyBtn.textContent).toContain(
+      UI_TEXT.EXPERIENCE_RETURN_LOBBY,
+    );
+    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+
+    const inspectionController = getSharedInspectionController();
+    inspectionController.focus("exhibit-wixarika-artifact");
+    expect(inspectionController.getState()).toBe(InspectionState.FOCUSING);
+
+    returnLobbyBtn.click();
 
     expect(inspectionController.getState()).toBe(InspectionState.IDLE);
     expect(inspectionController.getActiveExhibit()).toBeNull();
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.TEXTILES);
-    expect(stateMachine.getActiveRoomId()).toBe(RoomId.TEXTILES);
-    expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
-    expect(container.querySelector(".cv-badge")?.textContent).toBe("Sala de Textiles");
-    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
-
-    scene.dispatchEvent(
-      new CustomEvent<PortalActivatedEventDetail>(PORTAL_ACTIVATED_EVENT, {
-        detail: {
-          portalId: "portal-textiles-to-archaeology",
-          targetRoomId: RoomId.ARCHAEOLOGY,
-        },
-        bubbles: true,
-      }),
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      ROOM_DEFINITIONS[RoomId.LOBBY].title,
     );
-
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
-    expect(container.querySelector(".cv-badge")?.textContent).toBe("Sala de Arqueologia");
+    expect(returnLobbyBtn.style.display).toBe("none");
   });
 
   it("returns false when <a-scene> is absent from the document", () => {
     scene.remove();
-    expect(screen.transitionToRoom(RoomId.TEXTILES)).toBe(false);
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(false);
   });
 
-  it("locks cursor & tap trigger during animated curtain transition and rejects concurrent triggers", () => {
+  it("locks cursor, awaits RoomAssetCache during blackout swap, and rejects concurrent triggers", async () => {
+    const loadedUrls: string[] = [];
+    const assetCache = new RoomAssetCache({
+      preloadImage: async (url) => {
+        loadedUrls.push(url);
+        return true;
+      },
+    });
+    screen.unmount();
+    screen = new ExperienceScreenView(() => {}, "vr", undefined, assetCache);
     screen.mount(container);
     screen.show();
 
-    const curtainEl = camera.querySelector(`#${CAMERA_CURTAIN_ID}`) as HTMLElement & {
-      components?: Record<string, { fadeOut: (cb?: () => void) => void; fadeIn: (cb?: () => void) => void }>;
+    const curtainEl = camera.querySelector(
+      `#${CAMERA_CURTAIN_ID}`,
+    ) as HTMLElement & {
+      components?: Record<
+        string,
+        {
+          fadeOut: (cb?: () => void) => void;
+          fadeIn: (cb?: () => void) => void;
+        }
+      >;
     };
     let finishFadeOut!: () => void;
     let finishFadeIn!: () => void;
@@ -117,17 +151,20 @@ describe("ExperienceScreenView Room Transition", () => {
       },
     };
 
-    expect(screen.transitionToRoom(RoomId.TEXTILES)).toBe(true);
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
     expect(cursor.getAttribute("raycaster")).toBe("objects: none");
     expect(screen.getTransitionStateMachine().getState()).toBe(
       RoomTransitionState.FADING_OUT,
     );
 
     // Concurrent trigger while transition is in flight must be rejected
-    expect(screen.transitionToRoom(RoomId.ARCHAEOLOGY)).toBe(false);
+    expect(screen.transitionToRoom(RoomId.NAAYERI)).toBe(false);
 
     finishFadeOut();
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.TEXTILES);
+    await vi.waitFor(() => {
+      expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    });
+    expect(loadedUrls).toEqual([ROOM_DEFINITIONS[RoomId.WIXARIKA].skyboxUrl]);
     expect(screen.getTransitionStateMachine().getState()).toBe(
       RoomTransitionState.FADING_IN,
     );
@@ -150,7 +187,7 @@ describe("ExperienceScreenView Room Transition", () => {
       }),
     );
 
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
     expect(screen.getTransitionStateMachine().getState()).toBe(
       RoomTransitionState.IDLE,
     );

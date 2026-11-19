@@ -3,17 +3,15 @@
  * Coordinates preloading of critical assets and WebGL scene readiness.
  */
 
-import { ROOM_DEFINITIONS } from "./constants";
+import { DEFAULT_ROOM_ID, ROOM_CATALOG } from "../shared/room-catalog";
 
 export function getCriticalRoomAssets(): string[] {
-  return Array.from(
-    new Set(Object.values(ROOM_DEFINITIONS).map((def) => def.skyboxUrl)),
-  );
+  return [ROOM_CATALOG[DEFAULT_ROOM_ID].skyboxUrl];
 }
 
 export const PRELOAD_CONSTANTS = {
   DEFAULT_TIMEOUT_MS: 8000,
-  DEFAULT_CRITICAL_ASSETS: ["/scenes/scene1.webp", "/scenes/scene2.webp"],
+  DEFAULT_CRITICAL_ASSETS: [ROOM_CATALOG[DEFAULT_ROOM_ID].skyboxUrl],
   PERCENTAGE_COMPLETE: 100,
   PERCENTAGE_START: 0,
 } as const;

@@ -32,6 +32,7 @@ export interface InspectableComponentData {
   autoRotate: boolean;
   rotationSpeed: number;
   title: string;
+  creatorName?: string;
   description: string;
   mediaType: string;
 }
@@ -142,6 +143,7 @@ export function createInspectableComponentDefinition() {
         default: INSPECTION_TIMINGS.DEFAULT_ROTATION_SPEED,
       },
       title: { type: "string", default: "" },
+      creatorName: { type: "string", default: "" },
       description: { type: "string", default: "" },
       mediaType: { type: "string", default: ExhibitMediaType.IMAGE_2D },
     },
@@ -197,7 +199,7 @@ export function createInspectableComponentDefinition() {
       titleEl.setAttribute("color", "#38bdf8");
       titleEl.setAttribute("align", "left");
       titleEl.setAttribute("baseline", "top");
-      titleEl.setAttribute("position", "-0.70 0.20 0.02");
+      titleEl.setAttribute("position", "-0.70 0.22 0.02");
       titleEl.setAttribute(
         "width",
         String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
@@ -207,12 +209,32 @@ export function createInspectableComponentDefinition() {
         String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WRAP_COUNT),
       );
 
+      const trimmedCreator = (this.data.creatorName ?? "").trim();
+      const hasCreator = trimmedCreator.length > 0;
+
+      const creatorEl = document.createElement("a-text");
+      creatorEl.setAttribute("class", "cv-billboard-creator");
+      creatorEl.setAttribute(
+        "value",
+        hasCreator ? `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${trimmedCreator}` : "",
+      );
+      creatorEl.setAttribute("visible", hasCreator ? "true" : "false");
+      creatorEl.setAttribute("color", "#D99B26");
+      creatorEl.setAttribute("align", "left");
+      creatorEl.setAttribute("baseline", "top");
+      creatorEl.setAttribute("position", "-0.70 0.08 0.02");
+      creatorEl.setAttribute("width", "1.35");
+      creatorEl.setAttribute("wrap-count", "40");
+
       const descEl = document.createElement("a-text");
       descEl.setAttribute("value", this.data.description);
       descEl.setAttribute("color", "#f1f5f9");
       descEl.setAttribute("align", "left");
       descEl.setAttribute("baseline", "top");
-      descEl.setAttribute("position", "-0.70 0.02 0.02");
+      descEl.setAttribute(
+        "position",
+        hasCreator ? "-0.70 -0.03 0.02" : "-0.70 0.04 0.02",
+      );
       descEl.setAttribute("width", "1.45");
       descEl.setAttribute("wrap-count", "44");
 
@@ -247,6 +269,7 @@ export function createInspectableComponentDefinition() {
       });
 
       plane.appendChild(titleEl);
+      plane.appendChild(creatorEl);
       plane.appendChild(descEl);
       plane.appendChild(returnBtn);
       billboard.appendChild(plane);

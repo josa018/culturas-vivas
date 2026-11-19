@@ -67,7 +67,7 @@ describe("Screen Views & Interactions", () => {
   afterEach(() => {
     vi.useRealTimers();
     const resetScene = document.createElement("a-scene");
-    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.LOBBY);
     setSharedInspectionController(null);
     vi.restoreAllMocks();
     document.body.innerHTML = "";
@@ -221,7 +221,7 @@ describe("Screen Views & Interactions", () => {
     experience.mount(root);
     experience.show();
 
-    expect(root.querySelector(".cv-badge")?.textContent).toBe("Sala de Arqueologia");
+    expect(root.querySelector(".cv-badge")?.textContent).toBe("Vestíbulo Cultural");
     expect(mockScene.enterVR).toHaveBeenCalledTimes(1);
     expect(mockScene.resize).not.toHaveBeenCalled();
     expect(mockScene.classList.contains(UI_CLASSES.SCENE_ACTIVE)).toBe(true);

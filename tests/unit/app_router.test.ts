@@ -76,7 +76,7 @@ describe("AppRouter", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(scene, RoomId.LOBBY);
     setSharedInspectionController(null);
     document.body.innerHTML = "";
   });

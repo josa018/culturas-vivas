@@ -486,4 +486,52 @@ describe("A-Frame Inspectable Component", () => {
     instance.remove();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("renders optional creatorName attribution on billboard only when non-empty", () => {
+    const def = createInspectableComponentDefinition();
+
+    const withCreatorEl = createMockEntity({ x: 0, y: 1.4, z: -3.2 });
+    const withCreator: InspectableComponentInstance = Object.create(def);
+    withCreator.el = withCreatorEl as unknown as InspectableComponentInstance["el"];
+    withCreator.data = {
+      id: "exhibit-with-creator",
+      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      autoRotate: false,
+      rotationSpeed: 0,
+      title: "Pieza Ceremonial",
+      creatorName: "Artesano Wixárika",
+      description: "Descripción de la pieza",
+      mediaType: ExhibitMediaType.MODEL_3D,
+    };
+    withCreator.init();
+
+    const creatorText = withCreator.billboardEl?.querySelector(
+      ".cv-billboard-creator",
+    );
+    expect(creatorText?.getAttribute("visible")).toBe("true");
+    expect(creatorText?.getAttribute("value")).toBe(
+      "Crédito: Artesano Wixárika",
+    );
+
+    const withoutCreatorEl = createMockEntity({ x: 0, y: 1.4, z: -3.2 });
+    const withoutCreator: InspectableComponentInstance = Object.create(def);
+    withoutCreator.el = withoutCreatorEl as unknown as InspectableComponentInstance["el"];
+    withoutCreator.data = {
+      id: "exhibit-no-creator",
+      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      autoRotate: false,
+      rotationSpeed: 0,
+      title: "Pieza Anónima",
+      creatorName: "   ",
+      description: "Descripción sin autor",
+      mediaType: ExhibitMediaType.IMAGE_2D,
+    };
+    withoutCreator.init();
+
+    const emptyCreatorText = withoutCreator.billboardEl?.querySelector(
+      ".cv-billboard-creator",
+    );
+    expect(emptyCreatorText?.getAttribute("visible")).toBe("false");
+    expect(emptyCreatorText?.getAttribute("value")).toBe("");
+  });
 });

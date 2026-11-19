@@ -45,7 +45,7 @@ describe("Full Flow Traversal Benchmark (DoD < 15s)", () => {
   });
 
   afterEach(() => {
-    ExhibitRoomBuilder.mountRoom(mockScene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(mockScene, RoomId.LOBBY);
     setSharedInspectionController(null);
     if (typeof sessionStorage !== "undefined") {
       sessionStorage.clear();
@@ -105,10 +105,9 @@ describe("Full Flow Traversal Benchmark (DoD < 15s)", () => {
       "#cv-prototype-room-group",
     ) as HTMLElement;
     expect(roomGroupVR).toBeTruthy();
-    const exhibitsVR = Array.from(roomGroupVR.children).filter((c) =>
-      c.getAttribute("cv-inspectable"),
-    );
-    expect(exhibitsVR.length).toBe(5);
+    expect(roomGroupVR.getAttribute("data-room-id")).toBe(RoomId.LOBBY);
+    expect(roomGroupVR.querySelectorAll(".cv-portal").length).toBe(4);
+    expect(roomGroupVR.querySelectorAll(".cv-stand-slot").length).toBe(2);
 
     const exitHudBtn = experienceEl.querySelector(
       '[data-action="request-exit"]',
@@ -157,10 +156,9 @@ describe("Full Flow Traversal Benchmark (DoD < 15s)", () => {
       "#cv-prototype-room-group",
     ) as HTMLElement;
     expect(roomGroup2D).toBeTruthy();
-    const exhibits2D = Array.from(roomGroup2D.children).filter((c) =>
-      c.getAttribute("cv-inspectable"),
-    );
-    expect(exhibits2D.length).toBe(5);
+    expect(roomGroup2D.getAttribute("data-room-id")).toBe(RoomId.LOBBY);
+    expect(roomGroup2D.querySelectorAll(".cv-portal").length).toBe(4);
+    expect(roomGroup2D.querySelectorAll(".cv-stand-slot").length).toBe(2);
 
     // Exit 2D mode to welcome for next traversal
     const exitHudBtn2 = experienceEl.querySelector(

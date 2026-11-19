@@ -9,6 +9,7 @@ import {
 import { RoomId } from "../../src/experience/types";
 import {
   VR_HUD_EXIT_EVENT,
+  VR_HUD_RETURN_LOBBY_EVENT,
   VR_HUD_SWITCH_2D_EVENT,
   calculateHudWorldTransform,
   createVrHologramHudComponentDefinition,
@@ -158,7 +159,7 @@ describe("VR Hologram HUD Component", () => {
   afterEach(() => {
     vi.useRealTimers();
     const resetScene = document.createElement("a-scene");
-    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.LOBBY);
     setSharedInspectionController(null);
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
     vi.restoreAllMocks();
@@ -240,8 +241,8 @@ describe("VR Hologram HUD Component", () => {
     );
 
     const controller = getSharedInspectionController();
-    controller.setExhibits(ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits);
-    controller.focus("exhibit-statue-3d");
+    controller.setExhibits(ROOM_DEFINITIONS[RoomId.WIXARIKA].exhibits);
+    controller.focus("exhibit-wixarika-artifact");
     expect(controller.getState()).toBe(InspectionState.FOCUSING);
 
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
@@ -249,11 +250,16 @@ describe("VR Hologram HUD Component", () => {
     expect(el.getAttribute("visible")).toBe("true");
     expect(el.getAttribute("position")).toBe("0 1.45 -1.5");
     expect(controller.getState()).toBe(InspectionState.IDLE);
+    const returnLobbyBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN}`);
+    expect(returnLobbyBtn?.getAttribute("visible")).toBe("false");
+    expect(returnLobbyBtn?.classList.contains("clickable")).toBe(false);
 
-    instance.setRoomTitle(RoomId.TEXTILES);
+    instance.setRoomTitle(RoomId.WIXARIKA);
     expect(el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value")).toBe(
-      ROOM_DEFINITIONS[RoomId.TEXTILES].title,
+      ROOM_DEFINITIONS[RoomId.WIXARIKA].title,
     );
+    expect(returnLobbyBtn?.getAttribute("visible")).toBe("true");
+    expect(returnLobbyBtn?.classList.contains("clickable")).toBe(true);
 
     el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`)?.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
@@ -340,7 +346,7 @@ describe("VR Hologram HUD Component", () => {
 
   it("automatically dismisses an open HUD when ExhibitInspectionController focuses an exhibit and unsubscribes on remove()", () => {
     const controller = getSharedInspectionController();
-    controller.setExhibits(ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits);
+    controller.setExhibits(ROOM_DEFINITIONS[RoomId.WIXARIKA].exhibits);
 
     const el = document.createElement("a-entity") as VrHologramHudEntity;
     const instance = createMockHudInstance(el);
@@ -353,7 +359,7 @@ describe("VR Hologram HUD Component", () => {
     ).toBe(true);
 
     // Focusing an exhibit (via gaze-fuse or tap) must auto-dismiss the open HUD
-    controller.focus("exhibit-statue-3d");
+    controller.focus("exhibit-wixarika-artifact");
     expect(instance.isOpen).toBe(false);
     expect(el.getAttribute("visible")).toBe("false");
     expect(
@@ -365,8 +371,33 @@ describe("VR Hologram HUD Component", () => {
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
     const dismissSpy = vi.spyOn(instance, "dismiss");
     instance.remove();
-    controller.focus("exhibit-painting-2d");
+    controller.focus("exhibit-wixarika-artifact");
     expect(dismissSpy).not.toHaveBeenCalled();
+  });
+
+  it("emits VR_HUD_RETURN_LOBBY_EVENT only when in cultural rooms and dismisses HUD", () => {
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const hud = createMockHudInstance(el);
+    hud.init();
+
+    let returnLobbyCount = 0;
+    el.addEventListener(VR_HUD_RETURN_LOBBY_EVENT, () => {
+      returnLobbyCount++;
+    });
+
+    // In LOBBY -> button hidden and non-clickable
+    hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    const lobbyBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN}`) as HTMLElement;
+    expect(lobbyBtn.getAttribute("visible")).toBe("false");
+    expect(lobbyBtn.classList.contains("clickable")).toBe(false);
+
+    // Switch to NAAYERI -> button becomes visible and .clickable; click dismisses HUD and emits event
+    hud.setRoomTitle(RoomId.NAAYERI);
+    expect(lobbyBtn.getAttribute("visible")).toBe("true");
+    expect(lobbyBtn.classList.contains("clickable")).toBe(true);
+    lobbyBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(hud.isOpen).toBe(false);
+    expect(returnLobbyCount).toBe(1);
   });
 
   it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
@@ -747,13 +778,19 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(hudInstance.isOpen).toBe(false);
 
     tapEl.dispatchEvent(new CustomEvent(VR_TAP_HUD_TOGGLE_EVENT, { bubbles: true }));
-    expect(screen.transitionToRoom(RoomId.TEXTILES)).toBe(true);
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
     expect(hudInstance.isOpen).toBe(false);
     expect(tapInstance.isTransitionIdle).toBe(true);
     expect(scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)).toBe(hudEl);
     expect(
       hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value"),
-    ).toBe(ROOM_DEFINITIONS[RoomId.TEXTILES].title);
+    ).toBe(ROOM_DEFINITIONS[RoomId.WIXARIKA].title);
+
+    hudEl.dispatchEvent(new CustomEvent(VR_HUD_RETURN_LOBBY_EVENT, { bubbles: true }));
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
+    expect(
+      hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value"),
+    ).toBe(ROOM_DEFINITIONS[RoomId.LOBBY].title);
 
     hudEl.dispatchEvent(new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }));
     hudEl.dispatchEvent(new CustomEvent(VR_HUD_EXIT_EVENT, { bubbles: true }));

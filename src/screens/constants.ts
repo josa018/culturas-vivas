@@ -131,6 +131,7 @@ export const UI_TEXT = {
   TUTORIAL_STEP_3: "Cierra la bandeja y colocate el visor.",
   TUTORIAL_BTN_START: "Comenzar",
 
+  EXPERIENCE_RETURN_LOBBY: "Volver al Lobby",
   EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",

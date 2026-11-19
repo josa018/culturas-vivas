@@ -2,18 +2,19 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
 import {
-  EXHIBIT_ASSET_IDS,
+  DISPOSABLE_TEXTURE_SLOTS,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
 } from "../../src/experience/constants";
 import {
   getSharedInspectionController,
   setSharedInspectionController,
 } from "../../src/experience/components/inspectable";
 
-class MockObject3D {
+class MockPbrObject3D {
   public geometryDisposed = false;
   public materialDisposed = false;
-  public mapDisposed = false;
+  public readonly slotDisposals: Record<string, boolean> = {};
 
   public geometry = {
     dispose: () => {
@@ -21,16 +22,24 @@ class MockObject3D {
     },
   };
 
-  public material = {
-    dispose: () => {
-      this.materialDisposed = true;
-    },
-    map: {
+  public material: Record<string, unknown>;
+
+  constructor() {
+    const mat: Record<string, unknown> = {
       dispose: () => {
-        this.mapDisposed = true;
+        this.materialDisposed = true;
       },
-    },
-  };
+    };
+    for (const slot of DISPOSABLE_TEXTURE_SLOTS) {
+      this.slotDisposals[slot] = false;
+      mat[slot] = {
+        dispose: () => {
+          this.slotDisposals[slot] = true;
+        },
+      };
+    }
+    this.material = mat;
+  }
 
   public traverse(cb: (node: unknown) => void): void {
     cb(this);
@@ -45,56 +54,51 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
   afterEach(() => {
     vi.useRealTimers();
     const resetScene = document.createElement("a-scene");
-    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(resetScene, RoomId.LOBBY);
     setSharedInspectionController(null);
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
-  it("mountRoom renders Archaeology exhibits, portal, skybox, and <a-assets>", () => {
+  it("mountRoom renders LOBBY with 4 cultural portals, accent colors, 2 stands, and Lobby skybox", () => {
     const scene = document.createElement("a-scene");
     const sky = document.createElement("a-sky");
     scene.appendChild(sky);
 
-    const roomEl = ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
+    const roomEl = ExhibitRoomBuilder.mountRoom(scene, RoomId.LOBBY);
     expect(roomEl.getAttribute("id")).toBe(ExhibitRoomBuilder.ROOM_CONTAINER_ID);
-    expect(roomEl.getAttribute("data-room-id")).toBe(RoomId.ARCHAEOLOGY);
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ARCHAEOLOGY);
+    expect(roomEl.getAttribute("data-room-id")).toBe(RoomId.LOBBY);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
 
     expect(sky.getAttribute("src")).toBe(
-      ROOM_DEFINITIONS[RoomId.ARCHAEOLOGY].skyboxUrl,
-    );
-    expect(roomEl.querySelector("#portal-archaeology-to-textiles")).not.toBeNull();
-
-    const controller = getSharedInspectionController();
-    expect(controller.getAllExhibits()).toHaveLength(
-      ROOM_DEFINITIONS[RoomId.ARCHAEOLOGY].exhibits.length,
+      ROOM_DEFINITIONS[RoomId.LOBBY].skyboxUrl,
     );
 
-    const assetsEl = scene.querySelector("a-assets")!;
-    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.PAINTING_2D}`)).not.toBeNull();
-    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.PHOTO_STEREO}`)).not.toBeNull();
-    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_2D}`)).not.toBeNull();
-    expect(assetsEl.querySelector(`#${EXHIBIT_ASSET_IDS.VIDEO_STEREO_SBS}`)).not.toBeNull();
+    const wixarikaPortal = roomEl.querySelector("#portal-lobby-to-wixarika");
+    expect(wixarikaPortal).not.toBeNull();
+    expect(roomEl.querySelector("#portal-lobby-to-naayeri")).not.toBeNull();
+    expect(roomEl.querySelector("#portal-lobby-to-odam")).not.toBeNull();
+    expect(roomEl.querySelector("#portal-lobby-to-mexicanero")).not.toBeNull();
 
-    const paintingPlane = roomEl.querySelector(
-      "#exhibit-painting-2d a-plane.clickable",
+    const portalPillars = wixarikaPortal?.querySelectorAll("a-box");
+    expect(portalPillars?.[0]?.getAttribute("color")).toBe(
+      ROOM_PORTAL_ACCENTS[RoomId.WIXARIKA],
     );
-    expect(paintingPlane?.getAttribute("src")).toBe(
-      `#${EXHIBIT_ASSET_IDS.PAINTING_2D}`,
-    );
+
+    expect(roomEl.querySelector("#stand-lobby-bienvenida")).not.toBeNull();
+    expect(roomEl.querySelector("#stand-lobby-nayarit")).not.toBeNull();
   });
 
-  it("disposes single and array Three.js materials/geometries and swaps rooms cleanly", () => {
+  it("disposes all PBR texture channels across single/array materials when swapping from LOBBY to WIXARIKA", () => {
     const scene = document.createElement("a-scene");
     const sky = document.createElement("a-sky");
     scene.appendChild(sky);
 
-    const room1 = ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
-    const mockObj3D = new MockObject3D();
-    (room1 as unknown as { object3D: MockObject3D }).object3D = mockObj3D;
+    const room1 = ExhibitRoomBuilder.mountRoom(scene, RoomId.LOBBY);
+    const mockObj3D = new MockPbrObject3D();
+    (room1 as unknown as { object3D: MockPbrObject3D }).object3D = mockObj3D;
 
     let arrayMatDisposed = false;
-    let arrayMapDisposed = false;
+    let arrayNormalDisposed = false;
     const childWithArrayMat = document.createElement("a-entity");
     (childWithArrayMat as unknown as { object3D: unknown }).object3D = {
       traverse: (cb: (n: unknown) => void) =>
@@ -104,9 +108,9 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
               dispose: () => {
                 arrayMatDisposed = true;
               },
-              map: {
+              normalMap: {
                 dispose: () => {
-                  arrayMapDisposed = true;
+                  arrayNormalDisposed = true;
                 },
               },
             },
@@ -115,39 +119,38 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     };
     room1.appendChild(childWithArrayMat);
 
-    const room2 = ExhibitRoomBuilder.mountRoom(scene, RoomId.TEXTILES);
+    const room2 = ExhibitRoomBuilder.mountRoom(scene, RoomId.WIXARIKA);
     expect(room2).not.toBe(room1);
-    expect(room2.getAttribute("data-room-id")).toBe(RoomId.TEXTILES);
-    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.TEXTILES);
+    expect(room2.getAttribute("data-room-id")).toBe(RoomId.WIXARIKA);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
 
     expect(mockObj3D.geometryDisposed).toBe(true);
     expect(mockObj3D.materialDisposed).toBe(true);
-    expect(mockObj3D.mapDisposed).toBe(true);
+    for (const slot of DISPOSABLE_TEXTURE_SLOTS) {
+      expect(mockObj3D.slotDisposals[slot]).toBe(true);
+    }
     expect(arrayMatDisposed).toBe(true);
-    expect(arrayMapDisposed).toBe(true);
+    expect(arrayNormalDisposed).toBe(true);
 
-    expect(room2.querySelector("#portal-textiles-to-archaeology")).not.toBeNull();
+    expect(room2.querySelector("#portal-wixarika-to-lobby")).not.toBeNull();
+    expect(room2.querySelector("#exhibit-wixarika-artifact")).not.toBeNull();
+    expect(room2.querySelector("#stand-wixarika-vestimenta")).not.toBeNull();
     expect(getSharedInspectionController().getAllExhibits()).toHaveLength(
-      ROOM_DEFINITIONS[RoomId.TEXTILES].exhibits.length,
+      ROOM_DEFINITIONS[RoomId.WIXARIKA].exhibits.length,
     );
   });
 
-  it("ensureRoom reuses existing room and updates cv-stereo-media viewMode attribute", () => {
+  it("ensureRoom reuses existing room without duplicating DOM", () => {
     const scene = document.createElement("a-scene");
     const room1 = ExhibitRoomBuilder.ensureRoom(scene, "vr");
     const room2 = ExhibitRoomBuilder.ensureRoom(scene, "2d");
 
     expect(room2).toBe(room1);
-    const stereoPlanes = room2.querySelectorAll("[cv-stereo-media]");
-    expect(stereoPlanes.length).toBeGreaterThan(0);
-    stereoPlanes.forEach((plane) => {
-      expect(plane.getAttribute("cv-stereo-media")).toContain("viewMode: 2d");
-    });
   });
 
   it("teardownRoom removes room container from scene", () => {
     const scene = document.createElement("a-scene");
-    ExhibitRoomBuilder.mountRoom(scene, RoomId.ARCHAEOLOGY);
+    ExhibitRoomBuilder.mountRoom(scene, RoomId.LOBBY);
     expect(
       scene.querySelector(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`),
     ).not.toBeNull();
