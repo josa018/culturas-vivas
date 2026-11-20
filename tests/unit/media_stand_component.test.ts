@@ -583,6 +583,16 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(controlBar.getAttribute("scale")).toBe("1 1 1");
     expect(el.querySelector(".cv-stand-next-btn")?.classList.contains("clickable")).toBe(true);
 
+    expect(el.querySelector(".cv-stand-left-plane")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+    expect(el.querySelector(".cv-stand-right-plane")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+    expect(el.querySelector("[cv-canvas-text]")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+
     // Normal full return completes hide after 260ms
     instance.returnToGallery();
     await vi.advanceTimersByTimeAsync(270);

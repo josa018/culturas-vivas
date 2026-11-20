@@ -192,6 +192,15 @@ describe("ExperienceScreenView Room Transition", () => {
       },
     };
 
+    const finishFadeOut_reticleSpy = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, { setAccentColor?: (hex: string) => void }>;
+    }).components = {
+      "cv-gaze-reticle": {
+        setAccentColor: finishFadeOut_reticleSpy,
+      },
+    };
+
     expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
     expect(cursor.getAttribute("raycaster")).toBe("objects: none");
     expect(screen.getTransitionStateMachine().getState()).toBe(
@@ -205,8 +214,8 @@ describe("ExperienceScreenView Room Transition", () => {
     await vi.waitFor(() => {
       expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     });
+    expect(finishFadeOut_reticleSpy).toHaveBeenCalledWith("#D99B26");
     expect(loadedUrls).toEqual([
-      ROOM_DEFINITIONS[RoomId.WIXARIKA].skyboxUrl,
       "https://cdn.example.com/wix-stand-cover.jpg",
     ]);
     expect(screen.getTransitionStateMachine().getState()).toBe(

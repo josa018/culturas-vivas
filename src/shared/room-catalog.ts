@@ -7,6 +7,16 @@ export const RoomId = {
 } as const;
 export type RoomId = (typeof RoomId)[keyof typeof RoomId];
 
+export const RoomEnvironmentId = {
+  LOBBY: "LOBBY",
+  WIXARIKA: "WIXARIKA",
+  NAAYERI: "NAAYERI",
+  ODAM: "ODAM",
+  MEXICANERO: "MEXICANERO",
+} as const;
+export type RoomEnvironmentId =
+  (typeof RoomEnvironmentId)[keyof typeof RoomEnvironmentId];
+
 export const StandId = {
   BIENVENIDA: "bienvenida",
   NAYARIT: "nayarit",
@@ -58,12 +68,12 @@ export const STAND_LABELS: Record<StandId, string> = {
   [StandId.VIVIENDA]: "Vivienda",
 } as const;
 
-export const ROOM_SKYBOX_URLS: Record<RoomId, string> = {
-  [RoomId.LOBBY]: "/scenes/lobby.webp",
-  [RoomId.WIXARIKA]: "/scenes/wixarika.webp",
-  [RoomId.NAAYERI]: "/scenes/naayeri.webp",
-  [RoomId.ODAM]: "/scenes/odam.webp",
-  [RoomId.MEXICANERO]: "/scenes/mexicanero.webp",
+export const ROOM_ENVIRONMENT_IDS: Record<RoomId, RoomEnvironmentId> = {
+  [RoomId.LOBBY]: RoomEnvironmentId.LOBBY,
+  [RoomId.WIXARIKA]: RoomEnvironmentId.WIXARIKA,
+  [RoomId.NAAYERI]: RoomEnvironmentId.NAAYERI,
+  [RoomId.ODAM]: RoomEnvironmentId.ODAM,
+  [RoomId.MEXICANERO]: RoomEnvironmentId.MEXICANERO,
 } as const;
 
 export const ROOM_PORTAL_ACCENTS: Record<RoomId, string> = {
@@ -79,7 +89,7 @@ export const ROOM_LAYOUT_TOKENS = {
   EYE_HEIGHT_M: 1.6,
   PEDESTAL_ELEVATION_M: 1.2,
   MODEL_MAX_EXTENT_M: 0.72,
-  MODEL_PEDESTAL_HEIGHT_M: 0.8,
+  MODEL_PEDESTAL_HEIGHT_M: 1.2,
   DEFAULT_MODEL_ROTATION_SPEED: 0.015,
   PORTAL_RETURN_LABEL: "Volver al Lobby",
 } as const;
@@ -124,8 +134,7 @@ export interface Model3DExhibitConfig {
 export interface RoomCatalogEntry {
   readonly id: RoomId;
   readonly title: string;
-  readonly skyboxAssetId: string;
-  readonly skyboxUrl: string;
+  readonly environmentPresetId: RoomEnvironmentId;
   readonly accentColor: string;
   readonly portals: readonly RoomPortalCatalogEntry[];
   readonly stands: readonly StandSlotCatalogEntry[];
@@ -202,8 +211,7 @@ function buildCultureRoomEntry(
   return {
     id: roomId,
     title: ROOM_TITLES[roomId],
-    skyboxAssetId: `sky-${roomId.toLowerCase()}`,
-    skyboxUrl: ROOM_SKYBOX_URLS[roomId],
+    environmentPresetId: ROOM_ENVIRONMENT_IDS[roomId],
     accentColor: ROOM_PORTAL_ACCENTS[roomId],
     portals: [
       {
@@ -239,8 +247,7 @@ export const ROOM_CATALOG: Record<RoomId, RoomCatalogEntry> = {
   [RoomId.LOBBY]: {
     id: RoomId.LOBBY,
     title: ROOM_TITLES[RoomId.LOBBY],
-    skyboxAssetId: "sky-lobby",
-    skyboxUrl: ROOM_SKYBOX_URLS[RoomId.LOBBY],
+    environmentPresetId: ROOM_ENVIRONMENT_IDS[RoomId.LOBBY],
     accentColor: ROOM_PORTAL_ACCENTS[RoomId.LOBBY],
     portals: [
       {

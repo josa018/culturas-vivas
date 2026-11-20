@@ -542,4 +542,35 @@ describe("A-Frame Inspectable Component", () => {
     expect(emptyCreatorText?.getAttribute("visible")).toBe("false");
     expect(emptyCreatorText?.getAttribute("value")).toBe("");
   });
+
+  it("counter-translates stepped .cv-model-pedestal from rest y = 0 so base stays grounded at world y = 0 during inspect", () => {
+    const def = createInspectableComponentDefinition();
+    const mockEl = createMockEntity({ x: 0, y: 1.2, z: -2.8 }, { x: 0, y: 0, z: 0 });
+    const pedestal = document.createElement("a-entity");
+    pedestal.setAttribute("class", "cv-model-pedestal");
+    pedestal.setAttribute("position", "0 0 0");
+    mockEl.appendChild(pedestal);
+
+    const instance: InspectableComponentInstance = Object.create(def);
+    instance.el = mockEl as unknown as InspectableComponentInstance["el"];
+    instance.data = {
+      id: "exhibit-stepped-pedestal",
+      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      autoRotate: false,
+      rotationSpeed: 0,
+      title: "Escultura",
+      description: "Desc",
+      mediaType: ExhibitMediaType.MODEL_3D,
+    };
+
+    instance.init();
+    instance.inspect();
+
+    expect(pedestal.getAttribute("animation__pedestal")).toContain("from: 0 0 0");
+    expect(pedestal.getAttribute("position")).not.toBe("0 0 0");
+
+    instance.returnToGallery();
+    expect(pedestal.getAttribute("position")).toBe("0 0 0");
+    expect(pedestal.getAttribute("animation__pedestal_return")).toContain("to: 0 0 0");
+  });
 });

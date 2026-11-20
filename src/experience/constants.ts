@@ -257,7 +257,7 @@ export const PORTAL_DIMENSIONS = {
   FRAME_WIDTH: 1.2,
   FRAME_HEIGHT: 2.0,
   BORDER_THICKNESS: 0.05,
-  LABEL_OFFSET_Y: 1.15,
+  LABEL_OFFSET_Y: 1.38,
   LABEL_WIDTH: 1.8,
   FUSE_RING_RADIUS: 0.1,
 } as const;
@@ -328,8 +328,7 @@ function buildRoomDefinition(entry: RoomCatalogEntry): RoomDefinition {
   return {
     id: entry.id,
     title: entry.title,
-    skyboxAssetId: entry.skyboxAssetId,
-    skyboxUrl: entry.skyboxUrl,
+    environmentPresetId: entry.environmentPresetId,
     accentColor: entry.accentColor,
     exhibits,
     stands,
@@ -474,6 +473,53 @@ export const STAND_ANIMATION_TOKENS = {
 
 export const PORTAL_ANIMATION_TOKENS = {
   AMBIENT_PULSE_MS: 2400,
-  INNER_RING_OPACITY_MIN: 0.35,
-  INNER_RING_OPACITY_MAX: 0.85,
+  INNER_RING_OPACITY_MIN: 0.14,
+  INNER_RING_OPACITY_MAX: 0.36,
+} as const;
+
+export const PROCEDURAL_TEXTURE_TOKENS = {
+  MAX_DIMENSION_PX: 512,
+  TILE_SIZE_PX: 256,
+  CONTACT_SHADOW_SIZE_PX: 128,
+  ANISOTROPY: 4,
+  DEFAULT_FLOOR_REPEAT: 6,
+} as const;
+
+export const ENVIRONMENT_BUDGET_TOKENS = {
+  MAX_TRIANGLES: 12000,
+  MAX_DRAW_CALLS: 30,
+  MIN_PARTICLES: 40,
+  MAX_PARTICLES: 60,
+  SKY_DOME_RADIUS_M: 42,
+  FLOOR_RADIUS_M: 5.4,
+  OUTER_GROUND_RADIUS_M: 24,
+  LANDSCAPE_INNER_RADIUS_M: 8.5,
+  LANDSCAPE_OUTER_RADIUS_M: 22,
+  COLUMN_RING_RADIUS_M: 5.2,
+  PARTICLE_SIZE_M: 0.08,
+  SKY_GRADIENT_SIZE_PX: 512,
+} as const;
+
+export const SHADOW_CONFIG_TOKENS = {
+  SHADOW_TYPE: "pcf",
+  AUTO_UPDATE: false,
+  MAP_SIZE_PX: 1024,
+  FRUSTUM_HALF_EXTENT_M: 8,
+  CAMERA_NEAR_M: 0.5,
+  CAMERA_FAR_M: 28,
+  SHADOW_BIAS: -0.0005,
+} as const;
+
+export const STATION_ARCHITECTURE_TOKENS = {
+  PLINTH_HEIGHT_M: 1.05,
+  PLINTH_WIDTH_M: 0.92,
+  PLINTH_DEPTH_M: 0.36,
+  PLINTH_BASE_HEIGHT_M: 0.16,
+  PLINTH_CAP_HEIGHT_M: 0.11,
+  PEDESTAL_TOTAL_HEIGHT_M: 1.2,
+  PEDESTAL_REST_Y: 0,
+  PEDESTAL_BASE_OFFSET_Y: -1.2,
+  PORTAL_THRESHOLD_HEIGHT_M: 0.14,
+  PORTAL_PILLAR_GROUND_DROP_Y: -1.6,
+  PORTAL_FLUTED_SEGMENTS: 12,
 } as const;

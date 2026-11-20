@@ -1,4 +1,5 @@
 import "aframe";
+import "./experience/components/lambert-shader";
 import "./experience/components/canvas-text";
 import "./experience/components/gaze-reticle";
 import "./experience/components/glb-model";
@@ -6,6 +7,7 @@ import "./experience/components/inspectable";
 import "./experience/components/interactive-feedback";
 import "./experience/components/media-stand";
 import "./experience/components/renderer-quality";
+import "./experience/components/room-environment";
 import "./experience/components/stereo-media";
 import "./experience/components/vr-hologram-hud";
 import "./experience/components/vr-tap-trigger";

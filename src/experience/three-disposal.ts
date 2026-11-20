@@ -68,6 +68,7 @@ export function disposeObject3DResources(root: unknown): DisposalStats {
   const seenGeometries = new Set<unknown>();
   const seenMaterials = new Set<unknown>();
   const seenTextures = new Set<unknown>();
+  const seenDisposableNodes = new Set<unknown>();
   let geometriesDisposed = 0;
   let materialsDisposed = 0;
   let texturesDisposed = 0;
@@ -76,7 +77,13 @@ export function disposeObject3DResources(root: unknown): DisposalStats {
     if (!node || typeof node !== "object") {
       return;
     }
-    const mesh = node as TraversableNode;
+    const mesh = node as TraversableNode & { dispose?: () => void };
+
+    // Release node-owned GPU buffers such as THREE.InstancedMesh instanceMatrix.
+    if (!seenDisposableNodes.has(mesh) && typeof mesh.dispose === "function") {
+      seenDisposableNodes.add(mesh);
+      mesh.dispose();
+    }
 
     if (
       mesh.geometry &&

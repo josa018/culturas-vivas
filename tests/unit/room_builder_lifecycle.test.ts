@@ -68,7 +68,7 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
-  it("mountRoom renders LOBBY with 4 cultural portals, accent colors, 2 stands, and Lobby skybox", () => {
+  it("mountRoom renders LOBBY with 4 cultural portals, accent colors, 2 stands, and procedural preset without legacy skybox src", () => {
     const scene = document.createElement("a-scene");
     const sky = document.createElement("a-sky");
     scene.appendChild(sky);
@@ -78,9 +78,7 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     expect(roomEl.getAttribute("data-room-id")).toBe(RoomId.LOBBY);
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
 
-    expect(sky.getAttribute("src")).toBe(
-      ROOM_DEFINITIONS[RoomId.LOBBY].skyboxUrl,
-    );
+    expect(sky.getAttribute("src")).toBeNull();
 
     const wixarikaPortal = roomEl.querySelector("#portal-lobby-to-wixarika");
     expect(wixarikaPortal).not.toBeNull();
@@ -170,23 +168,7 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     ).toBeNull();
   });
 
-  it("waitForSkyboxReady resolves on materialtextureloaded or timeout", async () => {
-    expect(await ExhibitRoomBuilder.waitForSkyboxReady(null)).toBe(true);
-
-    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
-
-    const sky = document.createElement("a-sky");
-    const eventPromise = ExhibitRoomBuilder.waitForSkyboxReady(sky, 500);
-    sky.dispatchEvent(new Event("materialtextureloaded"));
-    expect(await eventPromise).toBe(true);
-
-    const stalledSky = document.createElement("a-sky");
-    const timeoutPromise = ExhibitRoomBuilder.waitForSkyboxReady(stalledSky, 100);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(await timeoutPromise).toBe(true);
-  });
-
-  it("waitForRoomReady coordinates room loaded, skybox texture, and double rAF", async () => {
+  it("waitForRoomReady resolves on room loaded and double rAF without waiting for a-sky materialtextureloaded", async () => {
     expect(await ExhibitRoomBuilder.waitForRoomReady(null, null)).toBe(true);
 
     (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
@@ -195,11 +177,10 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
       hasLoaded: boolean;
     };
     roomGroup.hasLoaded = false;
-    const sky = document.createElement("a-sky");
+    const stalledSky = document.createElement("a-sky");
 
-    const promise = ExhibitRoomBuilder.waitForRoomReady(roomGroup, sky, 500);
+    const promise = ExhibitRoomBuilder.waitForRoomReady(roomGroup, stalledSky, 5000);
     roomGroup.dispatchEvent(new Event("loaded"));
-    sky.dispatchEvent(new Event("materialtextureloaded"));
     await vi.runAllTimersAsync();
 
     expect(await promise).toBe(true);
@@ -265,8 +246,72 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
       ROOM_DEFINITIONS[RoomId.NAAYERI].exhibits.length + 1,
     );
 
+    const envEl = roomEl.querySelector("[cv-room-environment]");
+    expect(envEl).not.toBeNull();
+    expect(envEl?.getAttribute("cv-room-environment")).toContain(RoomId.NAAYERI);
+
+    const instancedDispose = vi.fn();
+    const envGeoDispose = vi.fn();
+    const envTexDispose = vi.fn();
+    const envMatDispose = vi.fn();
+    (roomEl as unknown as { object3D?: unknown }).object3D = {
+      traverse: (cb: (node: unknown) => void) => {
+        cb({
+          geometry: envGeoDispose ? { dispose: envGeoDispose } : undefined,
+          material: { dispose: envMatDispose, map: { dispose: envTexDispose } },
+          dispose: instancedDispose,
+        });
+      },
+    };
+
     ExhibitRoomBuilder.teardownRoom(scene);
+    expect(instancedDispose).toHaveBeenCalledTimes(1);
+    expect(envGeoDispose).toHaveBeenCalledTimes(1);
+    expect(envMatDispose).toHaveBeenCalledTimes(1);
+    expect(envTexDispose).toHaveBeenCalledTimes(1);
     expect(stopSpy).toHaveBeenCalled();
     expect(getSharedVideoController()).toBe(videoController);
+  });
+
+  it("removes legacy <a-sky> and fallback <a-light> elements from index.html", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const html = fs.readFileSync(
+      path.resolve(process.cwd(), "index.html"),
+      "utf-8",
+    );
+    expect(html).not.toMatch(/<a-sky\b/i);
+    expect(html).not.toMatch(/<a-light\b/i);
+  });
+
+  it("bakes room PCF shadow map once on waitForRoomReady and attaches .cv-contact-shadow decals to movable stands and models", async () => {
+    const shadowMap = {
+      enabled: false,
+      type: 0,
+      autoUpdate: true,
+      needsUpdate: false,
+    };
+    const scene = document.createElement("a-scene") as HTMLElement & {
+      renderer?: unknown;
+    };
+    scene.renderer = { shadowMap };
+
+    const roomEl = ExhibitRoomBuilder.mountRoom(scene, RoomId.WIXARIKA, "vr");
+
+    expect(roomEl.querySelector(".cv-contact-shadow")).not.toBeNull();
+
+    await ExhibitRoomBuilder.waitForRoomReady(roomEl, 100);
+
+    expect(shadowMap.enabled).toBe(true);
+    expect(shadowMap.autoUpdate).toBe(false);
+    expect(shadowMap.needsUpdate).toBe(true);
+
+    // Triggering async model-loaded re-bakes shadows cleanly without enabling autoUpdate
+    shadowMap.needsUpdate = false;
+    roomEl.dispatchEvent(new CustomEvent("model-loaded", { bubbles: true }));
+    expect(shadowMap.needsUpdate).toBe(true);
+    expect(shadowMap.autoUpdate).toBe(false);
+
+    ExhibitRoomBuilder.teardownRoom(scene);
   });
 });

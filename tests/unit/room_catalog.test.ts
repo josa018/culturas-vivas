@@ -5,6 +5,7 @@ import {
   ROOM_LAYOUT_TOKENS,
   ROOM_PORTAL_ACCENTS,
   ROOM_TITLES,
+  RoomEnvironmentId,
   RoomId,
   STAND_LABELS,
   StandId,
@@ -132,5 +133,27 @@ describe("Culture Room Catalog & Polar Layout", () => {
 
     expect(minDiffDeg).toBeGreaterThanOrEqual(45);
     expect(Number(minChordM.toFixed(2))).toBeGreaterThanOrEqual(2.45);
+  });
+
+  it("maps all five rooms to RoomEnvironmentId presets without equirectangular skybox paths and grounds pedestal height to 1.2m", () => {
+    expect(ROOM_LAYOUT_TOKENS.MODEL_PEDESTAL_HEIGHT_M).toBe(
+      ROOM_LAYOUT_TOKENS.PEDESTAL_ELEVATION_M,
+    );
+    expect(ROOM_LAYOUT_TOKENS.MODEL_PEDESTAL_HEIGHT_M).toBe(1.2);
+
+    const expectedPresets: Record<RoomId, RoomEnvironmentId> = {
+      [RoomId.LOBBY]: RoomEnvironmentId.LOBBY,
+      [RoomId.WIXARIKA]: RoomEnvironmentId.WIXARIKA,
+      [RoomId.NAAYERI]: RoomEnvironmentId.NAAYERI,
+      [RoomId.ODAM]: RoomEnvironmentId.ODAM,
+      [RoomId.MEXICANERO]: RoomEnvironmentId.MEXICANERO,
+    };
+
+    for (const roomId of Object.values(RoomId)) {
+      const entry = ROOM_CATALOG[roomId] as unknown as Record<string, unknown>;
+      expect(entry.environmentPresetId).toBe(expectedPresets[roomId]);
+      expect(entry.skyboxUrl).toBeUndefined();
+      expect(entry.skyboxAssetId).toBeUndefined();
+    }
   });
 });

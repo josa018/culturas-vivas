@@ -54,28 +54,13 @@
       control-sensores-qa
       cv-renderer-quality
       renderer="antialias: true; anisotropy: 4; alpha: false; colorManagement: true; toneMapping: ACESFilmic; exposure: 1.05"
+      shadow="type: pcf; autoUpdate: false"
       loading-screen="enabled: false"
       vr-mode-ui="enabled: false"
       xr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
       <a-assets timeout="10000"></a-assets>
-
-      <a-sky rotation="0 -90 0"></a-sky>
-
-      <a-light type="ambient" color="#ffffff" intensity="0.85"></a-light>
-      <a-light
-        type="hemisphere"
-        color="#ffffff"
-        ground-color="#334155"
-        intensity="0.65"
-      ></a-light>
-      <a-light
-        type="directional"
-        color="#ffffff"
-        intensity="0.5"
-        position="-1 4 2"
-      ></a-light>
 
       <a-camera position="0 1.6 0">
         <a-cursor

@@ -9,8 +9,10 @@ import {
   ExhibitMediaType,
   RENDERER_QUALITY_TOKENS,
   ROOM_CENTER_COORDINATE,
+  STATION_ARCHITECTURE_TOKENS,
 } from "../constants";
 import { ExhibitInspectionController } from "../inspection-controller";
+import { createContactShadowDecal } from "../shadow-baker";
 import { createCanvasTextPlane } from "./canvas-text";
 
 let sharedInspectionController: ExhibitInspectionController | null = null;
@@ -317,6 +319,19 @@ export function createInspectableComponentDefinition() {
       this.billboardEl = billboard;
       this.returnBtnEl = returnBtn;
 
+      if (
+        this.data.mediaType === ExhibitMediaType.MODEL_3D &&
+        !this.el.querySelector(".cv-contact-shadow")
+      ) {
+        this.el.appendChild(
+          createContactShadowDecal({
+            width: 0.95,
+            depth: 0.95,
+            yOffset: -1.18,
+          }),
+        );
+      }
+
       // Subscribe to controller for mutual exclusivity / auto-return
       this.unsubscribeController = getSharedInspectionController().subscribe(
         (_state, active) => {
@@ -395,18 +410,23 @@ export function createInspectableComponentDefinition() {
       }
 
       // Counter-translate pedestal if present so it remains grounded at gallery coords
-      const pedestal = this.el.querySelector("a-cylinder");
+      const pedestal =
+        this.el.querySelector(".cv-model-pedestal") ??
+        this.el.querySelector("a-cylinder");
       if (pedestal) {
+        const restY = pedestal.classList.contains("cv-model-pedestal")
+          ? STATION_ARCHITECTURE_TOKENS.PEDESTAL_REST_Y
+          : -0.4;
         const dx = targetPos.x - this.galleryPosition.x;
         const dy = targetPos.y - this.galleryPosition.y;
         const dz = targetPos.z - this.galleryPosition.z;
         const pedX = Number((-dx).toFixed(3));
-        const pedY = Number((-0.4 - dy).toFixed(3));
+        const pedY = Number((restY - dy).toFixed(3));
         const pedZ = Number((-dz).toFixed(3));
         pedestal.removeAttribute("animation__pedestal_return");
         pedestal.setAttribute(
           "animation__pedestal",
-          `property: position; from: 0 -0.4 0; to: ${pedX} ${pedY} ${pedZ}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+          `property: position; from: 0 ${restY} 0; to: ${pedX} ${pedY} ${pedZ}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
         pedestal.setAttribute("position", `${pedX} ${pedY} ${pedZ}`);
       }
@@ -551,17 +571,23 @@ export function createInspectableComponentDefinition() {
       }
 
       // Restore pedestal grounded position
-      const pedestal = this.el.querySelector("a-cylinder");
+      const pedestal =
+        this.el.querySelector(".cv-model-pedestal") ??
+        this.el.querySelector("a-cylinder");
       if (pedestal) {
+        const restY = pedestal.classList.contains("cv-model-pedestal")
+          ? STATION_ARCHITECTURE_TOKENS.PEDESTAL_REST_Y
+          : -0.4;
+        const restPos = `0 ${restY} 0`;
         const currentPedPos = pedestal.getAttribute("position");
         const pedFrom =
-          typeof currentPedPos === "string" ? currentPedPos : "0 -0.4 0";
+          typeof currentPedPos === "string" ? currentPedPos : restPos;
         pedestal.removeAttribute("animation__pedestal");
         pedestal.setAttribute(
           "animation__pedestal_return",
-          `property: position; from: ${pedFrom}; to: 0 -0.4 0; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+          `property: position; from: ${pedFrom}; to: ${restPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
-        pedestal.setAttribute("position", "0 -0.4 0");
+        pedestal.setAttribute("position", restPos);
       }
 
       // Smooth A-Frame animation back to gallery position sampling live 3D coordinates

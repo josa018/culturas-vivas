@@ -17,11 +17,9 @@ import {
   type DisposableVideoTexture,
   type SharedVideoController,
 } from "../shared-video-controller";
-import {
-  createCanvasTextPlane,
-  setCanvasTextElement,
-} from "./canvas-text";
+import { createCanvasTextPlane, setCanvasTextElement } from "./canvas-text";
 import { getSharedInspectionController } from "./inspectable";
+import { createContactShadowDecal } from "../shadow-baker";
 
 const STAND_VISUAL_TOKENS = {
   SURFACE_COLOR: "#0f172a",
@@ -503,6 +501,12 @@ function buildStandDom(
 
   billboard.append(billboardBg, billboardTitle, billboardCreator, billboardDesc);
 
+  const contactShadow = createContactShadowDecal({
+    width: 1.35,
+    depth: 0.72,
+    yOffset: -1.58,
+  });
+
   root.replaceChildren(
     frame,
     topRail,
@@ -519,6 +523,7 @@ function buildStandDom(
     rightPlane,
     controlBar,
     billboard,
+    contactShadow,
   );
 
   return {
