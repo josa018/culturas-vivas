@@ -1,4 +1,8 @@
-import { PORTAL_COLORS, PORTAL_DIMENSIONS } from "../constants";
+import {
+  PORTAL_ANIMATION_TOKENS,
+  PORTAL_COLORS,
+  PORTAL_DIMENSIONS,
+} from "../constants";
 import type { RoomId, RoomPortalConfig } from "../types";
 import { createCanvasTextPlane } from "./canvas-text";
 
@@ -154,11 +158,27 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   // Portal gateway aperture plane (interactive target)
   const aperture = document.createElement("a-plane");
   aperture.setAttribute("class", "clickable");
+  aperture.setAttribute("cv-interactive-feedback", "hoverScale: 1.04; hoverZLift: 0.03");
   aperture.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH));
   aperture.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT));
   aperture.setAttribute("color", PORTAL_COLORS.PORTAL_INNER);
   aperture.setAttribute("opacity", "0.85");
   aperture.setAttribute("material", "shader: flat; side: double");
+
+  // Inner ambient glowing frame border
+  const glowRing = document.createElement("a-plane");
+  glowRing.setAttribute("class", "cv-portal-glow-ring");
+  glowRing.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH - 0.1));
+  glowRing.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT - 0.1));
+  glowRing.setAttribute("position", "0 0 0.015");
+  glowRing.setAttribute(
+    "material",
+    `shader: flat; color: ${frameColor}; transparent: true; opacity: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MIN}; wireframe: true`,
+  );
+  glowRing.setAttribute(
+    "animation__portal_pulse",
+    `property: material.opacity; from: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MIN}; to: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MAX}; dir: alternate; loop: true; dur: ${PORTAL_ANIMATION_TOKENS.AMBIENT_PULSE_MS}; easing: easeInOutSine`,
+  );
 
   // Floating room title billboard
   const labelText = createCanvasTextPlane({
@@ -176,7 +196,7 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
   });
 
-  portalRoot.append(leftPillar, rightPillar, lintel, aperture, labelText);
+  portalRoot.append(leftPillar, rightPillar, lintel, aperture, glowRing, labelText);
   return portalRoot;
 }
 

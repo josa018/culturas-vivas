@@ -82,6 +82,9 @@ describe("A-Frame Inspectable Component", () => {
       String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
     );
     expect(instance.billboardEl?.querySelector("a-text")).toBeNull();
+    expect(instance.returnBtnEl?.getAttribute("geometry")).toContain(
+      "segments: 48",
+    );
   });
 
   it("performs radial inspection focal animation, counter-translates pedestal, auto-rotates, and restores on return", () => {

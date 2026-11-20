@@ -7,6 +7,7 @@ import {
   InspectionState,
   METADATA_BILLBOARD_OFFSET,
   ExhibitMediaType,
+  RENDERER_QUALITY_TOKENS,
   ROOM_CENTER_COORDINATE,
 } from "../constants";
 import { ExhibitInspectionController } from "../inspection-controller";
@@ -273,7 +274,7 @@ export function createInspectableComponentDefinition() {
       returnBtn.setAttribute("class", "cv-return-btn");
       returnBtn.setAttribute(
         "geometry",
-        `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}`,
+        `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}; segments: ${RENDERER_QUALITY_TOKENS.CIRCLE_SEGMENTS}`,
       );
       returnBtn.setAttribute("material", "color: #e11d48; shader: flat");
       returnBtn.setAttribute("position", "0.68 0.27 0.05");

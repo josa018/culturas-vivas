@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   createMediaStandComponentDefinition,
   type MediaStandComponentInstance,
@@ -6,7 +6,9 @@ import {
 } from "../../src/experience/components/media-stand";
 import {
   ExhibitMediaType,
+  INSPECTION_TIMINGS,
   InspectionState,
+  STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
 } from "../../src/experience/constants";
 import { ExhibitInspectionController } from "../../src/experience/inspection-controller";
@@ -110,7 +112,13 @@ describe("cv-media-stand A-Frame Component", () => {
   let inspectionController: ExhibitInspectionController;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     inspectionController = new ExhibitInspectionController();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
   it("renders 'Contenido próximamente' with hidden non-clickable controls for empty stands", async () => {
@@ -452,5 +460,135 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(parseY(titlePlane)).toBeGreaterThan(creatorTop);
     expect(creatorCenterY).toBeGreaterThan(descTop);
     expect(descBottom).toBeGreaterThanOrEqual(-bgHalf);
+  });
+
+  it("animates radial glide, staggered control/billboard panels, slide pulse, Nierika frame accents, and cancels stale hide timers via transitionEpoch", async () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const items: StandMediaItem[] = [
+      {
+        id: "s-1",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza 1",
+        creatorName: "Artesano",
+        description: "Desc 1",
+        mediaUrl: "https://cdn.example.com/s1.jpg",
+        sortOrder: 0,
+      },
+      {
+        id: "s-2",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza 2",
+        creatorName: "Artesano",
+        description: "Desc 2",
+        mediaUrl: "https://cdn.example.com/s2.jpg",
+        sortOrder: 1,
+      },
+    ];
+
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Colección",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        galleryPosition: { x: 3.2, y: 1.6, z: 0 },
+        galleryRotation: { x: 0, y: -90, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const def = createMediaStandComponentDefinition({
+      getInspectionController: () => inspectionController,
+      prefetchImage: vi.fn(),
+    });
+    const el = document.createElement("a-entity") as unknown as MediaStandEntity;
+    el.standItems = items;
+    const instance: MediaStandComponentInstance = Object.create(def);
+    instance.el = el;
+    instance.data = {
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      label: "Arte",
+      accentColor: "#D99B26",
+      viewMode: "vr",
+      galleryPosition: { x: 3.2, y: 1.6, z: 0 },
+      galleryRotation: { x: 0, y: -90, z: 0 },
+      itemsJson: "[]",
+    };
+    instance.init();
+
+    // Beveled frame rails + Nierika corner accents + cv-interactive-feedback on interactive controls
+    expect(el.querySelectorAll(".cv-stand-bevel-rail").length).toBeGreaterThanOrEqual(4);
+    expect(el.querySelectorAll(".cv-stand-corner-accent").length).toBe(4);
+    expect(el.querySelector(".cv-stand-left-plane")?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    for (const sel of [
+      ".cv-stand-prev-btn",
+      ".cv-stand-next-btn",
+      ".cv-stand-play-btn",
+      ".cv-stand-mute-btn",
+      ".cv-stand-close-btn",
+    ]) {
+      expect(el.querySelector(sel)?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    }
+
+    await instance.inspect();
+    expect(el.getAttribute("animation__stand_inspect")).toContain(
+      `dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`,
+    );
+    expect(el.getAttribute("animation__stand_inspect")).toContain(
+      `easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+    );
+
+    const controlBar = el.querySelector(".cv-stand-control-bar")!;
+    const billboard = el.querySelector(".cv-stand-billboard")!;
+
+    await vi.advanceTimersByTimeAsync(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS + 10);
+    expect(controlBar.getAttribute("animation__panel_in")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}`,
+    );
+    expect(billboard.getAttribute("animation__panel_in")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}`,
+    );
+
+    // Slide pulse on nextSlide
+    await instance.nextSlide();
+    expect(el.querySelector(".cv-stand-left-plane")?.getAttribute("animation__slide_pulse")).toContain(
+      `dur: ${STAND_ANIMATION_TOKENS.SLIDE_PULSE_MS}`,
+    );
+
+    // Return at t = 0 -> plays 250ms exit and hides after 260ms, then rapid re-inspect at t = 100ms cancels stale hide timer
+    instance.returnToGallery();
+    expect(el.getAttribute("animation__stand_return")).toContain("to: 3.2 1.6 0");
+    expect(billboard.getAttribute("animation__panel_out")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS}`,
+    );
+    expect(billboard.getAttribute("visible")).toBe("true");
+
+    await vi.advanceTimersByTimeAsync(100);
+    await instance.inspect();
+    await vi.advanceTimersByTimeAsync(470);
+    billboard.dispatchEvent(new Event("animationcomplete__panel_in"));
+    billboard.dispatchEvent(new Event("animationcomplete__panel_out"));
+
+    expect(instance.getLocalState()).toBe(InspectionState.INSPECTING);
+    expect(billboard.getAttribute("visible")).toBe("true");
+    expect(billboard.getAttribute("scale")).toBe("1 1 1");
+    expect(controlBar.getAttribute("visible")).toBe("true");
+    expect(controlBar.getAttribute("scale")).toBe("1 1 1");
+    expect(el.querySelector(".cv-stand-next-btn")?.classList.contains("clickable")).toBe(true);
+
+    // Normal full return completes hide after 260ms
+    instance.returnToGallery();
+    await vi.advanceTimersByTimeAsync(270);
+    expect(billboard.getAttribute("visible")).toBe("false");
+    expect(controlBar.getAttribute("visible")).toBe("false");
+
+    instance.remove();
   });
 });

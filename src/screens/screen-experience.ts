@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_ROOM_ID,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../experience/constants";
 import { getSharedInspectionController } from "../experience/components/inspectable";
@@ -139,6 +140,21 @@ export class ExperienceScreenView implements ScreenView {
         if (roomChip) {
           roomChip.setAttribute("value", roomDef.title);
         }
+      }
+
+      const cursorEl = document.querySelector("a-cursor");
+      const reticleComp = (
+        cursorEl as unknown as {
+          components?: Record<
+            string,
+            { setAccentColor?: (color: string) => void }
+          >;
+        } | null
+      )?.components?.["cv-gaze-reticle"];
+      const accentColor =
+        ROOM_PORTAL_ACCENTS[roomId] ?? ROOM_PORTAL_ACCENTS[DEFAULT_ROOM_ID];
+      if (reticleComp && typeof reticleComp.setAccentColor === "function") {
+        reticleComp.setAccentColor(accentColor);
       }
     }
   }

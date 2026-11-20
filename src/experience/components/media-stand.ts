@@ -4,6 +4,7 @@ import {
   INSPECTION_TIMINGS,
   InspectionState,
   SHARED_VIDEO_ELEMENT_ID,
+  STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
   STAND_DIMENSIONS,
   type Vector3D,
@@ -77,6 +78,12 @@ export interface MediaStandComponentInstance {
   unsubscribeInspection: (() => void) | null;
   cleanupListeners: Array<() => void>;
   elements: StandDomElements | null;
+  transitionEpoch: number;
+  panelDelayTimer: ReturnType<typeof setTimeout> | null;
+  panelSettleTimer: ReturnType<typeof setTimeout> | null;
+  hidePanelTimer: ReturnType<typeof setTimeout> | null;
+  panelInCompleteHandler: (() => void) | null;
+  panelOutCompleteHandler: (() => void) | null;
   init: () => void;
   update: (oldData: Partial<MediaStandComponentData>) => void;
   remove: () => void;
@@ -160,6 +167,7 @@ function createControlButton(
 ): HTMLElement {
   const btn = document.createElement("a-entity");
   btn.setAttribute("class", className);
+  btn.setAttribute("cv-interactive-feedback", "");
   btn.setAttribute("position", `${x} 0 0.02`);
   btn.setAttribute("visible", "false");
   btn.setAttribute(
@@ -203,6 +211,67 @@ function buildStandDom(
   frame.setAttribute("position", "0 0 -0.02");
   frame.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
   frame.setAttribute("material", "shader: flat");
+
+  const railThickness = STAND_ANIMATION_TOKENS.RAIL_THICKNESS_M;
+  const railDepth = STAND_ANIMATION_TOKENS.FRAME_DEPTH_M;
+  const halfW = frameWidth / 2;
+  const halfH = frameHeight / 2;
+
+  const createBevelRail = (w: number, h: number, pos: string): HTMLElement => {
+    const rail = document.createElement("a-box");
+    rail.setAttribute("class", "cv-stand-bevel-rail");
+    rail.setAttribute("width", String(Number(w.toFixed(3))));
+    rail.setAttribute("height", String(Number(h.toFixed(3))));
+    rail.setAttribute("depth", String(railDepth));
+    rail.setAttribute("position", pos);
+    rail.setAttribute("color", STAND_VISUAL_TOKENS.HEADER_BG_COLOR);
+    rail.setAttribute("material", "shader: flat");
+    return rail;
+  };
+
+  const topRail = createBevelRail(
+    frameWidth + railThickness * 2,
+    railThickness,
+    `0 ${Number((halfH + railThickness / 2).toFixed(3))} -0.02`,
+  );
+  const bottomRail = createBevelRail(
+    frameWidth + railThickness * 2,
+    railThickness,
+    `0 ${Number((-halfH - railThickness / 2).toFixed(3))} -0.02`,
+  );
+  const leftRail = createBevelRail(
+    railThickness,
+    frameHeight,
+    `${Number((-halfW - railThickness / 2).toFixed(3))} 0 -0.02`,
+  );
+  const rightRail = createBevelRail(
+    railThickness,
+    frameHeight,
+    `${Number((halfW + railThickness / 2).toFixed(3))} 0 -0.02`,
+  );
+
+  const cornerSize = STAND_ANIMATION_TOKENS.CORNER_ACCENT_SIZE_M;
+  const cornerThick = STAND_ANIMATION_TOKENS.CORNER_ACCENT_THICKNESS_M;
+  const cornerOffsets: Array<[number, number]> = [
+    [-halfW - railThickness / 2, halfH + railThickness / 2],
+    [halfW + railThickness / 2, halfH + railThickness / 2],
+    [-halfW - railThickness / 2, -halfH - railThickness / 2],
+    [halfW + railThickness / 2, -halfH - railThickness / 2],
+  ];
+  const cornerAccents = cornerOffsets.map(([cx, cy]) => {
+    const accent = document.createElement("a-box");
+    accent.setAttribute("class", "cv-stand-corner-accent");
+    accent.setAttribute("width", String(cornerSize));
+    accent.setAttribute("height", String(cornerThick));
+    accent.setAttribute("depth", String(railDepth + 0.01));
+    accent.setAttribute(
+      "position",
+      `${Number(cx.toFixed(3))} ${Number(cy.toFixed(3))} -0.015`,
+    );
+    accent.setAttribute("color", accentColor);
+    accent.setAttribute("material", "shader: flat");
+    return accent;
+  });
 
   const headerBg = document.createElement("a-plane");
   headerBg.setAttribute("class", "cv-stand-header-bg");
@@ -284,6 +353,7 @@ function buildStandDom(
 
   const leftPlane = document.createElement("a-plane");
   leftPlane.setAttribute("class", "cv-stand-left-plane");
+  leftPlane.setAttribute("cv-interactive-feedback", "hoverScale: 1.03; hoverZLift: 0.02");
   leftPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
   leftPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
   leftPlane.setAttribute("position", "0 0 0.01");
@@ -435,6 +505,11 @@ function buildStandDom(
 
   root.replaceChildren(
     frame,
+    topRail,
+    bottomRail,
+    leftRail,
+    rightRail,
+    ...cornerAccents,
     headerBg,
     headerText,
     countBadge,
@@ -794,6 +869,44 @@ export function createMediaStandComponentDefinition(
     }
   }
 
+  function isAFrameActive(): boolean {
+    return (
+      typeof globalThis !== "undefined" &&
+      Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME)
+    );
+  }
+
+  function clearPendingStandTransitions(
+    instance: MediaStandComponentInstance,
+  ): void {
+    if (instance.panelDelayTimer !== null) {
+      clearTimeout(instance.panelDelayTimer);
+      instance.panelDelayTimer = null;
+    }
+    if (instance.panelSettleTimer !== null) {
+      clearTimeout(instance.panelSettleTimer);
+      instance.panelSettleTimer = null;
+    }
+    if (instance.hidePanelTimer !== null) {
+      clearTimeout(instance.hidePanelTimer);
+      instance.hidePanelTimer = null;
+    }
+    if (instance.elements && instance.panelInCompleteHandler) {
+      instance.elements.billboard.removeEventListener?.(
+        "animationcomplete__panel_in",
+        instance.panelInCompleteHandler,
+      );
+      instance.panelInCompleteHandler = null;
+    }
+    if (instance.elements && instance.panelOutCompleteHandler) {
+      instance.elements.billboard.removeEventListener?.(
+        "animationcomplete__panel_out",
+        instance.panelOutCompleteHandler,
+      );
+      instance.panelOutCompleteHandler = null;
+    }
+  }
+
   function applyTransform(
     el: HTMLElement,
     pos: Vector3D,
@@ -812,22 +925,192 @@ export function createMediaStandComponentDefinition(
     );
     const dx = -target.x;
     const dz = -target.z;
-    const yawDeg =
-      Math.atan2(dx, dz) * STAND_VISUAL_TOKENS.ROTATION_RAD_TO_DEG;
+    const yawDeg = Number(
+      (Math.atan2(dx, dz) * STAND_VISUAL_TOKENS.ROTATION_RAD_TO_DEG).toFixed(3),
+    );
+    const targetRot: Vector3D = { x: 0, y: yawDeg, z: 0 };
 
-    applyTransform(instance.el, target, {
-      x: 0,
-      y: yawDeg,
-      z: 0,
-    });
+    if (!isAFrameActive()) {
+      applyTransform(instance.el, target, targetRot);
+      return;
+    }
+
+    const fromPos = `${instance.data.galleryPosition.x} ${instance.data.galleryPosition.y} ${instance.data.galleryPosition.z}`;
+    const toPos = `${target.x} ${target.y} ${target.z}`;
+    const fromRot = `${instance.data.galleryRotation.x} ${instance.data.galleryRotation.y} ${instance.data.galleryRotation.z}`;
+    const toRot = `${targetRot.x} ${targetRot.y} ${targetRot.z}`;
+
+    instance.el.removeAttribute("animation__stand_return");
+    instance.el.removeAttribute("animation__stand_rot_return");
+    instance.el.setAttribute(
+      "animation__stand_inspect",
+      `property: position; from: ${fromPos}; to: ${toPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+    );
+    instance.el.setAttribute(
+      "animation__stand_rot_inspect",
+      `property: rotation; from: ${fromRot}; to: ${toRot}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+    );
   }
 
   function restoreGalleryTransform(instance: MediaStandComponentInstance): void {
-    applyTransform(
-      instance.el,
-      instance.data.galleryPosition,
-      instance.data.galleryRotation,
+    if (!isAFrameActive()) {
+      applyTransform(
+        instance.el,
+        instance.data.galleryPosition,
+        instance.data.galleryRotation,
+      );
+      return;
+    }
+
+    const toPos = `${instance.data.galleryPosition.x} ${instance.data.galleryPosition.y} ${instance.data.galleryPosition.z}`;
+    const toRot = `${instance.data.galleryRotation.x} ${instance.data.galleryRotation.y} ${instance.data.galleryRotation.z}`;
+    instance.el.removeAttribute("animation__stand_inspect");
+    instance.el.removeAttribute("animation__stand_rot_inspect");
+    instance.el.setAttribute(
+      "animation__stand_return",
+      `property: position; to: ${toPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
     );
+    instance.el.setAttribute(
+      "animation__stand_rot_return",
+      `property: rotation; to: ${toRot}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+    );
+  }
+
+  function animatePanelsEntrance(
+    instance: MediaStandComponentInstance,
+    epoch: number,
+  ): void {
+    const els = instance.elements;
+    if (!els) {
+      return;
+    }
+    if (!isAFrameActive()) {
+      els.controlBar.setAttribute("scale", INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE);
+      els.billboard.setAttribute("scale", INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE);
+      return;
+    }
+
+    const panelInAttr = `property: scale; from: ${INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE}; to: ${INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE}; dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.PANEL_ANIMATION_EASING}`;
+    for (const panel of [els.controlBar, els.billboard]) {
+      panel.removeAttribute("animation__panel_out");
+      panel.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
+      panel.setAttribute("visible", "true");
+    }
+
+    const settleVisible = () => {
+      if (
+        instance.transitionEpoch !== epoch ||
+        instance.localState !== InspectionState.INSPECTING ||
+        !instance.elements
+      ) {
+        return;
+      }
+      if (instance.panelSettleTimer !== null) {
+        clearTimeout(instance.panelSettleTimer);
+        instance.panelSettleTimer = null;
+      }
+      instance.panelInCompleteHandler = null;
+      instance.elements.controlBar.setAttribute(
+        "scale",
+        INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE,
+      );
+      instance.elements.billboard.setAttribute(
+        "scale",
+        INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE,
+      );
+    };
+
+    instance.panelInCompleteHandler = settleVisible;
+    els.billboard.addEventListener?.("animationcomplete__panel_in", settleVisible, {
+      once: true,
+    });
+
+    instance.panelDelayTimer = setTimeout(() => {
+      instance.panelDelayTimer = null;
+      if (
+        instance.transitionEpoch !== epoch ||
+        instance.localState !== InspectionState.INSPECTING ||
+        !instance.elements
+      ) {
+        return;
+      }
+      instance.elements.controlBar.setAttribute("animation__panel_in", panelInAttr);
+      instance.elements.billboard.setAttribute("animation__panel_in", panelInAttr);
+
+      instance.panelSettleTimer = setTimeout(
+        settleVisible,
+        INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS +
+          INSPECTION_TIMINGS.PANEL_EXIT_TIMEOUT_BUFFER_MS,
+      );
+    }, INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS);
+  }
+
+  function animatePanelsExit(
+    instance: MediaStandComponentInstance,
+    epoch: number,
+  ): void {
+    const els = instance.elements;
+    if (!els || !isAFrameActive()) {
+      return;
+    }
+
+    const panelOutAttr = `property: scale; from: ${INSPECTION_TIMINGS.PANEL_VISIBLE_SCALE}; to: ${INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE}; dur: ${INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS}; easing: ${INSPECTION_TIMINGS.PANEL_EXIT_EASING}`;
+    for (const panel of [els.controlBar, els.billboard]) {
+      panel.removeAttribute("animation__panel_in");
+      panel.setAttribute("visible", "true");
+      panel.setAttribute("animation__panel_out", panelOutAttr);
+    }
+
+    const hidePanels = () => {
+      if (
+        instance.transitionEpoch !== epoch ||
+        instance.localState === InspectionState.INSPECTING ||
+        !instance.elements
+      ) {
+        return;
+      }
+      if (instance.hidePanelTimer !== null) {
+        clearTimeout(instance.hidePanelTimer);
+        instance.hidePanelTimer = null;
+      }
+      if (instance.panelOutCompleteHandler) {
+        instance.elements.billboard.removeEventListener?.(
+          "animationcomplete__panel_out",
+          instance.panelOutCompleteHandler,
+        );
+        instance.panelOutCompleteHandler = null;
+      }
+      for (const panel of [
+        instance.elements.controlBar,
+        instance.elements.billboard,
+      ]) {
+        panel.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
+        panel.setAttribute("visible", "false");
+      }
+    };
+
+    instance.panelOutCompleteHandler = hidePanels;
+    els.billboard.addEventListener?.("animationcomplete__panel_out", hidePanels, {
+      once: true,
+    });
+    instance.hidePanelTimer = setTimeout(
+      hidePanels,
+      INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS +
+        INSPECTION_TIMINGS.PANEL_EXIT_TIMEOUT_BUFFER_MS,
+    );
+  }
+
+  function triggerSlidePulse(instance: MediaStandComponentInstance): void {
+    if (!isAFrameActive() || !instance.elements) {
+      return;
+    }
+    const pulseAttr = `property: scale; from: ${STAND_ANIMATION_TOKENS.SLIDE_PULSE_FROM_SCALE}; to: ${STAND_ANIMATION_TOKENS.SLIDE_PULSE_TO_SCALE}; dur: ${STAND_ANIMATION_TOKENS.SLIDE_PULSE_MS}; easing: easeOutCubic`;
+    instance.elements.leftPlane.removeAttribute("animation__slide_pulse");
+    instance.elements.leftPlane.setAttribute("animation__slide_pulse", pulseAttr);
+    if (instance.elements.rightPlane.getAttribute("visible") === "true") {
+      instance.elements.rightPlane.removeAttribute("animation__slide_pulse");
+      instance.elements.rightPlane.setAttribute("animation__slide_pulse", pulseAttr);
+    }
   }
 
   return {
@@ -850,6 +1133,12 @@ export function createMediaStandComponentDefinition(
       this.localState = InspectionState.IDLE;
       this.ownsActiveVideo = false;
       this.cleanupListeners = [];
+      this.transitionEpoch = 0;
+      this.panelDelayTimer = null;
+      this.panelSettleTimer = null;
+      this.hidePanelTimer = null;
+      this.panelInCompleteHandler = null;
+      this.panelOutCompleteHandler = null;
 
       this.elements = buildStandDom(
         this.el,
@@ -917,6 +1206,8 @@ export function createMediaStandComponentDefinition(
           activeExhibit?.id !== this.exhibitId &&
           this.localState !== InspectionState.IDLE
         ) {
+          clearPendingStandTransitions(this);
+          const epoch = ++this.transitionEpoch;
           if (this.ownsActiveVideo) {
             resolveVideoController().stopAndRelease();
             this.ownsActiveVideo = false;
@@ -925,6 +1216,7 @@ export function createMediaStandComponentDefinition(
           this.localState = InspectionState.IDLE;
           restoreGalleryTransform(this);
           renderCarouselSlide(this);
+          animatePanelsExit(this, epoch);
         }
       });
 
@@ -947,6 +1239,8 @@ export function createMediaStandComponentDefinition(
     },
 
     remove: function (this: MediaStandComponentInstance) {
+      this.transitionEpoch++;
+      clearPendingStandTransitions(this);
       for (const cleanup of this.cleanupListeners) {
         cleanup();
       }
@@ -974,10 +1268,13 @@ export function createMediaStandComponentDefinition(
         return;
       }
 
+      clearPendingStandTransitions(this);
+      const epoch = ++this.transitionEpoch;
       this.localState = InspectionState.INSPECTING;
       controller.completeFocus();
       moveStandToInspectionCenter(this, controller);
       renderCarouselSlide(this);
+      animatePanelsEntrance(this, epoch);
       prefetchNextSlideAsset(this);
       await syncSlideMediaPlayback(this);
     },
@@ -987,6 +1284,8 @@ export function createMediaStandComponentDefinition(
         return;
       }
 
+      clearPendingStandTransitions(this);
+      const epoch = ++this.transitionEpoch;
       const controller = resolveInspectionController();
       controller.return();
       controller.completeReturn();
@@ -1000,6 +1299,7 @@ export function createMediaStandComponentDefinition(
       this.localState = InspectionState.IDLE;
       restoreGalleryTransform(this);
       renderCarouselSlide(this);
+      animatePanelsExit(this, epoch);
     },
 
     nextSlide: async function (this: MediaStandComponentInstance) {
@@ -1008,6 +1308,7 @@ export function createMediaStandComponentDefinition(
       }
       this.carousel.next();
       renderCarouselSlide(this);
+      triggerSlidePulse(this);
       prefetchNextSlideAsset(this);
       await syncSlideMediaPlayback(this);
     },
@@ -1018,6 +1319,7 @@ export function createMediaStandComponentDefinition(
       }
       this.carousel.prev();
       renderCarouselSlide(this);
+      triggerSlidePulse(this);
       prefetchNextSlideAsset(this);
       await syncSlideMediaPlayback(this);
     },

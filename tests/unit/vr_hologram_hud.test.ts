@@ -3,10 +3,17 @@ import {
   DEFAULT_ROOM_ID,
   InspectionState,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ANIMATION_DURATION_MS,
   VR_HUD_DICTIONARY,
   VR_HUD_ELEMENT_IDS,
+  VR_HUD_GEOMETRY,
 } from "../../src/experience/constants";
+import {
+  renderFajaBorderPattern,
+  renderHudIconGlyph,
+  type FajaCanvasContextLike,
+} from "../../src/experience/faja-pattern-renderer";
 import { RoomId } from "../../src/experience/types";
 import {
   VR_HUD_EXIT_EVENT,
@@ -904,5 +911,91 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     );
     expect(el.querySelectorAll("[cv-canvas-text]").length).toBeGreaterThanOrEqual(5);
     expect(el.querySelector("a-text")).toBeNull();
+  });
+
+  it("renders procedural faja borders, icon glyphs, cultural HUD trim, 3D depth buttons, room accent colors, and vertical rise animation", () => {
+    const fillRectCalls: Array<[number, number, number, number]> = [];
+    const mockCtx: FajaCanvasContextLike = {
+      fillStyle: "#000000",
+      strokeStyle: "#ffffff",
+      lineWidth: 1,
+      clearRect: vi.fn(),
+      fillRect: vi.fn((x, y, w, h) => fillRectCalls.push([x, y, w, h])),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn(),
+    };
+
+    renderFajaBorderPattern(mockCtx, 512, 32);
+    expect(fillRectCalls.length).toBeGreaterThan(0);
+    expect(mockCtx.beginPath).toHaveBeenCalled();
+
+    renderHudIconGlyph(mockCtx, "touch", "#008F85", 64);
+    renderHudIconGlyph(mockCtx, "lobby", "#D99B26", 64);
+    renderHudIconGlyph(mockCtx, "exit", "#B83A2C", 64);
+    expect(mockCtx.arc).toHaveBeenCalled();
+    expect(mockCtx.stroke).toHaveBeenCalled();
+
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+
+    // Cultural Nierika faja trim strips, side rails, and eyebrow header
+    expect(el.querySelectorAll(".cv-hud-faja-trim").length).toBe(2);
+    expect(el.querySelectorAll(".cv-hud-side-rail").length).toBe(2);
+    const eyebrow = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EYEBROW_LABEL}`);
+    expect(eyebrow?.getAttribute("value")).toBe(
+      VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
+    );
+    expect(eyebrow?.getAttribute("value")).toBe("MENÚ DE SALA");
+
+    // 3D beveled button boxes (depth: 0.024) + icon + cv-interactive-feedback
+    for (const id of [
+      VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
+      VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
+      VR_HUD_ELEMENT_IDS.EXIT_BTN,
+    ]) {
+      const btn = el.querySelector(`#${id}`);
+      expect(btn?.getAttribute("geometry")).toContain("primitive: box");
+      expect(btn?.getAttribute("geometry")).toContain(
+        `depth: ${VR_HUD_GEOMETRY.BUTTON_DEPTH_M}`,
+      );
+      expect(btn?.hasAttribute("cv-interactive-feedback")).toBe(true);
+      expect(btn?.querySelector(".cv-hud-btn-icon")).not.toBeNull();
+    }
+
+    const dismissBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`);
+    expect(dismissBtn?.getAttribute("geometry")).toContain("segments: 48");
+    expect(dismissBtn?.hasAttribute("cv-interactive-feedback")).toBe(true);
+
+    // Room title synchronization updates accent color alongside title text
+    instance.setRoomTitle(RoomId.WIXARIKA);
+    const roomChip = el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
+    expect(roomChip?.getAttribute("cv-canvas-text")).toContain(
+      ROOM_PORTAL_ACCENTS[RoomId.WIXARIKA],
+    );
+    instance.setRoomTitle(RoomId.NAAYERI);
+    expect(roomChip?.getAttribute("cv-canvas-text")).toContain(
+      ROOM_PORTAL_ACCENTS[RoomId.NAAYERI],
+    );
+
+    // Combined scale + 0.05m vertical rise on summon and sink on dismiss
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(el.getAttribute("animation__hud_in")).toContain("to: 1 1 1");
+    expect(el.getAttribute("animation__hud_rise")).toContain("from: 0 1.4 -1.5");
+    expect(el.getAttribute("animation__hud_rise")).toContain("to: 0 1.45 -1.5");
+
+    instance.dismiss();
+    expect(el.getAttribute("animation__hud_out")).toContain(
+      "to: 0.001 0.001 0.001",
+    );
+    expect(el.getAttribute("animation__hud_sink")).toContain("to: 0 1.4 -1.5");
+
+    instance.remove();
   });
 });

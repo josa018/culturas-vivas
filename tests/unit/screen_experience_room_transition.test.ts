@@ -15,6 +15,7 @@ import {
   ExhibitMediaType,
   InspectionState,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
 import type { RoomMediaProvider } from "../../src/experience/media-types";
@@ -53,6 +54,15 @@ describe("ExperienceScreenView Room Transition", () => {
   });
 
   it("initializes in LOBBY, swaps rooms via portal and Return to Lobby button, and aborts active inspection", () => {
+    const setAccentColorSpy = vi.fn();
+    (
+      cursor as HTMLElement & {
+        components?: Record<string, { setAccentColor?: (color: string) => void }>;
+      }
+    ).components = {
+      "cv-gaze-reticle": { setAccentColor: setAccentColorSpy },
+    };
+
     const stateMachine = screen.getTransitionStateMachine();
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.LOBBY);
@@ -86,6 +96,9 @@ describe("ExperienceScreenView Room Transition", () => {
     );
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(setAccentColorSpy).toHaveBeenCalledWith(
+      ROOM_PORTAL_ACCENTS[RoomId.WIXARIKA],
+    );
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
     expect(container.querySelector(".cv-badge")?.textContent).toBe(

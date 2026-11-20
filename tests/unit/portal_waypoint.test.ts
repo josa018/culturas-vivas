@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  PORTAL_ANIMATION_TOKENS,
+} from "../../src/experience/constants";
+import {
   createPortalComponentDefinition,
   createPortalEntity,
   PORTAL_ACTIVATED_EVENT,
@@ -55,6 +58,16 @@ describe("PortalWaypoint Component", () => {
     expect(labelPlane).not.toBeNull();
     expect(labelPlane?.getAttribute("value")).toBe("Cultura Wixárika");
     expect(portalEl.querySelector("a-text")).toBeNull();
+
+    const glowRing = portalEl.querySelector(".cv-portal-glow-ring");
+    expect(glowRing).not.toBeNull();
+    expect(glowRing?.getAttribute("animation__portal_pulse")).toContain(
+      `dur: ${PORTAL_ANIMATION_TOKENS.AMBIENT_PULSE_MS}`,
+    );
+
+    const aperture = portalEl.querySelector("a-plane.clickable");
+    expect(aperture).not.toBeNull();
+    expect(aperture?.hasAttribute("cv-interactive-feedback")).toBe(true);
   });
 
   it("triggers cv-portal-activated event on click", () => {

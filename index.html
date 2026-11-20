@@ -52,6 +52,8 @@
     <a-scene
       embedded
       control-sensores-qa
+      cv-renderer-quality
+      renderer="antialias: true; anisotropy: 4; alpha: false; colorManagement: true; toneMapping: ACESFilmic; exposure: 1.05"
       loading-screen="enabled: false"
       vr-mode-ui="enabled: false"
       xr-mode-ui="enabled: false"
@@ -77,7 +79,9 @@
 
       <a-camera position="0 1.6 0">
         <a-cursor
-          color="#38bdf8"
+          cv-gaze-reticle
+          material="opacity: 0; transparent: true"
+          geometry="primitive: ring; radiusInner: 0.001; radiusOuter: 0.002"
           fuse="true"
           fuse-timeout="1500"
           raycaster="objects: .clickable"

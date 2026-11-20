@@ -3,7 +3,10 @@ import {
   renderCanvasTextBlock,
   type CanvasContext2DLike,
 } from "../canvas-text-renderer";
-import { CANVAS_TEXT_DEFAULTS } from "../constants";
+import {
+  CANVAS_TEXT_DEFAULTS,
+  RENDERER_QUALITY_TOKENS,
+} from "../constants";
 
 export interface CanvasTextComponentData {
   mode: "label" | "billboard";
@@ -26,6 +29,10 @@ export interface CanvasTextComponentData {
 export interface DisposableCanvasTextureLike {
   needsUpdate: boolean;
   colorSpace?: string;
+  anisotropy?: number;
+  generateMipmaps?: boolean;
+  minFilter?: number;
+  magFilter?: number;
   dispose: () => void;
 }
 
@@ -305,6 +312,22 @@ export function createCanvasTextComponentDefinition(
       const texture = createTexture(canvas);
       if (!texture) {
         return;
+      }
+      const threeGlobal = (
+        globalThis as unknown as {
+          THREE?: {
+            LinearMipmapLinearFilter?: number;
+            LinearFilter?: number;
+          };
+        }
+      ).THREE;
+      texture.anisotropy = RENDERER_QUALITY_TOKENS.TEXTURE_ANISOTROPY;
+      texture.generateMipmaps = true;
+      if (typeof threeGlobal?.LinearMipmapLinearFilter === "number") {
+        texture.minFilter = threeGlobal.LinearMipmapLinearFilter;
+      }
+      if (typeof threeGlobal?.LinearFilter === "number") {
+        texture.magFilter = threeGlobal.LinearFilter;
       }
       texture.needsUpdate = true;
       this.currentTexture = texture;
