@@ -156,6 +156,8 @@ describe("Procedural Canvas Textures & Room Environment Presets", () => {
       expect(preset.roomId).toBe(roomId);
       expect(preset.particleCount).toBeGreaterThanOrEqual(40);
       expect(preset.particleCount).toBeLessThanOrEqual(60);
+      expect((preset as unknown as Record<string, unknown>).daisTexture).toBeUndefined();
+      expect((preset as unknown as Record<string, unknown>).inlayTexture).toBeUndefined();
       skyTops.add(preset.skyGradient.horizonColor);
       fogColors.add(preset.fog.color);
 
@@ -163,6 +165,8 @@ describe("Procedural Canvas Textures & Room Environment Presets", () => {
       expect(textures.floor).not.toBeNull();
       expect(textures.column).not.toBeNull();
       expect(textures.trim).not.toBeNull();
+      expect((textures as unknown as Record<string, unknown>).dais).toBeUndefined();
+      expect((textures as unknown as Record<string, unknown>).inlay).toBeUndefined();
       expect(textures.contactShadow).not.toBeNull();
     }
 

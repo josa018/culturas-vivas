@@ -53,6 +53,7 @@
       embedded
       control-sensores-qa
       cv-renderer-quality
+      webxr="referenceSpaceType: local; requiredFeatures: local"
       renderer="antialias: true; anisotropy: 4; alpha: false; colorManagement: true; toneMapping: ACESFilmic; exposure: 1.05; foveationLevel: 0"
       shadow="type: pcf; autoUpdate: false"
       loading-screen="enabled: false"
@@ -62,17 +63,19 @@
     >
       <a-assets timeout="10000"></a-assets>
 
-      <a-camera position="0 1.6 0" near="0.1" far="80">
-        <a-cursor
-          cv-gaze-reticle
-          position="0 0 0"
-          material="opacity: 0; transparent: true"
-          geometry="primitive: ring; radiusInner: 0.001; radiusOuter: 0.002"
-          fuse="true"
-          fuse-timeout="1500"
-          raycaster="objects: .clickable"
-        ></a-cursor>
-      </a-camera>
+      <a-entity id="cv-camera-rig" position="0 1.65 0">
+        <a-camera position="0 0 0" near="0.1" far="80">
+          <a-cursor
+            cv-gaze-reticle
+            position="0 0 0"
+            material="opacity: 0; transparent: true"
+            geometry="primitive: ring; radiusInner: 0.001; radiusOuter: 0.002"
+            fuse="true"
+            fuse-timeout="1500"
+            raycaster="objects: .clickable"
+          ></a-cursor>
+        </a-camera>
+      </a-entity>
     </a-scene>
 
     <script type="module" src="/src/main.ts"></script>

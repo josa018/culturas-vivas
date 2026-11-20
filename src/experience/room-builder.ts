@@ -161,7 +161,7 @@ export class ExhibitRoomBuilder {
         const pedestal = createModelPedestalEntity(exhibit.id, preset);
 
         const modelGroup = document.createElement("a-entity");
-        modelGroup.setAttribute("class", "clickable");
+        modelGroup.setAttribute("class", "clickable cv-inspectable-model");
         modelGroup.setAttribute("position", "0 0 0");
 
         if (exhibit.modelUrl) {

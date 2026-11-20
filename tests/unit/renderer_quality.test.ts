@@ -98,6 +98,9 @@ describe("Renderer Quality & Anti-Aliasing", () => {
     expect(html).toContain("toneMapping: ACESFilmic");
     expect(html).toContain("foveationLevel: 0");
     expect(html).toContain("cv-renderer-quality");
+    expect(html).toMatch(/webxr="[^"]*referenceSpaceType:\s*local/);
+    expect(html).toMatch(/id="cv-camera-rig"[^>]*position="0 1\.65 0"/);
+    expect(html).toMatch(/<a-camera[^>]*position="0 0 0"/);
     expect(html).toMatch(/<a-camera[^>]*near="0\.1"/);
     expect(html).toMatch(/<a-camera[^>]*far="80"/);
   });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PORTAL_ANIMATION_TOKENS,
-  PORTAL_DEPTH_TOKENS,
+  PORTAL_DIMENSIONS,
 } from "../../src/experience/constants";
 import {
   createPortalComponentDefinition,
@@ -68,25 +68,19 @@ describe("PortalWaypoint Component", () => {
     expect(glowRing?.getAttribute("animation__portal_pulse")).toContain(
       `dur: ${PORTAL_ANIMATION_TOKENS.AMBIENT_PULSE_MS}`,
     );
+    expect(Number(glowRing?.getAttribute("height"))).toBeCloseTo(2.34, 5);
+    expect(glowRing?.getAttribute("position")).toBe("0 -0.23 0.015");
 
     const aperture = portalEl.querySelector("a-plane.clickable");
     expect(aperture).not.toBeNull();
     expect(aperture?.hasAttribute("cv-interactive-feedback")).toBe(true);
-    expect(aperture?.getAttribute("position")).toBe(
-      `0 0 ${PORTAL_DEPTH_TOKENS.APERTURE_Z_M}`,
-    );
+    expect((PORTAL_DIMENSIONS as Record<string, number>).APERTURE_HEIGHT_M).toBeCloseTo(2.46, 5);
+    expect((PORTAL_DIMENSIONS as Record<string, number>).APERTURE_CENTER_Y).toBeCloseTo(-0.23, 5);
+    expect(Number(aperture?.getAttribute("height"))).toBeCloseTo(2.46, 5);
+    expect(aperture?.getAttribute("position")).toBe("0 -0.23 0.01");
     expect(portalEl.querySelector(".cv-portal-threshold")).not.toBeNull();
     expect(portalEl.querySelector(".cv-portal-frieze")).not.toBeNull();
-
-    const depthRings = Array.from(portalEl.querySelectorAll(".cv-portal-depth-ring"));
-    expect(depthRings).toHaveLength(3);
-    expect(
-      depthRings.map((ring) => ring.getAttribute("position")),
-    ).toEqual([
-      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[0]}`,
-      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[1]}`,
-      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[2]}`,
-    ]);
+    expect(portalEl.querySelectorAll(".cv-portal-depth-ring")).toHaveLength(0);
   });
 
   it("triggers cv-portal-activated event on click", () => {

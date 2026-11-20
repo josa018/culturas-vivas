@@ -303,4 +303,60 @@ describe("ExperienceScreenView Room Transition", () => {
       RoomTransitionState.IDLE,
     );
   });
+
+  it("orients #cv-camera-rig to 180 deg on first Lobby entry, faces 0 deg portals on return, and resets state on unmount", () => {
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    (rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: 0 },
+    };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
+
+    screen.mount(container);
+    screen.show();
+
+    // First entry into LOBBY faces 180 deg (+Z) toward Bienvenida / Nayarit welcome stands
+    expect(rig.getAttribute("rotation")).toBe("0 180 0");
+    expect((rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D?.rotation.y).toBeCloseTo(
+      Math.PI,
+      5,
+    );
+
+    // Traverse into WIXARIKA, simulate VR head yaw = +45 deg, then return to LOBBY
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
+    (camera as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: Math.PI / 4 },
+    };
+    expect(screen.transitionToRoom(RoomId.LOBBY)).toBe(true);
+    expect(rig.getAttribute("rotation")).toBe("0 -45 0");
+
+    // Unmount resets hasVisitedLobby so re-entry again faces 180 deg welcome stands
+    screen.unmount();
+    ExhibitRoomBuilder.teardownRoom(scene);
+    const screenReentered = new ExperienceScreenView(() => {}, "2d");
+    const lookControlsMock = {
+      touchStarted: false,
+      mouseDown: false,
+      data: { touchEnabled: true, enabled: true },
+      yawObject: { rotation: { y: 0.9 } },
+      pitchObject: { rotation: { x: -0.25 } },
+    };
+    (camera as HTMLElement & { components?: Record<string, unknown> }).components = {
+      "look-controls": lookControlsMock,
+    };
+
+    screenReentered.mount(container);
+    screenReentered.show();
+    expect(rig.getAttribute("rotation")).toBe("0 180 0");
+    expect(lookControlsMock.yawObject.rotation.y).toBe(0);
+    expect(lookControlsMock.pitchObject.rotation.x).toBe(0);
+
+    expect(screenReentered.transitionToRoom(RoomId.ODAM)).toBe(true);
+    lookControlsMock.yawObject.rotation.y = 1.1;
+    expect(screenReentered.transitionToRoom(RoomId.LOBBY)).toBe(true);
+    expect(rig.getAttribute("rotation")).toBe("0 0 0");
+    expect(lookControlsMock.yawObject.rotation.y).toBe(0);
+    screenReentered.unmount();
+  });
 });

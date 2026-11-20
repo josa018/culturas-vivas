@@ -1,6 +1,7 @@
 import {
   DEFAULT_ROOM_ID,
   InspectionState,
+  PLAYER_RIG_TOKENS,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
   VR_HUD_ANIMATION_DURATION_MS,
@@ -187,11 +188,36 @@ export function calculateHudWorldTransform(
 /**
  * Extracts world position and yaw (radians) from the active scene camera.
  */
+function readAncestorYawRad(cameraEl: Element, sceneEl: HTMLElement): number {
+  let totalRad = 0;
+  let ancestor = cameraEl.parentElement;
+  while (ancestor && ancestor !== sceneEl) {
+    const parentRot = (
+      ancestor as unknown as {
+        object3D?: { rotation?: { y?: number } };
+      }
+    ).object3D?.rotation;
+    if (parentRot && typeof parentRot.y === "number") {
+      totalRad += parentRot.y;
+    } else {
+      const rotAttr = ancestor.getAttribute("rotation");
+      if (typeof rotAttr === "string") {
+        const parts = rotAttr.trim().split(/\s+/).map(Number);
+        if (Number.isFinite(parts[1])) {
+          totalRad += (parts[1] * Math.PI) / 180;
+        }
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return totalRad;
+}
+
 export function readCameraPoseFromScene(
   sceneEl: HTMLElement | null | undefined,
 ): VrHudCameraPose {
   const fallback: VrHudCameraPose = {
-    position: { x: 0, y: 1.6, z: 0 },
+    position: { x: 0, y: PLAYER_RIG_TOKENS.EYE_HEIGHT_M, z: 0 },
     yawRad: 0,
   };
   if (!sceneEl) {
@@ -209,19 +235,67 @@ export function readCameraPoseFromScene(
       object3D?: {
         position?: { x: number; y: number; z: number };
         rotation?: { y: number };
+        getWorldPosition?: (out: { x: number; y: number; z: number }) => unknown;
       };
     }
   ).object3D;
 
+  const localYawRad = typeof obj3D?.rotation?.y === "number" ? obj3D.rotation.y : 0;
+  const yawRad = localYawRad + readAncestorYawRad(cameraEl, sceneEl);
+
+  if (obj3D && typeof obj3D.getWorldPosition === "function") {
+    const worldPos = {
+      x: 0,
+      y: 0,
+      z: 0,
+      set(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        return this;
+      },
+    };
+    obj3D.getWorldPosition(worldPos);
+    return {
+      position: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+      yawRad,
+    };
+  }
+
   const pos = obj3D?.position;
-  const yawRad = typeof obj3D?.rotation?.y === "number" ? obj3D.rotation.y : 0;
+  if (!pos) {
+    return { position: fallback.position, yawRad };
+  }
+
+  // Sum rig ancestor positions up to sceneEl when running under DOM mocks without Three.js
+  let worldX = typeof pos.x === "number" ? pos.x : 0;
+  let worldY = typeof pos.y === "number" ? pos.y : 0;
+  let worldZ = typeof pos.z === "number" ? pos.z : 0;
+  let ancestor = cameraEl.parentElement;
+  while (ancestor && ancestor !== sceneEl) {
+    const parentPos = (
+      ancestor as unknown as {
+        object3D?: { position?: { x?: number; y?: number; z?: number } };
+      }
+    ).object3D?.position;
+    if (parentPos) {
+      worldX += typeof parentPos.x === "number" ? parentPos.x : 0;
+      worldY += typeof parentPos.y === "number" ? parentPos.y : 0;
+      worldZ += typeof parentPos.z === "number" ? parentPos.z : 0;
+    } else {
+      const posAttr = ancestor.getAttribute("position");
+      if (typeof posAttr === "string") {
+        const parts = posAttr.trim().split(/\s+/).map(Number);
+        worldX += Number.isFinite(parts[0]) ? parts[0] : 0;
+        worldY += Number.isFinite(parts[1]) ? parts[1] : 0;
+        worldZ += Number.isFinite(parts[2]) ? parts[2] : 0;
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
 
   return {
-    position: {
-      x: typeof pos?.x === "number" ? pos.x : fallback.position.x,
-      y: typeof pos?.y === "number" ? pos.y : fallback.position.y,
-      z: typeof pos?.z === "number" ? pos.z : fallback.position.z,
-    },
+    position: { x: worldX, y: worldY, z: worldZ },
     yawRad,
   };
 }

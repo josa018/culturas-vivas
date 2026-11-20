@@ -15,11 +15,13 @@ import {
 } from "../experience/components/portal-waypoint";
 import {
   DEFAULT_ROOM_ID,
+  PLAYER_RIG_TOKENS,
   RETICLE_TOKENS,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../experience/constants";
+import { computeRigTargetYawRad } from "../experience/camera-orientation";
 import type { GazeReticleComponentInstance } from "../experience/components/gaze-reticle";
 import {
   ensureTouchRaycaster,
@@ -72,6 +74,7 @@ export class ExperienceScreenView implements ScreenView {
   private returnLobbyBtnEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
+  private hasVisitedLobby: boolean = false;
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
   private portalHandler: ((evt: Event) => void) | null = null;
@@ -227,6 +230,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.hasVisitedLobby = false;
     this.topBarEl = null;
     this.roomBadgeEl = null;
     this.returnLobbyBtnEl = null;
@@ -310,6 +314,7 @@ export class ExperienceScreenView implements ScreenView {
       return false;
     }
 
+    const sourceRoomId = this.transitionStateMachine.getActiveRoomId();
     const started = this.transitionStateMachine.triggerTransition(targetRoomId);
     if (!started) {
       return false;
@@ -376,12 +381,17 @@ export class ExperienceScreenView implements ScreenView {
         this.transitionStateMachine.notifyFadeOutComplete();
 
         const performSwap = () => {
-          // 4. Mount target room and update skybox
+          // 4. Mount target room and orient camera rig under blackout before curtain opens
           const roomGroup = ExhibitRoomBuilder.mountRoom(
             scene,
             targetRoomId,
             this.viewMode,
             this.mediaProvider,
+          );
+          this.applyContextualCameraOrientation(
+            scene,
+            targetRoomId,
+            sourceRoomId,
           );
           const skyEl = scene.querySelector("a-sky");
 
@@ -411,6 +421,7 @@ export class ExperienceScreenView implements ScreenView {
         this.viewMode,
         this.mediaProvider,
       );
+      this.applyContextualCameraOrientation(scene, targetRoomId, sourceRoomId);
       this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
@@ -440,6 +451,10 @@ export class ExperienceScreenView implements ScreenView {
         this.viewMode,
         this.mediaProvider,
       );
+      const activeRoomId = ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID;
+      if (!this.hasVisitedLobby && activeRoomId === RoomId.LOBBY) {
+        this.applyContextualCameraOrientation(scene, RoomId.LOBBY, null);
+      }
 
       // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =
@@ -859,6 +874,93 @@ export class ExperienceScreenView implements ScreenView {
     }
 
     this.disablePointerMode(scene);
+  }
+
+  private applyContextualCameraOrientation(
+    scene: AFrameSceneElement,
+    targetRoomId: RoomId,
+    sourceRoomId: RoomId | null,
+  ): void {
+    const cameraEl =
+      scene.querySelector("a-camera") || scene.querySelector("[camera]");
+    const cameraObj = (
+      cameraEl as unknown as {
+        object3D?: {
+          rotation?: { x?: number; y?: number };
+          updateMatrix?: () => void;
+        };
+      } | null
+    )?.object3D;
+    const lookControls = (
+      cameraEl as unknown as {
+        components?: Record<
+          string,
+          {
+            yawObject?: { rotation?: { y?: number } };
+            pitchObject?: { rotation?: { x?: number } };
+          }
+        >;
+      } | null
+    )?.components?.["look-controls"];
+
+    const localObjYaw =
+      cameraObj?.rotation && Number.isFinite(cameraObj.rotation.y)
+        ? Number(cameraObj.rotation.y)
+        : 0;
+    const localLookYaw =
+      lookControls?.yawObject?.rotation &&
+      Number.isFinite(lookControls.yawObject.rotation.y)
+        ? Number(lookControls.yawObject.rotation.y)
+        : 0;
+    const currentCameraLocalYawRad =
+      localObjYaw !== 0 ? localObjYaw : localLookYaw;
+
+    const orientation = computeRigTargetYawRad({
+      targetRoomId,
+      sourceRoomId,
+      hasVisitedLobby: this.hasVisitedLobby,
+      viewMode: this.viewMode as ViewMode,
+      currentCameraLocalYawRad,
+    });
+
+    if (orientation.resetLocalLookControls && cameraEl) {
+      if (lookControls?.yawObject?.rotation) {
+        lookControls.yawObject.rotation.y = 0;
+      }
+      if (lookControls?.pitchObject?.rotation) {
+        lookControls.pitchObject.rotation.x = 0;
+      }
+      if (cameraObj?.rotation) {
+        cameraObj.rotation.y = 0;
+        cameraObj.updateMatrix?.();
+      }
+      cameraEl.setAttribute("rotation", "0 0 0");
+    }
+
+    if (orientation.rigYawRad !== null) {
+      const rigEl = scene.querySelector(`#${PLAYER_RIG_TOKENS.CAMERA_RIG_ID}`);
+      if (rigEl) {
+        const rigYawDeg =
+          Number((orientation.rigYawRad * (180 / Math.PI)).toFixed(4)) || 0;
+        rigEl.setAttribute("rotation", `0 ${rigYawDeg} 0`);
+        const rigObj = (
+          rigEl as unknown as {
+            object3D?: {
+              rotation?: { y: number };
+              updateMatrix?: () => void;
+            };
+          }
+        ).object3D;
+        if (rigObj?.rotation) {
+          rigObj.rotation.y = orientation.rigYawRad;
+          rigObj.updateMatrix?.();
+        }
+      }
+    }
+
+    if (targetRoomId === RoomId.LOBBY) {
+      this.hasVisitedLobby = true;
+    }
   }
 
   private sanitize2DViewport(scene: AFrameSceneElement): void {

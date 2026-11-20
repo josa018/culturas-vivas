@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  computeModelTurntableDeltaRad,
   createInspectableComponentDefinition,
   type InspectableComponentInstance,
   setSharedInspectionController,
@@ -94,7 +95,12 @@ describe("A-Frame Inspectable Component", () => {
     );
   });
 
-  it("performs radial inspection focal animation, counter-translates pedestal, auto-rotates, and restores on return", () => {
+  it("performs radial inspection focal animation, counter-translates pedestal, auto-rotates ONLY .cv-inspectable-model smoothly via timeDelta, and restores on return", () => {
+    expect(computeModelTurntableDeltaRad(16, 0.35)).toBeCloseTo(0.0056, 5);
+    expect(computeModelTurntableDeltaRad(250, 0.35)).toBeCloseTo(0.0175, 5);
+    expect(computeModelTurntableDeltaRad(-5, 0.35)).toBe(0);
+    expect(computeModelTurntableDeltaRad(Number.NaN, 0.35)).toBe(0);
+
     const def = createInspectableComponentDefinition();
     const mockEl = createMockEntity(
       { x: 0, y: 1.4, z: -2.8 },
@@ -104,13 +110,20 @@ describe("A-Frame Inspectable Component", () => {
     pedestal.setAttribute("position", "0 -0.4 0");
     mockEl.appendChild(pedestal);
 
+    const modelGroup = createMockEntity(
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0 },
+    );
+    modelGroup.setAttribute("class", "clickable cv-inspectable-model");
+    mockEl.appendChild(modelGroup);
+
     const instance: InspectableComponentInstance = Object.create(def);
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
     instance.data = {
       id: "test-statue",
       focalDistance: 1.4,
       autoRotate: true,
-      rotationSpeed: 0.02,
+      rotationSpeed: 0.35,
       title: "Estatua 3D",
       description: "Modelo 3D",
       mediaType: ExhibitMediaType.MODEL_3D,
@@ -135,7 +148,10 @@ describe("A-Frame Inspectable Component", () => {
     expect(pedestal.getAttribute("position")).toBe("0 -0.78 -1.4");
 
     instance.tick(0, 16);
-    expect(mockEl.object3D.rotation.y).toBe(0.02);
+    instance.tick(16, 250);
+    expect(modelGroup.object3D.rotation.y).toBeCloseTo(0.0231, 5);
+    expect(mockEl.object3D.rotation.y).toBe(0);
+    expect(instance.billboardEl?.getAttribute("rotation")).toBe("-12 0 0");
 
     instance.returnToGallery();
     expect(instance.state).toBe(InspectionState.IDLE);
@@ -143,6 +159,8 @@ describe("A-Frame Inspectable Component", () => {
     expect(mockEl.getAttribute("position")).toBe("0 1.4 -2.8");
     expect(pedestal.getAttribute("position")).toBe("0 -0.4 0");
     expect(mockEl.getAttribute("animation__return")).toContain("to: 0 1.4 -2.8");
+    expect(modelGroup.object3D.rotation.y).toBe(0);
+    expect(modelGroup.getAttribute("rotation")).toBe("0 0 0");
   });
 
   it("defers position and billboard teardown until animationcomplete / timeout when AFRAME is active", () => {

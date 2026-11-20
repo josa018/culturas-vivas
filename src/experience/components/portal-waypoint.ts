@@ -1,7 +1,6 @@
 import {
   PORTAL_ANIMATION_TOKENS,
   PORTAL_COLORS,
-  PORTAL_DEPTH_TOKENS,
   PORTAL_DIMENSIONS,
 } from "../constants";
 import type { RoomEnvironmentPreset } from "../room-environment-presets";
@@ -103,48 +102,6 @@ export function registerPortalComponent(): void {
   }
 }
 
-function createPortalDepthRing(
-  frameColor: string,
-  scaleFactor: number,
-  offsetZ: number,
-): HTMLElement {
-  const ringEl = document.createElement("a-entity");
-  ringEl.setAttribute("class", "cv-portal-depth-ring");
-  ringEl.setAttribute("position", `0 0 ${offsetZ}`);
-
-  const w = Number((PORTAL_DIMENSIONS.FRAME_WIDTH * scaleFactor).toFixed(3));
-  const h = Number((PORTAL_DIMENSIONS.FRAME_HEIGHT * scaleFactor).toFixed(3));
-  const t = PORTAL_DEPTH_TOKENS.RING_THICKNESS_M;
-  const d = PORTAL_DEPTH_TOKENS.RING_DEPTH_M;
-  const halfW = w / 2;
-  const halfH = h / 2;
-
-  const bars: Array<{ w: number; h: number; x: number; y: number }> = [
-    { w: w + t, h: t, x: 0, y: halfH },
-    { w: w + t, h: t, x: 0, y: -halfH },
-    { w: t, h, x: -halfW, y: 0 },
-    { w: t, h, x: halfW, y: 0 },
-  ];
-
-  for (const bar of bars) {
-    const seg = document.createElement("a-box");
-    seg.setAttribute("width", String(Number(bar.w.toFixed(3))));
-    seg.setAttribute("height", String(Number(bar.h.toFixed(3))));
-    seg.setAttribute("depth", String(d));
-    seg.setAttribute(
-      "position",
-      `${Number(bar.x.toFixed(3))} ${Number(bar.y.toFixed(3))} 0`,
-    );
-    seg.setAttribute("color", frameColor);
-    seg.setAttribute(
-      "material",
-      `shader: lambert; color: ${frameColor}; emissive: ${frameColor}; emissiveIntensity: 0.28`,
-    );
-    ringEl.appendChild(seg);
-  }
-  return ringEl;
-}
-
 export function createPortalEntity(
   config: RoomPortalConfig,
   preset?: RoomEnvironmentPreset,
@@ -168,22 +125,16 @@ export function createPortalEntity(
   const frameColor = config.accentColor ?? PORTAL_COLORS.FRAME;
   const archwayParts = createMonumentalPortalParts(config, preset);
 
-  // Concentric receding 3D depth ribs lining the 0.48m tunnel interior
-  const depthRings = PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z.map((offsetZ, idx) =>
-    createPortalDepthRing(
-      frameColor,
-      PORTAL_DEPTH_TOKENS.RING_SCALES[idx] ?? 0.84,
-      offsetZ,
-    ),
-  );
-
-  // Portal gateway aperture plane recessed deep inside the tunnel (interactive target)
+  // Portal gateway aperture plane (interactive target)
   const aperture = document.createElement("a-plane");
   aperture.setAttribute("class", "clickable");
   aperture.setAttribute("cv-interactive-feedback", "hoverScale: 1.04; hoverZLift: 0.03");
   aperture.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH));
-  aperture.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT));
-  aperture.setAttribute("position", `0 0 ${PORTAL_DEPTH_TOKENS.APERTURE_Z_M}`);
+  aperture.setAttribute("height", String(PORTAL_DIMENSIONS.APERTURE_HEIGHT_M));
+  aperture.setAttribute(
+    "position",
+    `0 ${PORTAL_DIMENSIONS.APERTURE_CENTER_Y} 0.01`,
+  );
   aperture.setAttribute("color", PORTAL_COLORS.PORTAL_INNER);
   aperture.setAttribute("opacity", "0.85");
   aperture.setAttribute("material", "shader: flat; side: double");
@@ -192,8 +143,14 @@ export function createPortalEntity(
   const glowRing = document.createElement("a-plane");
   glowRing.setAttribute("class", "cv-portal-glow-ring");
   glowRing.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH - 0.12));
-  glowRing.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT - 0.12));
-  glowRing.setAttribute("position", `0 0 ${PORTAL_DEPTH_TOKENS.GLOW_RING_Z_M}`);
+  glowRing.setAttribute(
+    "height",
+    String(PORTAL_DIMENSIONS.APERTURE_HEIGHT_M - 0.12),
+  );
+  glowRing.setAttribute(
+    "position",
+    `0 ${PORTAL_DIMENSIONS.APERTURE_CENTER_Y} 0.015`,
+  );
   glowRing.setAttribute(
     "material",
     `shader: flat; color: ${frameColor}; transparent: true; opacity: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MIN}; side: double; depthWrite: false`,
@@ -230,14 +187,7 @@ export function createPortalEntity(
     position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.1`,
   });
 
-  portalRoot.append(
-    ...archwayParts,
-    ...depthRings,
-    aperture,
-    glowRing,
-    labelPlate,
-    labelText,
-  );
+  portalRoot.append(...archwayParts, aperture, glowRing, labelPlate, labelText);
   return portalRoot;
 }
 

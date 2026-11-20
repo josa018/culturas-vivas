@@ -347,9 +347,13 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
       },
       "vr",
     );
-    const fallbackModelSphere = exhibitEl.querySelector("a-sphere");
-    const fallbackModelCone = exhibitEl.querySelector("a-cone");
-    const fallbackModelRing = exhibitEl.querySelector("a-ring");
+    const modelContainer = exhibitEl.querySelector(".cv-inspectable-model");
+    expect(modelContainer).not.toBeNull();
+    expect(modelContainer?.classList.contains("clickable")).toBe(true);
+    expect(modelContainer?.querySelector(".cv-model-pedestal")).toBeNull();
+    const fallbackModelSphere = modelContainer?.querySelector("a-sphere");
+    const fallbackModelCone = modelContainer?.querySelector("a-cone");
+    const fallbackModelRing = modelContainer?.querySelector("a-ring");
     expect(fallbackModelSphere?.getAttribute("material")).toContain("shader: lambert");
     expect(fallbackModelCone?.getAttribute("material")).toContain("shader: lambert");
     expect(fallbackModelRing?.getAttribute("material")).toContain("shader: lambert");

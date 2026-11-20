@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { ROOM_LAYOUT_TOKENS, RoomId, StandId } from "../../src/shared/room-catalog";
 import {
-  PORTAL_DEPTH_TOKENS,
   PORTAL_DIMENSIONS,
   STATION_ARCHITECTURE_TOKENS,
 } from "../../src/experience/constants";
@@ -123,17 +122,13 @@ describe("Grounded cultural stand plinths, stepped pedestals & monumental portal
 
     const aperture = portal.querySelector("a-plane.clickable");
     expect(aperture?.getAttribute("material")).toContain("shader: flat");
-    expect(aperture?.getAttribute("position")).toBe(
-      `0 0 ${PORTAL_DEPTH_TOKENS.APERTURE_Z_M}`,
-    );
+    const apertureY = Number((aperture?.getAttribute("position") ?? "0 0 0").split(" ")[1]);
+    const apertureH = Number(aperture?.getAttribute("height") ?? "0");
+    // Portal aperture bottom must seat flush onto .cv-portal-threshold top surface (-1.46)
+    expect(apertureY - apertureH / 2).toBeCloseTo(threshY + threshH / 2, 2);
+    expect(apertureY + apertureH / 2).toBeCloseTo(PORTAL_DIMENSIONS.FRAME_HEIGHT / 2, 2);
     expect(portal.querySelector("[cv-canvas-text]")?.getAttribute("material")).toContain(
       "shader: flat",
-    );
-    expect(portal.querySelector(".cv-portal-pillar-left")?.getAttribute("depth")).toBe(
-      String(PORTAL_DEPTH_TOKENS.JAMB_DEPTH_M),
-    );
-    expect(portal.querySelector(".cv-portal-pillar-right")?.getAttribute("depth")).toBe(
-      String(PORTAL_DEPTH_TOKENS.JAMB_DEPTH_M),
     );
     expect(PORTAL_DIMENSIONS.FRAME_WIDTH).toBeGreaterThan(1);
   });

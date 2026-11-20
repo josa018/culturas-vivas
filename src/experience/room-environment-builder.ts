@@ -414,14 +414,14 @@ export function buildRoomEnvironment(
   };
   const textureSet = createRoomTextureSet(preset, texDeps);
   const skyTexture = createSkyGradientTexture(preset, three, createCanvas);
-  const canyonWaterTex =
-    roomId === RoomId.NAAYERI
-      ? createProceduralTexture(
-          PROCEDURAL_TEXTURE_KIND.WATER_SHIMMER,
-          preset.accentColor,
-          texDeps,
-        )
-      : null;
+  const isCanyon = roomId === RoomId.NAAYERI;
+  const canyonWaterTex = isCanyon
+    ? createProceduralTexture(
+        PROCEDURAL_TEXTURE_KIND.WATER_SHIMMER,
+        preset.accentColor,
+        texDeps,
+      )
+    : null;
 
   // 1. Gradient sky dome (1 draw call)
   const skyGeo = new three.SphereGeometry(
@@ -502,23 +502,20 @@ export function buildRoomEnvironment(
   outerMesh.receiveShadow = true;
   root.add(outerMesh);
 
-  // 4. Cultural floor medallion or canyon water ring (1 draw call)
-  const isCanyon = roomId === RoomId.NAAYERI;
-  const ringGeo = new three.RingGeometry(
-    isCanyon ? 5.5 : 2.35,
-    isCanyon ? 8.3 : 2.9,
-    32,
-  );
-  const ringMat = new three.MeshLambertMaterial({
-    color: isCanyon ? preset.accentColor : "#f8fafc",
-    map: isCanyon ? canyonWaterTex : textureSet.trim,
-  });
-  const ringMesh = new three.Mesh(ringGeo, ringMat);
-  ringMesh.name = isCanyon ? "cv-env-canyon-water" : "cv-env-floor-inlay";
-  ringMesh.rotation.set(-Math.PI / 2, 0, 0);
-  ringMesh.position.set(0, isCanyon ? -0.1 : 0.006, 0);
-  ringMesh.receiveShadow = true;
-  root.add(ringMesh);
+  // 4. Exterior canyon water ring in Naayéri only (inner floor inlay ring removed across rooms)
+  if (isCanyon) {
+    const ringGeo = new three.RingGeometry(5.5, 8.3, 32);
+    const ringMat = new three.MeshLambertMaterial({
+      color: preset.accentColor,
+      map: canyonWaterTex,
+    });
+    const ringMesh = new three.Mesh(ringGeo, ringMat);
+    ringMesh.name = "cv-env-canyon-water";
+    ringMesh.rotation.set(-Math.PI / 2, 0, 0);
+    ringMesh.position.set(0, -0.1, 0);
+    ringMesh.receiveShadow = true;
+    root.add(ringMesh);
+  }
 
   // 4b. Near-eye depth layer: central dais curb + 6 radial stone walkways
   const daisGeo = new three.CylinderGeometry(

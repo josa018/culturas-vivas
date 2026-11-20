@@ -141,6 +141,7 @@ describe("Culture Room Catalog & Polar Layout", () => {
       ROOM_LAYOUT_TOKENS.PEDESTAL_ELEVATION_M,
     );
     expect(ROOM_LAYOUT_TOKENS.MODEL_PEDESTAL_HEIGHT_M).toBe(1.2);
+    expect(ROOM_LAYOUT_TOKENS.DEFAULT_MODEL_ROTATION_SPEED).toBe(0.35);
 
     const expectedPresets: Record<RoomId, RoomEnvironmentId> = {
       [RoomId.LOBBY]: RoomEnvironmentId.LOBBY,

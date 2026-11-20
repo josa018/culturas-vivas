@@ -75,6 +75,23 @@ export interface InspectableComponentInstance {
   remove: () => void;
 }
 
+export function computeModelTurntableDeltaRad(
+  timeDeltaMs: number,
+  rotationSpeedRadPerSec: number,
+  maxStepMs: number = INSPECTION_TIMINGS.MODEL_ROTATION_MAX_STEP_MS,
+): number {
+  if (
+    !Number.isFinite(timeDeltaMs) ||
+    timeDeltaMs <= 0 ||
+    !Number.isFinite(rotationSpeedRadPerSec) ||
+    rotationSpeedRadPerSec === 0
+  ) {
+    return 0;
+  }
+  const clampedMs = Math.min(timeDeltaMs, maxStepMs);
+  return (clampedMs / 1000) * rotationSpeedRadPerSec;
+}
+
 function isAFrameActive(): boolean {
   return (
     typeof globalThis !== "undefined" &&
@@ -633,6 +650,19 @@ export function createInspectableComponentDefinition() {
         this.el.addEventListener("animationcomplete__return", onReturnComplete);
       }
 
+      const modelTarget = this.el.querySelector(".cv-inspectable-model") as
+        | {
+            object3D?: { rotation?: { y: number } };
+            setAttribute?: (name: string, value: string) => void;
+          }
+        | null;
+      if (modelTarget) {
+        if (modelTarget.object3D?.rotation) {
+          modelTarget.object3D.rotation.y = 0;
+        }
+        modelTarget.setAttribute?.("rotation", "0 0 0");
+      }
+
       this.el.setAttribute(
         "rotation",
         `${this.galleryRotation.x} ${this.galleryRotation.y} ${this.galleryRotation.z}`,
@@ -646,10 +676,20 @@ export function createInspectableComponentDefinition() {
       }
     },
 
-    tick: function (this: InspectableComponentInstance) {
+    tick: function (
+      this: InspectableComponentInstance,
+      _time: number,
+      timeDelta: number,
+    ) {
       if (this.state === InspectionState.INSPECTING && this.data.autoRotate) {
-        if (this.el.object3D && this.el.object3D.rotation) {
-          this.el.object3D.rotation.y += this.data.rotationSpeed;
+        const modelTarget = this.el.querySelector(".cv-inspectable-model") as
+          | { object3D?: { rotation?: { y: number } } }
+          | null;
+        if (modelTarget?.object3D?.rotation) {
+          modelTarget.object3D.rotation.y += computeModelTurntableDeltaRad(
+            timeDelta,
+            this.data.rotationSpeed,
+          );
         }
       }
     },

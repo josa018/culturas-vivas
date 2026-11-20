@@ -570,12 +570,31 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(el.querySelector(".cv-stand-left-plane")?.hasAttribute("cv-interactive-feedback")).toBe(false);
 
     const topRail = el.querySelectorAll(".cv-stand-bevel-rail")[0]!;
+    const bottomRail = el.querySelectorAll(".cv-stand-bevel-rail")[1]!;
     const headerBg = el.querySelector(".cv-stand-header-bg")!;
+    const headerLabel = el.querySelector(".cv-stand-header")!;
+    const countBadge = el.querySelector(".cv-stand-count-badge")!;
+    const parsePosX = (node: Element) => Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[0]);
     const parsePosY = (node: Element) => Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[1]);
     const parseHeight = (node: Element) => Number(node.getAttribute("height") ?? 0);
+    expect(parsePosX(el.querySelector(".cv-stand-prev-btn")!)).toBeCloseTo(-0.74, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-counter")!)).toBeCloseTo(-0.5, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-next-btn")!)).toBeCloseTo(-0.26, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-play-btn")!)).toBeCloseTo(0.26, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-mute-btn")!)).toBeCloseTo(0.48, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-close-btn")!)).toBeCloseTo(0.74, 5);
     const topRailTopEdge = parsePosY(topRail) + parseHeight(topRail) / 2;
+    const bottomRailBottomEdge = parsePosY(bottomRail) - parseHeight(bottomRail) / 2;
     const headerBottomEdge = parsePosY(headerBg) - parseHeight(headerBg) / 2;
+    expect(parseHeight(headerBg)).toBeCloseTo(0.28, 5);
+    expect(parsePosY(headerBg)).toBeCloseTo(0.76, 5);
     expect(headerBottomEdge).toBeGreaterThan(topRailTopEdge);
+    expect(parsePosY(headerLabel)).toBeCloseTo(0.795, 5);
+    expect(parseHeight(headerLabel)).toBeCloseTo(0.12, 5);
+    expect(headerLabel.getAttribute("cv-canvas-text")).toContain("canvasHeight: 104");
+    expect(headerLabel.getAttribute("cv-canvas-text")).toContain("paddingY: 10");
+    expect(parsePosY(countBadge)).toBeCloseTo(0.685, 5);
+    expect(parseHeight(countBadge)).toBeCloseTo(0.085, 5);
 
     expect(el.querySelectorAll(".cv-stand-bevel-rail").length).toBeGreaterThanOrEqual(4);
     expect(el.querySelectorAll(".cv-stand-corner-accent").length).toBe(4);
@@ -596,12 +615,21 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(el.getAttribute("animation__stand_inspect")).toContain(
       `easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
     );
-    expect(el.getAttribute("animation__stand_inspect")).toContain("to: 1.45 1.92 0");
+    expect(el.getAttribute("animation__stand_inspect")).toContain("to: 1.45 1.65 0");
 
     const controlBar = el.querySelector(".cv-stand-control-bar")!;
     const billboard = el.querySelector(".cv-stand-billboard")!;
+    const playBtn = controlBar.querySelector(".cv-stand-play-btn")!;
+    const btnTopEdge = parsePosY(controlBar) + parseHeight(playBtn) / 2;
+    const btnBottomEdge = parsePosY(controlBar) - parseHeight(playBtn) / 2;
+    const billboardPlane = billboard.querySelector("a-plane")!;
+    const billboardTopEdge = parsePosY(billboard) + parseHeight(billboardPlane) / 2;
+    expect(parsePosY(controlBar)).toBeCloseTo(-0.71, 5);
+    expect(btnTopEdge).toBeLessThan(bottomRailBottomEdge);
     expect(billboard.getAttribute("rotation")).toBe("-12 0 0");
-    expect(billboard.querySelector("a-plane")?.getAttribute("height")).toBe("0.64");
+    expect(parsePosY(billboard)).toBeCloseTo(-1.15, 5);
+    expect(parseHeight(billboardPlane)).toBeCloseTo(0.6, 5);
+    expect(billboardTopEdge).toBeLessThan(btnBottomEdge);
 
     await vi.advanceTimersByTimeAsync(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS + 10);
     expect(controlBar.getAttribute("animation__panel_in")).toContain(

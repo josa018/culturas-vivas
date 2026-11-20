@@ -1,9 +1,4 @@
-import {
-  PORTAL_COLORS,
-  PORTAL_DEPTH_TOKENS,
-  PORTAL_DIMENSIONS,
-  STATION_ARCHITECTURE_TOKENS,
-} from "./constants";
+import { PORTAL_COLORS, PORTAL_DIMENSIONS, STATION_ARCHITECTURE_TOKENS } from "./constants";
 import { registerLambertShaderAndSurface } from "./components/lambert-shader";
 import {
   PROCEDURAL_TEXTURE_KIND,
@@ -213,8 +208,8 @@ export function createMonumentalPortalParts(
     className: "cv-portal-pillar-left",
     width: PORTAL_DIMENSIONS.BORDER_THICKNESS,
     height: fullPillarHeight,
-    depth: PORTAL_DEPTH_TOKENS.JAMB_DEPTH_M,
-    position: `${-halfW} ${pillarCenterY} ${PORTAL_DEPTH_TOKENS.JAMB_CENTER_Z_M}`,
+    depth: 0.14,
+    position: `${-halfW} ${pillarCenterY} 0`,
     color: frameColor,
   });
 
@@ -222,8 +217,8 @@ export function createMonumentalPortalParts(
     className: "cv-portal-pillar-right",
     width: PORTAL_DIMENSIONS.BORDER_THICKNESS,
     height: fullPillarHeight,
-    depth: PORTAL_DEPTH_TOKENS.JAMB_DEPTH_M,
-    position: `${halfW} ${pillarCenterY} ${PORTAL_DEPTH_TOKENS.JAMB_CENTER_Z_M}`,
+    depth: 0.14,
+    position: `${halfW} ${pillarCenterY} 0`,
     color: frameColor,
   });
 
@@ -253,8 +248,8 @@ export function createMonumentalPortalParts(
     className: "cv-portal-frieze",
     width: PORTAL_DIMENSIONS.FRAME_WIDTH + PORTAL_DIMENSIONS.BORDER_THICKNESS + 0.42,
     height: 0.22,
-    depth: PORTAL_DEPTH_TOKENS.FRIEZE_DEPTH_M,
-    position: `0 ${Number((topY + 0.08).toFixed(3))} ${PORTAL_DEPTH_TOKENS.FRIEZE_CENTER_Z_M}`,
+    depth: 0.24,
+    position: `0 ${Number((topY + 0.08).toFixed(3))} 0`,
     color: frameColor,
     textureKind: PROCEDURAL_TEXTURE_KIND.WOVEN_FAJA,
     accentColor: frameColor,
@@ -264,8 +259,8 @@ export function createMonumentalPortalParts(
     className: "cv-portal-threshold",
     width: PORTAL_DIMENSIONS.FRAME_WIDTH + 0.56,
     height: threshH,
-    depth: PORTAL_DEPTH_TOKENS.THRESHOLD_DEPTH_M,
-    position: `0 ${threshY} ${PORTAL_DEPTH_TOKENS.THRESHOLD_CENTER_Z_M}`,
+    depth: 0.44,
+    position: `0 ${threshY} 0`,
     color: floorColor,
     textureKind: preset?.floorTexture ?? PROCEDURAL_TEXTURE_KIND.STONE_BASALT,
     accentColor: frameColor,

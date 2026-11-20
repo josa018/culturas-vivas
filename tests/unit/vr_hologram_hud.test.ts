@@ -214,23 +214,45 @@ describe("VR Hologram HUD Component", () => {
     expect(left.rotationDeg.y).toBeCloseTo(90, 2);
   });
 
-  it("readCameraPoseFromScene extracts camera object3D pose or returns default fallback", () => {
+  it("readCameraPoseFromScene extracts camera object3D pose including rig elevation or returns 1.65m fallback", () => {
     expect(readCameraPoseFromScene(null)).toEqual({
-      position: { x: 0, y: 1.6, z: 0 },
+      position: { x: 0, y: 1.65, z: 0 },
       yawRad: 0,
     });
 
     const scene = document.createElement("a-scene");
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    rig.setAttribute("position", "0 1.65 0");
     const camera = document.createElement("a-camera") as HTMLElement & {
       object3D?: { position: { x: number; y: number; z: number }; rotation: { y: number } };
     };
-    camera.object3D = { position: { x: 1.2, y: 1.7, z: -0.5 }, rotation: { y: 0.75 } };
-    scene.appendChild(camera);
+    camera.object3D = { position: { x: 1.2, y: 0.05, z: -0.5 }, rotation: { y: 0.75 } };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
 
     expect(readCameraPoseFromScene(scene)).toEqual({
       position: { x: 1.2, y: 1.7, z: -0.5 },
       yawRad: 0.75,
     });
+
+    // Summing #cv-camera-rig Y-rotation (via object3D or rotation attribute fallback) + child camera yaw
+    (rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: Math.PI },
+    };
+    camera.object3D = { position: { x: 0, y: 0, z: 0 }, rotation: { y: 0.2 } };
+    const rotatedPose = readCameraPoseFromScene(scene);
+    expect(rotatedPose.yawRad).toBeCloseTo(Math.PI + 0.2, 5);
+
+    const hudEl = document.createElement("a-entity") as VrHologramHudEntity;
+    const hudInstance = createMockHudInstance(hudEl);
+    hudInstance.init();
+    hudInstance.summon(rotatedPose);
+    const [, , hudZ] = (hudEl.getAttribute("position") ?? "0 0 0")
+      .split(/\s+/)
+      .map(Number);
+    // Facing ~180 deg (+Z) must anchor the HUD in +Z ahead of gaze, not at -Z behind visitor
+    expect(hudZ).toBeGreaterThan(1.0);
   });
 
   it("summons HUD, aborts active inspection, updates room chip, dismisses, and respects setEnabled(false)", () => {

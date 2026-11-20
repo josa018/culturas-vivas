@@ -549,7 +549,7 @@ describe("Procedural 3D room environment builder & budget", () => {
   it("mounts multi-radius interior parallax layers and thickens secondary exterior props within mobile VR budgets", () => {
     const mockThree = createMockThree();
 
-    for (const roomId of [RoomId.WIXARIKA, RoomId.NAAYERI, RoomId.MEXICANERO]) {
+    for (const roomId of Object.values(RoomId)) {
       const built = buildRoomEnvironment(roomId, {
         three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
         createCanvas: createCanvasMockFactory(),
@@ -563,7 +563,27 @@ describe("Procedural 3D room environment builder & budget", () => {
         }
       });
 
-      expect(byName.get("cv-env-dais-curb")).toBeDefined();
+      const daisCurb = byName.get("cv-env-dais-curb") as
+        | { material?: { map?: unknown } }
+        | undefined;
+      const pergolaRing = byName.get("cv-env-pergola-ring") as
+        | { material?: { map?: unknown } }
+        | undefined;
+      expect(daisCurb).toBeDefined();
+      expect(daisCurb?.material?.map).toBeTruthy();
+      // Center dais uses the original shared trim (WOVEN_FAJA) texture across all rooms
+      expect(daisCurb?.material?.map).toBe(pergolaRing?.material?.map);
+      // Remove the concentric floor inlay ring around the center circle across all rooms
+      expect(byName.get("cv-env-floor-inlay")).toBeUndefined();
+      if (roomId === RoomId.NAAYERI) {
+        const canyonWater = byName.get("cv-env-canyon-water") as
+          | { material?: { map?: unknown } }
+          | undefined;
+        expect(canyonWater).toBeDefined();
+        expect(canyonWater?.material?.map).toBeTruthy();
+      } else {
+        expect(byName.get("cv-env-canyon-water")).toBeUndefined();
+      }
       expect(byName.get("cv-env-radial-walkways")?.count).toBe(
         ENVIRONMENT_BUDGET_TOKENS.WALKWAY_COUNT,
       );
