@@ -2,7 +2,7 @@ import type { Vector3D } from "../constants";
 import {
   EXHIBIT_DICTIONARY,
   EXHIBIT_DIMENSIONS,
-  FOCAL_INSPECTION_DISTANCE,
+  INSPECTION_TARGET_TOKENS,
   INSPECTION_TIMINGS,
   InspectionState,
   METADATA_BILLBOARD_OFFSET,
@@ -140,7 +140,10 @@ export function createInspectableComponentDefinition() {
   return {
     schema: {
       id: { type: "string", default: "" },
-      focalDistance: { type: "number", default: FOCAL_INSPECTION_DISTANCE },
+      focalDistance: {
+        type: "number",
+        default: INSPECTION_TARGET_TOKENS.MODEL_FOCAL_DISTANCE_M,
+      },
       autoRotate: { type: "boolean", default: false },
       rotationSpeed: {
         type: "number",
@@ -188,6 +191,10 @@ export function createInspectableComponentDefinition() {
         "position",
         `${METADATA_BILLBOARD_OFFSET.x} ${METADATA_BILLBOARD_OFFSET.y} ${METADATA_BILLBOARD_OFFSET.z}`,
       );
+      billboard.setAttribute(
+        "rotation",
+        `${INSPECTION_TARGET_TOKENS.BILLBOARD_TILT_X_DEG} 0 0`,
+      );
       billboard.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
       billboard.setAttribute("visible", "false");
 
@@ -205,14 +212,14 @@ export function createInspectableComponentDefinition() {
           ? 2
           : 1;
 
-      const creatorTop = estimatedTitleLines > 1 ? 0.13 : 0.21;
-      const creatorCenterY = creatorTop - 0.07;
+      const creatorTop = estimatedTitleLines > 1 ? 0.11 : 0.165;
+      const creatorCenterY = creatorTop - 0.055;
       const descTop = hasCreator
-        ? creatorTop - (estimatedCreatorLines > 1 ? 0.15 : 0.10)
+        ? creatorTop - (estimatedCreatorLines > 1 ? 0.12 : 0.085)
         : estimatedTitleLines > 1
-          ? 0.125
-          : 0.205;
-      const descCenterY = descTop - 0.18;
+          ? 0.105
+          : 0.16;
+      const descCenterY = descTop - 0.14;
 
       const titleEl = createCanvasTextPlane({
         className: "cv-billboard-title",
@@ -221,15 +228,15 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH,
-        height: 0.18,
-        fontSizePx: 48,
+        height: 0.16,
+        fontSizePx: 40,
         fontWeight: "700",
         canvasWidth: 800,
-        canvasHeight: 116,
+        canvasHeight: 112,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 8,
-        position: "-0.12 0.26 0.03",
+        paddingY: 12,
+        position: "-0.12 0.21 0.03",
       });
 
       const creatorEl = createCanvasTextPlane({
@@ -242,14 +249,14 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: 1.46,
-        height: 0.14,
-        fontSizePx: 36,
+        height: 0.11,
+        fontSizePx: 32,
         fontWeight: "600",
         canvasWidth: 936,
-        canvasHeight: 90,
+        canvasHeight: 84,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 6,
+        paddingY: 8,
         position: `0 ${creatorCenterY} 0.035`,
       });
 
@@ -260,14 +267,14 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: 1.46,
-        height: 0.36,
+        height: 0.28,
         fontSizePx: 34,
         fontWeight: "400",
         canvasWidth: 936,
-        canvasHeight: 230,
+        canvasHeight: 212,
         maxLines: 5,
         paddingX: 20,
-        paddingY: 8,
+        paddingY: 10,
         position: `0 ${descCenterY} 0.04`,
       });
 
@@ -279,7 +286,7 @@ export function createInspectableComponentDefinition() {
         `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}; segments: ${RENDERER_QUALITY_TOKENS.CIRCLE_SEGMENTS}`,
       );
       returnBtn.setAttribute("material", "color: #e11d48; shader: flat");
-      returnBtn.setAttribute("position", "0.68 0.27 0.05");
+      returnBtn.setAttribute("position", "0.68 0.21 0.05");
       returnBtn.setAttribute("data-action", "return-exhibit");
 
       const returnText = createCanvasTextPlane({
@@ -371,11 +378,12 @@ export function createInspectableComponentDefinition() {
         controller.abortActiveInspection();
       }
 
-      // Compute dynamic radial target position
-      const targetPos = controller.calculateRadialTargetPosition(
+      // Compute dynamic ergonomic radial target position
+      const targetPos = controller.calculateErgonomicInspectionTarget(
         this.galleryPosition,
         ROOM_CENTER_COORDINATE,
-        this.data.focalDistance || FOCAL_INSPECTION_DISTANCE,
+        this.data.focalDistance || INSPECTION_TARGET_TOKENS.MODEL_FOCAL_DISTANCE_M,
+        INSPECTION_TARGET_TOKENS.MODEL_INSPECTION_Y_M,
       );
 
       const curX = this.el.object3D?.position?.x ?? this.galleryPosition.x;

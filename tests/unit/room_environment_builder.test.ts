@@ -423,4 +423,31 @@ describe("Procedural 3D room environment builder & budget", () => {
     expect(hostObj.children).toHaveLength(0);
     expect(sceneObj.fog).toBeNull();
   });
+
+  it("renders anti-aliased sky stars in MEXICANERO with radius >= MIN_SKY_STAR_RADIUS_PX", () => {
+    const mockThree = createMockThree();
+    const arcRadii: number[] = [];
+    const baseFactory = createCanvasMockFactory();
+    const createCanvas = (width: number, height: number): HTMLCanvasElement => {
+      const canvas = baseFactory(width, height);
+      const ctx = canvas.getContext("2d") as unknown as { arc: ReturnType<typeof vi.fn> };
+      ctx.arc = vi.fn((_x: number, _y: number, radius: number) => {
+        arcRadii.push(radius);
+      });
+      return canvas;
+    };
+
+    const built = buildRoomEnvironment(RoomId.MEXICANERO, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas,
+    });
+
+    expect(arcRadii.length).toBeGreaterThan(0);
+    for (const r of arcRadii) {
+      expect(r).toBeGreaterThanOrEqual(
+        ENVIRONMENT_BUDGET_TOKENS.MIN_SKY_STAR_RADIUS_PX,
+      );
+    }
+    built.dispose();
+  });
 });

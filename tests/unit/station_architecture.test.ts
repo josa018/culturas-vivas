@@ -19,9 +19,9 @@ describe("Grounded cultural stand plinths, stepped pedestals & monumental portal
     const plinth = createStandPlinthEntity(
       {
         roomId: RoomId.WIXARIKA,
-        standId: StandId.HISTORIA,
-        label: "HISTORIA",
-        position: { x: 3.2, y: 1.6, z: 0 },
+        standId: StandId.ARTE,
+        label: "ARTE",
+        position: { x: 3.2, y: 1.76, z: 0 },
         rotation: { x: 0, y: -90, z: 0 },
       },
       preset,
@@ -37,6 +37,16 @@ describe("Grounded cultural stand plinths, stepped pedestals & monumental portal
       expect(part.getAttribute("material")).toContain("shader: lambert");
       expect(part.getAttribute("shadow")).toContain("cast: true");
     }
+
+    const maxPlinthY = Math.max(
+      ...parts.map((part) => {
+        const y = Number((part.getAttribute("position") ?? "0 0 0").split(" ")[1]);
+        const h = Number(part.getAttribute("height") ?? "0");
+        return y + h / 2;
+      }),
+    );
+    expect(STATION_ARCHITECTURE_TOKENS.PLINTH_HEIGHT_M).toBe(1.16);
+    expect(maxPlinthY).toBeCloseTo(1.16, 2);
   });
 
   it("builds a stepped .cv-model-pedestal flush from world y = 0.0 to y = 1.2 m", () => {

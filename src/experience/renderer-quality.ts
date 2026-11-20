@@ -24,6 +24,26 @@ export function computeClampedPixelRatio(
 }
 
 /**
+ * Computes bounded WebXR framebuffer scale factor to preserve crisp stereo
+ * rendering on mobile headsets without exceeding GPU fill-rate budgets.
+ */
+export function computeXrFramebufferScaleFactor(
+  devicePixelRatio: number,
+  isMobile: boolean,
+): number {
+  if (!Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {
+    return RENDERER_QUALITY_TOKENS.MIN_XR_FRAMEBUFFER_SCALE;
+  }
+  const maxScale = isMobile
+    ? RENDERER_QUALITY_TOKENS.XR_MOBILE_MAX_FRAMEBUFFER_SCALE
+    : RENDERER_QUALITY_TOKENS.XR_DESKTOP_MAX_FRAMEBUFFER_SCALE;
+  return Math.max(
+    RENDERER_QUALITY_TOKENS.MIN_XR_FRAMEBUFFER_SCALE,
+    Math.min(devicePixelRatio, maxScale),
+  );
+}
+
+/**
  * Detects mobile browsers from a user-agent string.
  */
 export function isMobileUserAgent(userAgent?: string): boolean {

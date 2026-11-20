@@ -1,4 +1,7 @@
-import { PROCEDURAL_TEXTURE_TOKENS } from "./constants";
+import {
+  PROCEDURAL_TEXTURE_TOKENS,
+  RENDERER_QUALITY_TOKENS,
+} from "./constants";
 import {
   renderFajaBorderPattern,
   type FajaCanvasContextLike,
@@ -48,6 +51,8 @@ export interface ProceduralTextureLike {
   repeat?: { set?: (x: number, y: number) => void };
   anisotropy?: number;
   generateMipmaps?: boolean;
+  minFilter?: number;
+  magFilter?: number;
   needsUpdate: boolean;
   colorSpace?: string;
   dispose: () => void;
@@ -63,6 +68,8 @@ export interface ProceduralTextureDependencies {
   ) => ProceduralTextureLike | null;
   readonly repeatWrapping?: number;
   readonly clampToEdgeWrapping?: number;
+  readonly linearMipmapLinearFilter?: number;
+  readonly linearFilter?: number;
   readonly srgbColorSpace?: string;
   readonly repeatCount?: number;
 }
@@ -133,7 +140,7 @@ function drawStoneBasalt(
       ctx.fillStyle = `rgb(${shade}, ${shade + 6}, ${shade + 14})`;
       ctx.fillRect(x + 2, y + 2, tileW - 4, tileH - 4);
       ctx.strokeStyle = "#181d24";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = PROCEDURAL_TEXTURE_TOKENS.MIN_GROUT_LINE_WIDTH_PX;
       ctx.strokeRect(x + 1, y + 1, tileW - 2, tileH - 2);
     }
   }
@@ -171,7 +178,7 @@ function drawTerracottaFlagstone(
       ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
       ctx.fillRect(x + 2, y + 2, step - 4, step - 4);
       ctx.strokeStyle = "#4b261b";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = PROCEDURAL_TEXTURE_TOKENS.MIN_GROUT_LINE_WIDTH_PX;
       ctx.strokeRect(x + 1, y + 1, step - 2, step - 2);
     }
   }
@@ -227,7 +234,7 @@ function drawPineTimber(
     ctx.fillStyle = p % 2 === 0 ? "#7a5032" : "#643f26";
     ctx.fillRect(x0 + 1, 0, plankW - 2, size);
     ctx.strokeStyle = "#3f2615";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = PROCEDURAL_TEXTURE_TOKENS.MIN_GROUT_LINE_WIDTH_PX;
     ctx.strokeRect(x0, 0, plankW, size);
 
     for (let g = 0; g < 10; g++) {
@@ -345,7 +352,7 @@ export function createProceduralTexture(
       drawWaterShimmer(ctx, size);
       break;
     case PROCEDURAL_TEXTURE_KIND.WOVEN_FAJA:
-      renderFajaBorderPattern(ctx, size, Math.min(64, size), {
+      renderFajaBorderPattern(ctx, size, size, {
         base: "#0B0F17",
         gold: accentColor || "#D99B26",
         crimson: "#B83A2C",
@@ -371,6 +378,8 @@ export function createProceduralTexture(
       THREE?: {
         RepeatWrapping?: number;
         ClampToEdgeWrapping?: number;
+        LinearMipmapLinearFilter?: number;
+        LinearFilter?: number;
         SRGBColorSpace?: string;
       };
     }
@@ -379,6 +388,14 @@ export function createProceduralTexture(
   const repeatWrapping = deps.repeatWrapping ?? threeGlobal?.RepeatWrapping ?? 1000;
   const clampWrapping =
     deps.clampToEdgeWrapping ?? threeGlobal?.ClampToEdgeWrapping ?? 1001;
+  const minFilter =
+    deps.linearMipmapLinearFilter ??
+    threeGlobal?.LinearMipmapLinearFilter ??
+    RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_MIPMAP_LINEAR_FILTER;
+  const magFilter =
+    deps.linearFilter ??
+    threeGlobal?.LinearFilter ??
+    RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_FILTER;
   const srgb = deps.srgbColorSpace ?? threeGlobal?.SRGBColorSpace;
 
   if (isContact) {
@@ -393,6 +410,8 @@ export function createProceduralTexture(
 
   texture.anisotropy = PROCEDURAL_TEXTURE_TOKENS.ANISOTROPY;
   texture.generateMipmaps = true;
+  texture.minFilter = minFilter;
+  texture.magFilter = magFilter;
   if (srgb && "colorSpace" in texture) {
     texture.colorSpace = srgb;
   }

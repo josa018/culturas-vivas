@@ -6,6 +6,7 @@ import {
   GLB_FALLBACK_COLORS,
   ROOM_DEFINITIONS,
   ROOM_LAYOUT_TOKENS,
+  STATION_ARCHITECTURE_TOKENS,
   type ExhibitItemConfig,
 } from "./constants";
 import type { RoomId, RoomStandSlotConfig } from "./types";
@@ -396,7 +397,14 @@ export class ExhibitRoomBuilder {
       createContactShadowDecal({
         width: 1.35,
         depth: 0.72,
-        yOffset: -1.58,
+        yOffset: Number(
+          (
+            -(
+              ROOM_LAYOUT_TOKENS.STAND_ELEVATION_M -
+              STATION_ARCHITECTURE_TOKENS.CONTACT_SHADOW_CLEARANCE_M
+            )
+          ).toFixed(2),
+        ),
       }),
     );
 

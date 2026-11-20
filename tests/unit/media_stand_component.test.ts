@@ -19,6 +19,7 @@ import {
   type VideoElementLike,
 } from "../../src/experience/shared-video-controller";
 import { RoomId, StandId } from "../../src/shared/room-catalog";
+import { computeVideoBadgePosition } from "../../src/experience/media-stand-layout";
 
 function createMockVideoController() {
   const attributes = new Map<string, string>();
@@ -99,7 +100,7 @@ function createStandHost(
     label: "Arte",
     accentColor: "#D99B26",
     viewMode: "vr",
-    galleryPosition: { x: 0, y: 1.6, z: -3.2 },
+    galleryPosition: { x: 0, y: 1.76, z: -3.2 },
     galleryRotation: { x: 0, y: 0, z: 0 },
     itemsJson: "[]",
   };
@@ -254,6 +255,7 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(creator.getAttribute("value")).toBe("");
     expect(leftPlane.getAttribute("width")).toBe("0.534");
     expect(leftPlane.getAttribute("height")).toBe("0.95");
+    expect(el.querySelector(".cv-stand-video-badge")?.getAttribute("position")).toBe("0.057 0.383 0.025");
     expect(videoController.playVideo).toHaveBeenCalledWith("https://cdn.example.com/art-2.mp4");
     expect(prefetched).toEqual([
       "https://cdn.example.com/art-2-poster.jpg",
@@ -460,6 +462,14 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(parseY(titlePlane)).toBeGreaterThan(creatorTop);
     expect(creatorCenterY).toBeGreaterThan(descTop);
     expect(descBottom).toBeGreaterThanOrEqual(-bgHalf);
+    expect(titlePlane.getAttribute("cv-canvas-text")).toContain("paddingY: 12");
+    expect(titlePlane.getAttribute("cv-canvas-text")).toContain("canvasHeight: 112");
+    const billboardTop = parseY(billboard) + parseH(bgPlane) / 2;
+    const controlBar = el.querySelector(".cv-stand-control-bar")!;
+    const wakeBand = controlBar.querySelector(".cv-stand-reticle-wake")!;
+    const wakeBottom = parseY(controlBar) - parseH(wakeBand) / 2;
+    expect(billboardTop).toBeLessThanOrEqual(wakeBottom);
+    expect(wakeBand.getAttribute("material")).toContain("depthWrite: false");
   });
 
   it("animates radial glide, staggered control/billboard panels, slide pulse, Nierika frame accents, and cancels stale hide timers via transitionEpoch", async () => {
@@ -496,7 +506,7 @@ describe("cv-media-stand A-Frame Component", () => {
         title: "Arte",
         description: "Colección",
         mediaType: ExhibitMediaType.IMAGE_2D,
-        galleryPosition: { x: 3.2, y: 1.6, z: 0 },
+        galleryPosition: { x: 3.2, y: 1.76, z: 0 },
         galleryRotation: { x: 0, y: -90, z: 0 },
         autoRotate: false,
         rotationSpeed: 0,
@@ -517,16 +527,31 @@ describe("cv-media-stand A-Frame Component", () => {
       label: "Arte",
       accentColor: "#D99B26",
       viewMode: "vr",
-      galleryPosition: { x: 3.2, y: 1.6, z: 0 },
+      galleryPosition: { x: 3.2, y: 1.76, z: 0 },
       galleryRotation: { x: 0, y: -90, z: 0 },
       itemsJson: "[]",
     };
     instance.init();
 
-    // Beveled frame rails + Nierika corner accents + cv-interactive-feedback on interactive controls
+    // Beveled frame rails + Nierika corner accents + cv-interactive-feedback on shared media group & controls
+    const mediaGroup = el.querySelector(".cv-stand-media-group");
+    expect(mediaGroup).not.toBeNull();
+    expect(mediaGroup?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    expect(mediaGroup?.querySelector(".cv-stand-left-plane")).not.toBeNull();
+    expect(mediaGroup?.querySelector(".cv-stand-right-plane")).not.toBeNull();
+    expect(mediaGroup?.querySelector(".cv-stand-video-badge")).not.toBeNull();
+    expect(el.querySelector(".cv-stand-left-plane")?.hasAttribute("cv-interactive-feedback")).toBe(false);
+
+    const topRail = el.querySelectorAll(".cv-stand-bevel-rail")[0]!;
+    const headerBg = el.querySelector(".cv-stand-header-bg")!;
+    const parsePosY = (node: Element) => Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[1]);
+    const parseHeight = (node: Element) => Number(node.getAttribute("height") ?? 0);
+    const topRailTopEdge = parsePosY(topRail) + parseHeight(topRail) / 2;
+    const headerBottomEdge = parsePosY(headerBg) - parseHeight(headerBg) / 2;
+    expect(headerBottomEdge).toBeGreaterThan(topRailTopEdge);
+
     expect(el.querySelectorAll(".cv-stand-bevel-rail").length).toBeGreaterThanOrEqual(4);
     expect(el.querySelectorAll(".cv-stand-corner-accent").length).toBe(4);
-    expect(el.querySelector(".cv-stand-left-plane")?.hasAttribute("cv-interactive-feedback")).toBe(true);
     for (const sel of [
       ".cv-stand-prev-btn",
       ".cv-stand-next-btn",
@@ -544,9 +569,12 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(el.getAttribute("animation__stand_inspect")).toContain(
       `easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
     );
+    expect(el.getAttribute("animation__stand_inspect")).toContain("to: 1.45 1.92 0");
 
     const controlBar = el.querySelector(".cv-stand-control-bar")!;
     const billboard = el.querySelector(".cv-stand-billboard")!;
+    expect(billboard.getAttribute("rotation")).toBe("-12 0 0");
+    expect(billboard.querySelector("a-plane")?.getAttribute("height")).toBe("0.64");
 
     await vi.advanceTimersByTimeAsync(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS + 10);
     expect(controlBar.getAttribute("animation__panel_in")).toContain(
@@ -564,7 +592,7 @@ describe("cv-media-stand A-Frame Component", () => {
 
     // Return at t = 0 -> plays 250ms exit and hides after 260ms, then rapid re-inspect at t = 100ms cancels stale hide timer
     instance.returnToGallery();
-    expect(el.getAttribute("animation__stand_return")).toContain("to: 3.2 1.6 0");
+    expect(el.getAttribute("animation__stand_return")).toContain("to: 3.2 1.76 0");
     expect(billboard.getAttribute("animation__panel_out")).toContain(
       `dur: ${INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS}`,
     );
@@ -599,6 +627,49 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(billboard.getAttribute("visible")).toBe("false");
     expect(controlBar.getAttribute("visible")).toBe("false");
 
+    instance.remove();
+  });
+
+  it("computes aspect-aware VIDEO badge positions inside media plane bounds", () => {
+    expect(computeVideoBadgePosition(1.5, 0.844)).toEqual({
+      x: 0.54,
+      y: 0.33,
+      z: 0.025,
+    });
+    expect(computeVideoBadgePosition(0.534, 0.95)).toEqual({
+      x: 0.057,
+      y: 0.383,
+      z: 0.025,
+    });
+    expect(computeVideoBadgePosition(0.95, 0.95)).toEqual({
+      x: 0.265,
+      y: 0.383,
+      z: 0.025,
+    });
+  });
+
+  it("mounts non-clickable reticle wake zone inside control bar", () => {
+    const items: StandMediaItem[] = [
+      {
+        id: "img-wake",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza",
+        creatorName: "Autor",
+        description: "Desc",
+        mediaUrl: "https://cdn.example.com/wake.jpg",
+        sortOrder: 0,
+      },
+    ];
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+    });
+    const wakeBand = el.querySelector(".cv-stand-control-bar .cv-stand-reticle-wake");
+    expect(wakeBand).not.toBeNull();
+    expect(wakeBand?.getAttribute("data-reticle-wake")).toBe("true");
+    expect(wakeBand?.classList.contains("clickable")).toBe(false);
+    expect(wakeBand?.getAttribute("material")).toContain("opacity: 0");
     instance.remove();
   });
 });

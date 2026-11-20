@@ -816,6 +816,63 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     screen.unmount();
   });
 
+  it("synchronizes cv-gaze-reticle, a-cursor raycaster, cv-vr-tap-trigger, and cv-touch-raycaster across VR and 2D view modes", () => {
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    cursor.setAttribute("raycaster", "objects: .clickable");
+    cursor.setAttribute("fuse", "true");
+    const reticleSetViewModeSpy = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, unknown>;
+    }).components = {
+      cursor: { data: { fuse: true, rayOrigin: "entity" } },
+      "cv-gaze-reticle": { setViewMode: reticleSetViewModeSpy },
+    };
+    const sky = document.createElement("a-sky");
+    camera.appendChild(cursor);
+    scene.append(camera, sky);
+    document.body.appendChild(scene);
+
+    const appRoot = document.createElement("div");
+    document.body.appendChild(appRoot);
+
+    const screen = new ExperienceScreenView(() => {}, ViewMode.VR);
+    screen.mount(appRoot);
+    screen.show();
+
+    const touchEl = scene.querySelector("#cv-touch-raycaster");
+    expect(touchEl).not.toBeNull();
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: false");
+    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+    expect(reticleSetViewModeSpy).toHaveBeenCalledWith(ViewMode.VR);
+
+    const touchSetEnabledSpy = vi.fn();
+    (touchEl as unknown as {
+      components?: Record<string, { setEnabled?: (enabled: boolean) => void }>;
+    }).components = {
+      "cv-touch-raycaster": { setEnabled: touchSetEnabledSpy },
+    };
+
+    screen.setViewMode(ViewMode.TOUCH_2D);
+    expect(cursor.getAttribute("raycaster")).toBe("objects: none");
+    expect(cursor.getAttribute("fuse")).toBe("false");
+    expect(reticleSetViewModeSpy).toHaveBeenLastCalledWith(ViewMode.TOUCH_2D);
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: true");
+    expect(touchSetEnabledSpy).toHaveBeenCalledWith(true);
+    expect(
+      scene.querySelector("#cv-vr-tap-trigger")?.getAttribute("cv-vr-tap-trigger"),
+    ).toContain("hudToggleEnabled: false");
+
+    screen.setViewMode(ViewMode.VR);
+    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+    expect(cursor.getAttribute("fuse")).toBe("true");
+    expect(reticleSetViewModeSpy).toHaveBeenLastCalledWith(ViewMode.VR);
+    expect(touchSetEnabledSpy).toHaveBeenLastCalledWith(false);
+
+    screen.unmount();
+  });
+
   it("dismisses open 3D HUD when tapping a .clickable target outside HUD_ROOT, while keeping HUD open when tapping PANEL_BACKDROP", () => {
     const scene = document.createElement("a-scene");
     const camera = document.createElement("a-camera");

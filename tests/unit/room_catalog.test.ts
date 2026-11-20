@@ -13,6 +13,7 @@ import {
   getLobbyReturnTarget,
   isValidRoomStand,
 } from "../../src/shared/room-catalog";
+import { ROOM_DEFINITIONS } from "../../src/experience/constants";
 
 describe("Culture Room Catalog & Polar Layout", () => {
   it("defines LOBBY as DEFAULT_ROOM_ID plus all four Nayarit cultural rooms with bidirectional portals", () => {
@@ -154,6 +155,18 @@ describe("Culture Room Catalog & Polar Layout", () => {
       expect(entry.environmentPresetId).toBe(expectedPresets[roomId]);
       expect(entry.skyboxUrl).toBeUndefined();
       expect(entry.skyboxAssetId).toBeUndefined();
+    }
+  });
+
+  it("elevates stand slots to STAND_ELEVATION_M (1.76m) while keeping portals at EYE_HEIGHT_M (1.6m)", () => {
+    expect((ROOM_LAYOUT_TOKENS as Record<string, unknown>).STAND_ELEVATION_M).toBe(1.76);
+    for (const roomDef of Object.values(ROOM_DEFINITIONS)) {
+      for (const stand of roomDef.stands) {
+        expect(stand.position.y).toBe(1.76);
+      }
+      for (const portal of roomDef.portals) {
+        expect(portal.position.y).toBe(1.6);
+      }
     }
   });
 });

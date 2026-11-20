@@ -1,19 +1,29 @@
+import { ViewMode } from "../../navigation/types";
 import {
   INSPECTION_TIMINGS,
+  InspectionState,
   RENDERER_QUALITY_TOKENS,
   RETICLE_TOKENS,
 } from "../constants";
 import {
+  computeReticleDepthTransform,
   computeReticleProgress,
   computeThetaLengthDeg,
   createInitialGazeReticleState,
+  evaluateReticleVisibilityMode,
   resetGazeReticleFuse,
   startGazeReticleFuse,
   type GazeReticleState,
+  type ReticleVisibilityMode,
 } from "../gaze-reticle-state";
+import { getSharedInspectionController } from "./inspectable";
 
 export interface GazeReticleDependencies {
   readonly nowMs?: () => number;
+  readonly getViewMode?: () => string;
+  readonly getInspectionState?: () => InspectionState;
+  readonly getRaycasterIntersection?: () => number | null;
+  readonly getWakeIntersection?: () => number | null;
 }
 
 export interface GazeReticleComponentData {
@@ -21,10 +31,24 @@ export interface GazeReticleComponentData {
   accentColor: string;
 }
 
+interface RaycasterComponentLike {
+  intersections?: Array<{ distance?: number }>;
+  raycaster?: {
+    intersectObjects?: (
+      objects: unknown[],
+      recursive?: boolean,
+    ) => Array<{ distance?: number }>;
+  };
+}
+
 export interface GazeReticleEntity extends HTMLElement {
   object3D?: {
     renderOrder?: number;
     traverse?: (cb: (node: unknown) => void) => void;
+  };
+  sceneEl?: HTMLElement | null;
+  components?: {
+    raycaster?: RaycasterComponentLike;
   };
 }
 
@@ -33,6 +57,9 @@ export interface GazeReticleComponentInstance {
   data: GazeReticleComponentData;
   reticleState: GazeReticleState;
   accentColor: string;
+  viewMode: string;
+  visibilityMode: ReticleVisibilityMode;
+  nonInteractiveSinceMs: number | null;
   containerEl: HTMLElement | null;
   idleDotEl: HTMLElement | null;
   idleHaloEl: HTMLElement | null;
@@ -42,6 +69,7 @@ export interface GazeReticleComponentInstance {
   cleanupListeners: Array<() => void>;
   init: () => void;
   tick: () => void;
+  setViewMode: (viewMode: string) => void;
   setAccentColor: (color: string) => void;
   resetFuse: () => void;
   remove: () => void;
@@ -66,10 +94,83 @@ function buildProgressGeometryAttr(thetaLengthDeg: number): string {
   return `primitive: ring; radiusInner: ${RETICLE_TOKENS.PROGRESS_RING_RADIUS_INNER}; radiusOuter: ${RETICLE_TOKENS.PROGRESS_RING_RADIUS_OUTER}; segmentsTheta: ${RENDERER_QUALITY_TOKENS.CIRCLE_SEGMENTS}; thetaStart: ${RETICLE_TOKENS.PROGRESS_THETA_START_DEG}; thetaLength: ${thetaLengthDeg}`;
 }
 
+function isElementAncestorVisible(el: HTMLElement): boolean {
+  let current: HTMLElement | null = el;
+  while (current) {
+    if (current.getAttribute("visible") === "false") {
+      return false;
+    }
+    const obj = (current as unknown as { object3D?: { visible?: boolean } }).object3D;
+    if (obj && obj.visible === false) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+  return true;
+}
+
+function readDefaultClickableDistance(el: GazeReticleEntity): number | null {
+  const dist = el.components?.raycaster?.intersections?.[0]?.distance;
+  return typeof dist === "number" && Number.isFinite(dist) && dist > 0 ? dist : null;
+}
+
+function readDefaultWakeDistance(el: GazeReticleEntity): number | null {
+  const threeRaycaster = el.components?.raycaster?.raycaster;
+  const root: ParentNode | null = el.sceneEl ?? (typeof document !== "undefined" ? document : null);
+  if (
+    !threeRaycaster ||
+    typeof threeRaycaster.intersectObjects !== "function" ||
+    !root
+  ) {
+    return null;
+  }
+  const wakeNodes = Array.from(
+    root.querySelectorAll("[data-reticle-wake='true']"),
+  ) as GazeReticleEntity[];
+  const wakeObjects: unknown[] = [];
+  for (const node of wakeNodes) {
+    if (node.object3D && isElementAncestorVisible(node)) {
+      wakeObjects.push(node.object3D);
+    }
+  }
+  if (wakeObjects.length === 0) {
+    return null;
+  }
+  const hits = threeRaycaster.intersectObjects(wakeObjects, true);
+  const dist = hits?.[0]?.distance;
+  return typeof dist === "number" && Number.isFinite(dist) && dist > 0 ? dist : null;
+}
+
+function applyVisibilityStyle(
+  instance: GazeReticleComponentInstance,
+  mode: ReticleVisibilityMode,
+): void {
+  const isVisible = mode === "ACTIVE" || mode === "GUIDE";
+  instance.containerEl?.setAttribute("visible", isVisible ? "true" : "false");
+  if (!isVisible) {
+    return;
+  }
+  const dotOpacity = mode === "GUIDE" ? RETICLE_TOKENS.GUIDE_OPACITY : 0.95;
+  const haloOpacity =
+    mode === "GUIDE"
+      ? Number((RETICLE_TOKENS.IDLE_HALO_OPACITY * RETICLE_TOKENS.GUIDE_OPACITY).toFixed(2))
+      : RETICLE_TOKENS.IDLE_HALO_OPACITY;
+  instance.idleDotEl?.setAttribute(
+    "material",
+    `shader: flat; color: ${RETICLE_TOKENS.IDLE_DOT_COLOR}; opacity: ${dotOpacity}; transparent: true; depthTest: false`,
+  );
+  instance.idleHaloEl?.setAttribute(
+    "material",
+    `shader: flat; color: ${RETICLE_TOKENS.IDLE_HALO_COLOR}; opacity: ${haloOpacity}; transparent: true; depthTest: false`,
+  );
+}
+
 export function createGazeReticleComponentDefinition(
   deps: GazeReticleDependencies = {},
 ) {
   const resolveNowMs = deps.nowMs ?? (() => Date.now());
+  const resolveInspectionState =
+    deps.getInspectionState ?? (() => getSharedInspectionController().getState());
 
   return {
     schema: {
@@ -87,12 +188,25 @@ export function createGazeReticleComponentDefinition(
       this.reticleState = createInitialGazeReticleState();
       this.accentColor =
         this.data?.accentColor || RETICLE_TOKENS.DEFAULT_ACCENT_COLOR;
+      this.viewMode = deps.getViewMode ? deps.getViewMode() : ViewMode.VR;
+      this.visibilityMode =
+        this.viewMode === ViewMode.VR ? "ACTIVE" : "HIDDEN";
+      this.nonInteractiveSinceMs = null;
       this.confirmResetTimer = null;
       this.cleanupListeners = [];
 
+      const initialTransform = computeReticleDepthTransform(null);
       const container = document.createElement("a-entity") as GazeReticleEntity;
       container.setAttribute("class", "cv-gaze-reticle-group");
-      container.setAttribute("position", `0 0 ${RETICLE_TOKENS.RING_Z_OFFSET}`);
+      container.setAttribute("position", `0 0 ${initialTransform.z}`);
+      container.setAttribute(
+        "scale",
+        `${initialTransform.scale} ${initialTransform.scale} ${initialTransform.scale}`,
+      );
+      container.setAttribute(
+        "visible",
+        this.visibilityMode === "ACTIVE" ? "true" : "false",
+      );
 
       const idleHalo = document.createElement("a-entity") as GazeReticleEntity;
       idleHalo.setAttribute("class", "cv-reticle-halo");
@@ -238,13 +352,80 @@ export function createGazeReticleComponentDefinition(
       );
     },
 
+    setViewMode: function (
+      this: GazeReticleComponentInstance,
+      viewMode: string,
+    ) {
+      this.viewMode = viewMode;
+      this.nonInteractiveSinceMs = null;
+      if (viewMode !== ViewMode.VR) {
+        this.resetFuse();
+        this.visibilityMode = "HIDDEN";
+        applyVisibilityStyle(this, "HIDDEN");
+        return;
+      }
+      this.visibilityMode = "ACTIVE";
+      applyVisibilityStyle(this, "ACTIVE");
+    },
+
     tick: function (this: GazeReticleComponentInstance) {
+      const now = resolveNowMs();
+      const activeViewMode = deps.getViewMode ? deps.getViewMode() : this.viewMode;
+      const isInspecting =
+        resolveInspectionState() === InspectionState.INSPECTING;
+
+      const clickableDist = deps.getRaycasterIntersection
+        ? deps.getRaycasterIntersection()
+        : readDefaultClickableDistance(this.el);
+      const hasClickableHit = clickableDist !== null;
+
+      let wakeDist: number | null = null;
+      if (activeViewMode === ViewMode.VR && isInspecting && !hasClickableHit) {
+        wakeDist = deps.getWakeIntersection
+          ? deps.getWakeIntersection()
+          : readDefaultWakeDistance(this.el);
+      }
+      const hasWakeZoneHit = wakeDist !== null;
+
+      if (isInspecting && !hasClickableHit && !hasWakeZoneHit && !this.reticleState.isFusing) {
+        if (this.nonInteractiveSinceMs === null) {
+          this.nonInteractiveSinceMs = now;
+        }
+      } else {
+        this.nonInteractiveSinceMs = null;
+      }
+
+      const nextVisibilityMode = evaluateReticleVisibilityMode({
+        viewMode: activeViewMode,
+        isInspecting,
+        hasClickableHit,
+        hasWakeZoneHit,
+        isFusing: this.reticleState.isFusing,
+        nonInteractiveSinceMs: this.nonInteractiveSinceMs,
+        nowMs: now,
+      });
+
+      if (nextVisibilityMode !== this.visibilityMode) {
+        this.visibilityMode = nextVisibilityMode;
+        applyVisibilityStyle(this, nextVisibilityMode);
+      }
+
+      if (this.containerEl) {
+        const hitDist = hasClickableHit ? clickableDist : wakeDist;
+        const depthTransform = computeReticleDepthTransform(hitDist);
+        this.containerEl.setAttribute("position", `0 0 ${depthTransform.z}`);
+        this.containerEl.setAttribute(
+          "scale",
+          `${depthTransform.scale} ${depthTransform.scale} ${depthTransform.scale}`,
+        );
+      }
+
       if (!this.reticleState.isFusing || !this.progressRingEl) {
         return;
       }
       const fuseTimeoutMs =
         this.data?.fuseTimeout || INSPECTION_TIMINGS.FUSE_TIMEOUT_MS;
-      const elapsedMs = resolveNowMs() - this.reticleState.fuseStartMs;
+      const elapsedMs = now - this.reticleState.fuseStartMs;
       const progress = computeReticleProgress(elapsedMs, fuseTimeoutMs);
       if (
         Math.abs(progress - this.reticleState.lastProgress) <

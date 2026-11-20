@@ -229,6 +229,64 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
   });
 
+  it("preserves 2D pointer mode across transitionToRoom fadeIn without re-enabling gaze cursor", async () => {
+    screen.setViewMode("2d");
+    screen.mount(container);
+    screen.show();
+
+    const curtainEl = camera.querySelector(
+      `#${CAMERA_CURTAIN_ID}`,
+    ) as HTMLElement & {
+      components?: Record<
+        string,
+        {
+          fadeOut: (cb?: () => void) => void;
+          fadeIn: (cb?: () => void) => void;
+        }
+      >;
+    };
+    let finishFadeOut!: () => void;
+    let finishFadeIn!: () => void;
+    curtainEl.components = {
+      "cv-camera-curtain": {
+        fadeOut: (cb) => {
+          finishFadeOut = cb!;
+        },
+        fadeIn: (cb) => {
+          finishFadeIn = cb!;
+        },
+      },
+    };
+
+    const reticleSetViewMode = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, unknown>;
+    }).components = {
+      "cv-gaze-reticle": {
+        setAccentColor: vi.fn(),
+        setViewMode: reticleSetViewMode,
+      },
+    };
+
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
+    const touchEl = scene.querySelector("#cv-touch-raycaster");
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: false");
+
+    finishFadeOut();
+    await vi.waitFor(() => {
+      expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    });
+
+    finishFadeIn();
+    expect(screen.getTransitionStateMachine().getState()).toBe(
+      RoomTransitionState.IDLE,
+    );
+    expect(cursor.getAttribute("raycaster")).toBe("objects: none");
+    expect(cursor.getAttribute("fuse")).toBe("false");
+    expect(reticleSetViewMode).toHaveBeenLastCalledWith("2d");
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: true");
+  });
+
   it("ignores cv-portal-activated events missing targetRoomId", () => {
     screen.mount(container);
     screen.show();

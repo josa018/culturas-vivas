@@ -1,4 +1,8 @@
-import { computeClampedPixelRatio, isMobileUserAgent } from "../renderer-quality";
+import {
+  computeClampedPixelRatio,
+  computeXrFramebufferScaleFactor,
+  isMobileUserAgent,
+} from "../renderer-quality";
 
 export interface RendererQualityDependencies {
   readonly getDevicePixelRatio?: () => number;
@@ -8,19 +12,26 @@ export interface RendererQualityDependencies {
 export interface RendererQualitySceneElement extends HTMLElement {
   renderer?: {
     setPixelRatio?: (pixelRatio: number) => void;
+    xr?: {
+      setFramebufferScaleFactor?: (scale: number) => void;
+    };
   };
 }
 
 export interface RendererQualityComponentInstance {
   el: RendererQualitySceneElement;
   renderStartHandler: (() => void) | null;
+  enterVrHandler: (() => void) | null;
+  exitVrHandler: (() => void) | null;
   init: () => void;
   applyPixelRatio: () => void;
+  applyXrFramebufferScale: () => void;
   remove: () => void;
 }
 
 /**
- * Composable A-Frame scene component that clamps WebGL pixel ratio on mobile VR.
+ * Composable A-Frame scene component that clamps WebGL pixel ratio and WebXR
+ * framebuffer scale across 2D and VR lifecycles.
  */
 export function createRendererQualityComponentDefinition(
   deps: RendererQualityDependencies = {},
@@ -39,8 +50,16 @@ export function createRendererQualityComponentDefinition(
       this.renderStartHandler = () => {
         this.applyPixelRatio();
       };
+      this.enterVrHandler = () => {
+        this.applyXrFramebufferScale();
+      };
+      this.exitVrHandler = () => {
+        this.applyPixelRatio();
+      };
       this.applyPixelRatio();
       this.el.addEventListener?.("renderstart", this.renderStartHandler);
+      this.el.addEventListener?.("enter-vr", this.enterVrHandler);
+      this.el.addEventListener?.("exit-vr", this.exitVrHandler);
     },
 
     applyPixelRatio: function (this: RendererQualityComponentInstance) {
@@ -48,10 +67,26 @@ export function createRendererQualityComponentDefinition(
       this.el.renderer?.setPixelRatio?.(targetDpr);
     },
 
+    applyXrFramebufferScale: function (this: RendererQualityComponentInstance) {
+      const targetScale = computeXrFramebufferScaleFactor(
+        resolveDpr(),
+        resolveMobile(),
+      );
+      this.el.renderer?.xr?.setFramebufferScaleFactor?.(targetScale);
+    },
+
     remove: function (this: RendererQualityComponentInstance) {
       if (this.renderStartHandler) {
         this.el.removeEventListener?.("renderstart", this.renderStartHandler);
         this.renderStartHandler = null;
+      }
+      if (this.enterVrHandler) {
+        this.el.removeEventListener?.("enter-vr", this.enterVrHandler);
+        this.enterVrHandler = null;
+      }
+      if (this.exitVrHandler) {
+        this.el.removeEventListener?.("exit-vr", this.exitVrHandler);
+        this.exitVrHandler = null;
       }
     },
   };

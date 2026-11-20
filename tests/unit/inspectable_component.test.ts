@@ -72,7 +72,8 @@ describe("A-Frame Inspectable Component", () => {
     expect(instance.state).toBe(InspectionState.IDLE);
     expect(instance.galleryPosition).toEqual({ x: 2, y: 1.6, z: -2 });
     expect(instance.billboardEl?.getAttribute("visible")).toBe("false");
-    expect(instance.billboardEl?.getAttribute("position")).toBe("0 -0.925 0");
+    expect(instance.billboardEl?.getAttribute("position")).toBe("0 -0.9 0.08");
+    expect(instance.billboardEl?.getAttribute("rotation")).toBe("-12 0 0");
     expect(instance.billboardEl?.getAttribute("scale")).toBe("0.001 0.001 0.001");
 
     const titleText = instance.billboardEl?.querySelector("[cv-canvas-text]");
@@ -81,6 +82,12 @@ describe("A-Frame Inspectable Component", () => {
     expect(titleText?.getAttribute("width")).toBe(
       String(EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH),
     );
+    expect(titleText?.getAttribute("cv-canvas-text")).toContain("paddingY: 12");
+    expect(titleText?.getAttribute("cv-canvas-text")).toContain("canvasHeight: 112");
+    const billboardPlane = instance.billboardEl?.querySelector("a-plane");
+    const billboardPosY = Number((instance.billboardEl?.getAttribute("position") ?? "0 0 0").split(/\s+/)[1]);
+    const billboardH = Number(billboardPlane?.getAttribute("height") ?? 0);
+    expect(billboardPosY + billboardH / 2).toBeLessThanOrEqual(-(EXHIBIT_DIMENSIONS.PLANE_HEIGHT / 2 + 0.04));
     expect(instance.billboardEl?.querySelector("a-text")).toBeNull();
     expect(instance.returnBtnEl?.getAttribute("geometry")).toContain(
       "segments: 48",
@@ -101,7 +108,7 @@ describe("A-Frame Inspectable Component", () => {
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
     instance.data = {
       id: "test-statue",
-      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      focalDistance: 1.4,
       autoRotate: true,
       rotationSpeed: 0.02,
       title: "Estatua 3D",
@@ -115,17 +122,17 @@ describe("A-Frame Inspectable Component", () => {
     expect(instance.state).toBe(InspectionState.INSPECTING);
     expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
     expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
-    expect(mockEl.getAttribute("position")).toBe("0 1.507 -1.297");
+    expect(mockEl.getAttribute("position")).toBe("0 1.78 -1.4");
 
     const inspectAnim = mockEl.getAttribute("animation__inspect");
     expect(inspectAnim).toContain(
       `dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`,
     );
     expect(inspectAnim).toContain("from: 0 1.4 -2.8");
-    expect(inspectAnim).toContain("to: 0 1.507 -1.297");
+    expect(inspectAnim).toContain("to: 0 1.78 -1.4");
 
     // Pedestal counter-translation keeps pedestal anchored in gallery space
-    expect(pedestal.getAttribute("position")).toBe("0 -0.507 -1.503");
+    expect(pedestal.getAttribute("position")).toBe("0 -0.78 -1.4");
 
     instance.tick(0, 16);
     expect(mockEl.object3D.rotation.y).toBe(0.02);
@@ -147,7 +154,7 @@ describe("A-Frame Inspectable Component", () => {
     instance.el = mockEl as unknown as InspectableComponentInstance["el"];
     instance.data = {
       id: "exhibit-statue-3d",
-      focalDistance: FOCAL_INSPECTION_DISTANCE,
+      focalDistance: 1.4,
       autoRotate: false,
       rotationSpeed: 0,
       title: "Estatua",
@@ -161,7 +168,7 @@ describe("A-Frame Inspectable Component", () => {
     // Position is deferred until animationcomplete__inspect fires
     expect(mockEl.getAttribute("position")).toBe("0 1.4 -2.8");
     mockEl.dispatchEvent(new Event("animationcomplete__inspect"));
-    expect(mockEl.getAttribute("position")).toBe("0 1.507 -1.297");
+    expect(mockEl.getAttribute("position")).toBe("0 1.78 -1.4");
 
     instance.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_in"));
     expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
@@ -299,7 +306,7 @@ describe("A-Frame Inspectable Component", () => {
 
     instB.inspect();
     expect(instB.state).toBe(InspectionState.INSPECTING);
-    expect(elB.getAttribute("position")).toBe("0.919 1.6 -0.919");
+    expect(elB.getAttribute("position")).toBe("0.919 1.78 -0.919");
     expect(instA.state).toBe(InspectionState.IDLE);
     expect(elA.getAttribute("position")).toBe("0 1.4 -2.8");
     expect(instA.billboardEl?.getAttribute("visible")).toBe("false");

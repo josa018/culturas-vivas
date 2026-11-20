@@ -53,7 +53,7 @@
       embedded
       control-sensores-qa
       cv-renderer-quality
-      renderer="antialias: true; anisotropy: 4; alpha: false; colorManagement: true; toneMapping: ACESFilmic; exposure: 1.05"
+      renderer="antialias: true; anisotropy: 4; alpha: false; colorManagement: true; toneMapping: ACESFilmic; exposure: 1.05; foveationLevel: 0"
       shadow="type: pcf; autoUpdate: false"
       loading-screen="enabled: false"
       vr-mode-ui="enabled: false"
@@ -62,9 +62,10 @@
     >
       <a-assets timeout="10000"></a-assets>
 
-      <a-camera position="0 1.6 0">
+      <a-camera position="0 1.6 0" near="0.1" far="80">
         <a-cursor
           cv-gaze-reticle
+          position="0 0 0"
           material="opacity: 0; transparent: true"
           geometry="primitive: ring; radiusInner: 0.001; radiusOuter: 0.002"
           fuse="true"

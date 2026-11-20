@@ -4,9 +4,14 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   CURTAIN_RENDER_ORDER,
   INSPECTION_TIMINGS,
+  InspectionState,
   RETICLE_TOKENS,
 } from "../../src/experience/constants";
-import { computeReticleProgress } from "../../src/experience/gaze-reticle-state";
+import {
+  computeReticleDepthTransform,
+  computeReticleProgress,
+  evaluateReticleVisibilityMode,
+} from "../../src/experience/gaze-reticle-state";
 import {
   createGazeReticleComponentDefinition,
   registerGazeReticleComponent,
@@ -147,8 +152,177 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
     instance.remove();
   });
 
-  it("index.html attaches cv-gaze-reticle to a-cursor", () => {
+  it("index.html attaches cv-gaze-reticle to a-cursor with origin position 0 0 0", () => {
     const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
     expect(html).toContain("cv-gaze-reticle");
+    expect(html).toMatch(/<a-cursor[^>]*position="0 0 0"/);
+  });
+
+  it("updates reticle group depth/scale dynamically and applies Cinema Mode auto-hide and wake transitions in tick()", () => {
+    (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
+      registerComponent: vi.fn(),
+      components: {},
+    };
+    let now = 1000;
+    let inspectionState: InspectionState = InspectionState.IDLE;
+    let clickableDistance: number | null = 1.43;
+    let wakeDistance: number | null = null;
+
+    const cursorEl = document.createElement("a-cursor") as unknown as GazeReticleEntity;
+    const def = createGazeReticleComponentDefinition({
+      nowMs: () => now,
+      getInspectionState: () => inspectionState,
+      getRaycasterIntersection: () => clickableDistance,
+      getWakeIntersection: () => wakeDistance,
+    });
+    const instance = Object.create(def) as GazeReticleComponentInstance;
+    instance.el = cursorEl;
+    instance.data = {
+      fuseTimeout: INSPECTION_TIMINGS.FUSE_TIMEOUT_MS,
+      accentColor: RETICLE_TOKENS.DEFAULT_ACCENT_COLOR,
+    };
+    instance.init();
+
+    // Gallery surface hit -> 1.43 - 0.02 = 1.41 m
+    instance.tick();
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.containerEl?.getAttribute("position")).toBe("0 0 -1.41");
+    expect(instance.containerEl?.getAttribute("scale")).toBe("1.41 1.41 1.41");
+
+    // Enter inspection over video without hitting clickable or wake zone
+    inspectionState = InspectionState.INSPECTING;
+    clickableDistance = null;
+    wakeDistance = null;
+    now = 1100;
+    instance.tick();
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.containerEl?.getAttribute("position")).toBe(
+      `0 0 -${RETICLE_TOKENS.REST_DEPTH_M}`,
+    );
+
+    // After 300ms -> Cinema Mode hides reticle
+    now = 1400;
+    instance.tick();
+    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+
+    // Hover wake band near control bar -> immediately wakes as GUIDE
+    wakeDistance = 1.47;
+    now = 1450;
+    instance.tick();
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.containerEl?.getAttribute("position")).toBe("0 0 -1.45");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain(
+      `opacity: ${RETICLE_TOKENS.GUIDE_OPACITY}`,
+    );
+
+    // Hover actual button -> ACTIVE full opacity
+    clickableDistance = 1.44;
+    wakeDistance = null;
+    now = 1500;
+    instance.tick();
+    expect(instance.idleDotEl?.getAttribute("material")).toContain("opacity: 0.95");
+
+    // Switching to 2D hides reticle immediately
+    instance.setViewMode("2d");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+
+    instance.remove();
+  });
+
+  it("computes surface-conforming reticle depth, negative z offset, and constant angular scale", () => {
+    expect(computeReticleDepthTransform(1.43)).toEqual({
+      depthM: 1.41,
+      z: -1.41,
+      scale: 1.41,
+    });
+    expect(computeReticleDepthTransform(null)).toEqual({
+      depthM: RETICLE_TOKENS.REST_DEPTH_M,
+      z: -RETICLE_TOKENS.REST_DEPTH_M,
+      scale: RETICLE_TOKENS.REST_DEPTH_M,
+    });
+    expect(computeReticleDepthTransform(0.3)).toEqual({
+      depthM: RETICLE_TOKENS.MIN_DEPTH_M,
+      z: -RETICLE_TOKENS.MIN_DEPTH_M,
+      scale: RETICLE_TOKENS.MIN_DEPTH_M,
+    });
+    expect(computeReticleDepthTransform(8.2)).toEqual({
+      depthM: RETICLE_TOKENS.MAX_DEPTH_M,
+      z: -RETICLE_TOKENS.MAX_DEPTH_M,
+      scale: RETICLE_TOKENS.MAX_DEPTH_M,
+    });
+  });
+
+  it("evaluates Cinema Mode visibility states across 2D, browsing, control wake zone, and 300ms delay", () => {
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "2d",
+        isInspecting: false,
+        hasClickableHit: true,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: null,
+        nowMs: 1000,
+      }),
+    ).toBe("HIDDEN");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: null,
+        nowMs: 1000,
+      }),
+    ).toBe("ACTIVE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: true,
+        hasClickableHit: true,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 500,
+        nowMs: 1500,
+      }),
+    ).toBe("ACTIVE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: true,
+        hasClickableHit: false,
+        hasWakeZoneHit: true,
+        isFusing: false,
+        nonInteractiveSinceMs: 500,
+        nowMs: 1500,
+      }),
+    ).toBe("GUIDE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: true,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1200,
+      }),
+    ).toBe("GUIDE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: true,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1300,
+      }),
+    ).toBe("CINEMA_HIDDEN");
   });
 });

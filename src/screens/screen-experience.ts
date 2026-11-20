@@ -1,4 +1,5 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
+import { ViewMode } from "../navigation/types";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
@@ -14,10 +15,16 @@ import {
 } from "../experience/components/portal-waypoint";
 import {
   DEFAULT_ROOM_ID,
+  RETICLE_TOKENS,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../experience/constants";
+import type { GazeReticleComponentInstance } from "../experience/components/gaze-reticle";
+import {
+  ensureTouchRaycaster,
+  type TouchRaycasterComponentInstance,
+} from "../experience/components/touch-raycaster";
 import { getSharedInspectionController } from "../experience/components/inspectable";
 import {
   ensureVrHologramHud,
@@ -327,10 +334,20 @@ export class ExperienceScreenView implements ScreenView {
     )?.components?.["cv-vr-tap-trigger"];
     tapComp?.setTransitionIdle(false);
 
-    // 2. Lock cursor raycaster during transition to prevent interaction glitches
+    // 2. Lock gaze & touch raycasters during transition to prevent interaction glitches
     const cursor = scene.querySelector("a-cursor");
     if (cursor) {
       cursor.setAttribute("raycaster", "objects: none");
+    }
+    const touchEl = scene.querySelector(`#${RETICLE_TOKENS.TOUCH_RAYCASTER_ID}`);
+    if (touchEl) {
+      touchEl.setAttribute("cv-touch-raycaster", "enabled: false");
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(false);
     }
 
     // 3. Ensure camera curtain exists on active camera
@@ -351,9 +368,7 @@ export class ExperienceScreenView implements ScreenView {
         curtain.fadeIn(() => {
           this.transitionStateMachine.notifyFadeInComplete();
           tapComp?.setTransitionIdle(true);
-          if (cursor) {
-            cursor.setAttribute("raycaster", "objects: .clickable");
-          }
+          this.synchronizePointerMode(scene);
         });
       };
 
@@ -400,9 +415,7 @@ export class ExperienceScreenView implements ScreenView {
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
       tapComp?.setTransitionIdle(true);
-      if (cursor) {
-        cursor.setAttribute("raycaster", "objects: .clickable");
-      }
+      this.synchronizePointerMode(scene);
     }
 
     return true;
@@ -756,6 +769,66 @@ export class ExperienceScreenView implements ScreenView {
         this.transitionStateMachine.getState() === RoomTransitionState.IDLE,
       );
     }
+
+    this.synchronizePointerMode(scene);
+  }
+
+  private synchronizePointerMode(scene: AFrameSceneElement): void {
+    const isVr = this.viewMode === ViewMode.VR;
+    const isTransitionIdle =
+      this.transitionStateMachine.getState() === RoomTransitionState.IDLE;
+
+    const cursor = scene.querySelector("a-cursor");
+    if (cursor) {
+      cursor.setAttribute(
+        "raycaster",
+        isVr && isTransitionIdle ? "objects: .clickable" : "objects: none",
+      );
+      cursor.setAttribute("fuse", isVr ? "true" : "false");
+      const reticleComp = (
+        cursor as unknown as {
+          components?: Record<string, GazeReticleComponentInstance>;
+        }
+      ).components?.["cv-gaze-reticle"];
+      reticleComp?.setViewMode?.(this.viewMode);
+    }
+
+    const touchEl = ensureTouchRaycaster(scene);
+    if (touchEl) {
+      const enableTouch = !isVr && isTransitionIdle;
+      touchEl.setAttribute("cv-touch-raycaster", `enabled: ${enableTouch}`);
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(enableTouch);
+    }
+  }
+
+  private disablePointerMode(scene: AFrameSceneElement): void {
+    const cursor = scene.querySelector("a-cursor");
+    if (cursor) {
+      cursor.setAttribute("raycaster", "objects: none");
+      cursor.setAttribute("fuse", "false");
+      const reticleComp = (
+        cursor as unknown as {
+          components?: Record<string, GazeReticleComponentInstance>;
+        }
+      ).components?.["cv-gaze-reticle"];
+      reticleComp?.setViewMode?.(ViewMode.TOUCH_2D);
+    }
+
+    const touchEl = scene.querySelector(`#${RETICLE_TOKENS.TOUCH_RAYCASTER_ID}`);
+    if (touchEl) {
+      touchEl.setAttribute("cv-touch-raycaster", "enabled: false");
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(false);
+    }
   }
 
   private disableSpatialHud(scene: AFrameSceneElement): void {
@@ -784,6 +857,8 @@ export class ExperienceScreenView implements ScreenView {
       ).components?.["cv-vr-tap-trigger"];
       tapComp?.setHudToggleEnabled(false);
     }
+
+    this.disablePointerMode(scene);
   }
 
   private sanitize2DViewport(scene: AFrameSceneElement): void {

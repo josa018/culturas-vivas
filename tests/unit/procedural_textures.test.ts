@@ -23,6 +23,7 @@ function createMockTextureDeps() {
     ProceduralTextureLike & { dispose: ReturnType<typeof vi.fn> }
   > = [];
 
+  const lineWidthsOnStroke: number[] = [];
   const mockCtx: ProceduralCanvasContext2DLike = {
     fillStyle: "#000000",
     strokeStyle: "#ffffff",
@@ -30,7 +31,9 @@ function createMockTextureDeps() {
     globalAlpha: 1,
     clearRect: vi.fn(),
     fillRect: vi.fn(),
-    strokeRect: vi.fn(),
+    strokeRect: vi.fn(() => {
+      lineWidthsOnStroke.push(mockCtx.lineWidth);
+    }),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -56,13 +59,19 @@ function createMockTextureDeps() {
       } as unknown as HTMLCanvasElement;
     },
     createTexture: (canvas: HTMLCanvasElement): ProceduralTextureLike => {
-      const tex: ProceduralTextureLike & { dispose: ReturnType<typeof vi.fn> } = {
+      const tex: ProceduralTextureLike & {
+        dispose: ReturnType<typeof vi.fn>;
+        minFilter?: number;
+        magFilter?: number;
+      } = {
         image: { width: canvas.width, height: canvas.height },
         wrapS: 0,
         wrapT: 0,
         repeat: { set: vi.fn() },
         anisotropy: 1,
         generateMipmaps: false,
+        minFilter: 0,
+        magFilter: 0,
         needsUpdate: false,
         colorSpace: "",
         dispose: vi.fn(),
@@ -72,10 +81,12 @@ function createMockTextureDeps() {
     },
     repeatWrapping: 1000,
     clampToEdgeWrapping: 1001,
+    linearMipmapLinearFilter: 1008,
+    linearFilter: 1006,
     srgbColorSpace: "srgb",
   };
 
-  return { deps, createdCanvases, createdTextures, mockCtx };
+  return { deps, createdCanvases, createdTextures, mockCtx, lineWidthsOnStroke };
 }
 
 describe("Procedural Canvas Textures & Room Environment Presets", () => {
@@ -158,5 +169,32 @@ describe("Procedural Canvas Textures & Room Environment Presets", () => {
     expect(skyTops.size).toBe(5);
     expect(fogColors.size).toBe(5);
     expect(createdTextures.length).toBe(20);
+  });
+
+  it("fills WOVEN_FAJA across full tile height, enforces trilinear mipmap filters, and widens grout strokes", () => {
+    const { deps, mockCtx, lineWidthsOnStroke } = createMockTextureDeps();
+
+    const fajaTex = createProceduralTexture(
+      PROCEDURAL_TEXTURE_KIND.WOVEN_FAJA,
+      "#D99B26",
+      deps,
+    ) as ProceduralTextureLike & { minFilter?: number; magFilter?: number };
+    expect(mockCtx.fillRect).toHaveBeenCalledWith(
+      0,
+      0,
+      PROCEDURAL_TEXTURE_TOKENS.TILE_SIZE_PX,
+      PROCEDURAL_TEXTURE_TOKENS.TILE_SIZE_PX,
+    );
+    expect(fajaTex.minFilter).toBe(1008);
+    expect(fajaTex.magFilter).toBe(1006);
+
+    lineWidthsOnStroke.length = 0;
+    createProceduralTexture(PROCEDURAL_TEXTURE_KIND.STONE_BASALT, "#D99B26", deps);
+    expect(lineWidthsOnStroke.length).toBeGreaterThan(0);
+    for (const lw of lineWidthsOnStroke) {
+      expect(lw).toBeGreaterThanOrEqual(
+        PROCEDURAL_TEXTURE_TOKENS.MIN_GROUT_LINE_WIDTH_PX,
+      );
+    }
   });
 });

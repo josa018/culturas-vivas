@@ -1,12 +1,17 @@
 import { computeContainDimensions } from "../aspect-ratio";
+import { computeVideoBadgePosition } from "../media-stand-layout";
 import {
   EXHIBIT_DICTIONARY,
+  INSPECTION_TARGET_TOKENS,
   INSPECTION_TIMINGS,
   InspectionState,
+  ROOM_CENTER_COORDINATE,
+  ROOM_LAYOUT_TOKENS,
   SHARED_VIDEO_ELEMENT_ID,
   STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
   STAND_DIMENSIONS,
+  STATION_ARCHITECTURE_TOKENS,
   type Vector3D,
 } from "../constants";
 import { type ExhibitInspectionController } from "../inspection-controller";
@@ -30,7 +35,7 @@ const STAND_VISUAL_TOKENS = {
   CONTROL_BG_COLOR: "#1e293b",
   CONTROL_TEXT_COLOR: "#f8fafc",
   COUNTER_TEXT_COLOR: "#cbd5e1",
-  HEADER_OFFSET_Y: 0.65,
+  HEADER_OFFSET_Y: 0.74,
   CONTROL_BTN_STEP_X: 0.24,
   PREV_BTN_X: -0.42,
   COUNTER_X: -0.18,
@@ -38,9 +43,9 @@ const STAND_VISUAL_TOKENS = {
   PLAY_BTN_X: 0.3,
   MUTE_BTN_X: 0.5,
   CLOSE_BTN_X: 0.72,
-  VIDEO_BADGE_POS: "0.56 0.40 0.03",
-  COUNT_BADGE_POS: "0 0.575 0.03",
-  HEADER_TEXT_POS: "0 0.70 0.03",
+  COUNT_BADGE_POS: "0 0.675 0.03",
+  HEADER_TEXT_POS: "0 0.79 0.03",
+  MEDIA_GROUP_POS: "0 0 0.01",
   ROTATION_RAD_TO_DEG: 180 / Math.PI,
 } as const;
 
@@ -99,6 +104,7 @@ interface StandDomElements {
   headerBg: HTMLElement;
   headerText: HTMLElement;
   countBadge: HTMLElement;
+  mediaGroup: HTMLElement;
   videoBadge: HTMLElement;
   emptyPlaceholder: HTMLElement;
   leftPlane: HTMLElement;
@@ -313,6 +319,10 @@ function buildStandDom(
     position: STAND_VISUAL_TOKENS.COUNT_BADGE_POS,
   });
 
+  const initialBadgePos = computeVideoBadgePosition(
+    STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M,
+    STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M,
+  );
   const videoBadge = createCanvasTextPlane({
     className: "cv-stand-video-badge",
     value: STAND_DICTIONARY.VIDEO_BADGE,
@@ -320,15 +330,15 @@ function buildStandDom(
     baseline: "middle",
     color: accentColor,
     backgroundColor: STAND_VISUAL_TOKENS.SURFACE_COLOR,
-    width: 0.34,
-    height: 0.105,
+    width: STAND_DIMENSIONS.VIDEO_BADGE_WIDTH_M,
+    height: STAND_DIMENSIONS.VIDEO_BADGE_HEIGHT_M,
     fontSizePx: 40,
     fontWeight: "700",
     canvasWidth: 224,
     canvasHeight: 68,
     maxLines: 1,
     paddingY: 6,
-    position: STAND_VISUAL_TOKENS.VIDEO_BADGE_POS,
+    position: `${initialBadgePos.x} ${initialBadgePos.y} ${initialBadgePos.z}`,
     visible: "false",
   });
 
@@ -349,12 +359,16 @@ function buildStandDom(
     visible: "false",
   });
 
+  const mediaGroup = document.createElement("a-entity");
+  mediaGroup.setAttribute("class", "cv-stand-media-group");
+  mediaGroup.setAttribute("position", STAND_VISUAL_TOKENS.MEDIA_GROUP_POS);
+  mediaGroup.setAttribute("cv-interactive-feedback", "hoverScale: 1.03; hoverZLift: 0.02");
+
   const leftPlane = document.createElement("a-plane");
   leftPlane.setAttribute("class", "cv-stand-left-plane");
-  leftPlane.setAttribute("cv-interactive-feedback", "hoverScale: 1.03; hoverZLift: 0.02");
   leftPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
   leftPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  leftPlane.setAttribute("position", "0 0 0.01");
+  leftPlane.setAttribute("position", "0 0 0");
   leftPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
   leftPlane.setAttribute(
     "material",
@@ -366,13 +380,15 @@ function buildStandDom(
   rightPlane.setAttribute("class", "cv-stand-right-plane");
   rightPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
   rightPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  rightPlane.setAttribute("position", "0 0 0.01");
+  rightPlane.setAttribute("position", "0 0 0");
   rightPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
   rightPlane.setAttribute(
     "material",
     `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
   );
   rightPlane.setAttribute("visible", "false");
+
+  mediaGroup.append(leftPlane, rightPlane, videoBadge);
 
   const controlBar = document.createElement("a-entity");
   controlBar.setAttribute("class", "cv-stand-control-bar");
@@ -431,11 +447,47 @@ function buildStandDom(
     STAND_VISUAL_TOKENS.CONTROL_TEXT_COLOR,
   );
 
-  controlBar.append(prevBtn, counterText, nextBtn, playBtn, muteBtn, closeBtn);
+  const reticleWakeBand = document.createElement("a-plane");
+  reticleWakeBand.setAttribute("class", "cv-stand-reticle-wake");
+  reticleWakeBand.setAttribute("data-reticle-wake", "true");
+  reticleWakeBand.setAttribute(
+    "width",
+    String(
+      STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M +
+        STAND_DIMENSIONS.FRAME_PADDING_M * 2 +
+        STAND_DIMENSIONS.RETICLE_WAKE_PAD_X_M,
+    ),
+  );
+  reticleWakeBand.setAttribute(
+    "height",
+    String(STAND_DIMENSIONS.RETICLE_WAKE_HEIGHT_M),
+  );
+  reticleWakeBand.setAttribute(
+    "position",
+    `0 0 ${STAND_DIMENSIONS.RETICLE_WAKE_Z_OFFSET_M}`,
+  );
+  reticleWakeBand.setAttribute(
+    "material",
+    "shader: flat; opacity: 0; transparent: true; depthWrite: false",
+  );
+
+  controlBar.append(
+    reticleWakeBand,
+    prevBtn,
+    counterText,
+    nextBtn,
+    playBtn,
+    muteBtn,
+    closeBtn,
+  );
 
   const billboard = document.createElement("a-entity");
   billboard.setAttribute("class", "cv-stand-billboard");
-  billboard.setAttribute("position", `0 ${STAND_DIMENSIONS.BILLBOARD_OFFSET_Y} 0.02`);
+  billboard.setAttribute("position", `0 ${STAND_DIMENSIONS.BILLBOARD_OFFSET_Y} 0.06`);
+  billboard.setAttribute(
+    "rotation",
+    `${INSPECTION_TARGET_TOKENS.BILLBOARD_TILT_X_DEG} 0 0`,
+  );
   billboard.setAttribute("visible", "false");
 
   const billboardBg = document.createElement("a-plane");
@@ -451,15 +503,15 @@ function buildStandDom(
     baseline: "top",
     color: accentColor,
     width: 1.5,
-    height: 0.18,
-    fontSizePx: 48,
+    height: 0.16,
+    fontSizePx: 40,
     fontWeight: "700",
     canvasWidth: 960,
-    canvasHeight: 116,
+    canvasHeight: 112,
     maxLines: 2,
     paddingX: 20,
-    paddingY: 8,
-    position: "0 0.28 0.03",
+    paddingY: 12,
+    position: "0 0.22 0.03",
   });
 
   const billboardCreator = createCanvasTextPlane({
@@ -469,14 +521,14 @@ function buildStandDom(
     baseline: "top",
     color: STAND_VISUAL_TOKENS.TEXT_MUTED,
     width: 1.5,
-    height: 0.14,
-    fontSizePx: 36,
+    height: 0.11,
+    fontSizePx: 32,
     fontWeight: "600",
     canvasWidth: 960,
-    canvasHeight: 90,
+    canvasHeight: 84,
     maxLines: 2,
     paddingX: 20,
-    paddingY: 6,
+    paddingY: 8,
     position: "0 0.08 0.035",
     visible: "false",
   });
@@ -488,15 +540,15 @@ function buildStandDom(
     baseline: "top",
     color: STAND_VISUAL_TOKENS.TEXT_PRIMARY,
     width: 1.5,
-    height: 0.36,
+    height: 0.29,
     fontSizePx: 34,
     fontWeight: "400",
     canvasWidth: 960,
-    canvasHeight: 230,
+    canvasHeight: 212,
     maxLines: 5,
     paddingX: 20,
-    paddingY: 8,
-    position: "0 -0.18 0.04",
+    paddingY: 10,
+    position: "0 -0.15 0.04",
   });
 
   billboard.append(billboardBg, billboardTitle, billboardCreator, billboardDesc);
@@ -504,7 +556,14 @@ function buildStandDom(
   const contactShadow = createContactShadowDecal({
     width: 1.35,
     depth: 0.72,
-    yOffset: -1.58,
+    yOffset: Number(
+      (
+        -(
+          ROOM_LAYOUT_TOKENS.STAND_ELEVATION_M -
+          STATION_ARCHITECTURE_TOKENS.CONTACT_SHADOW_CLEARANCE_M
+        )
+      ).toFixed(2),
+    ),
   });
 
   root.replaceChildren(
@@ -517,10 +576,8 @@ function buildStandDom(
     headerBg,
     headerText,
     countBadge,
-    videoBadge,
     emptyPlaceholder,
-    leftPlane,
-    rightPlane,
+    mediaGroup,
     controlBar,
     billboard,
     contactShadow,
@@ -531,6 +588,7 @@ function buildStandDom(
     headerBg,
     headerText,
     countBadge,
+    mediaGroup,
     videoBadge,
     emptyPlaceholder,
     leftPlane,
@@ -656,6 +714,12 @@ export function createMediaStandComponentDefinition(
       STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M,
     );
 
+    const badgePos = computeVideoBadgePosition(dims.width, dims.height);
+    els.videoBadge.setAttribute(
+      "position",
+      `${badgePos.x} ${badgePos.y} ${badgePos.z}`,
+    );
+
     const stereoLeft = `eye: LEFT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
     const stereoRight = `eye: RIGHT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
 
@@ -749,14 +813,14 @@ export function createMediaStandComponentDefinition(
       hasCreator &&
       `${EXHIBIT_DICTIONARY.CREATOR_PREFIX}${cleanCreator}`.length > 42;
 
-    const creatorTop = isLongTitle ? 0.15 : 0.235;
-    const creatorCenterY = creatorTop - 0.07;
+    const creatorTop = isLongTitle ? 0.12 : 0.175;
+    const creatorCenterY = creatorTop - 0.055;
     const descTop = hasCreator
-      ? creatorTop - (isLongCreator ? 0.16 : 0.105)
+      ? creatorTop - (isLongCreator ? 0.125 : 0.085)
       : isLongTitle
-        ? 0.14
-        : 0.225;
-    const descCenterY = descTop - 0.18;
+        ? 0.115
+        : 0.17;
+    const descCenterY = descTop - 0.145;
 
     els.billboard.setAttribute("visible", String(isInspecting));
     setCanvasTextElement(els.billboardTitle, {
@@ -765,13 +829,13 @@ export function createMediaStandComponentDefinition(
       align: "left",
       baseline: "top",
       color: instance.data.accentColor,
-      fontSizePx: 48,
+      fontSizePx: 40,
       fontWeight: "700",
       canvasWidth: 960,
-      canvasHeight: 116,
+      canvasHeight: 112,
       maxLines: 2,
       paddingX: 20,
-      paddingY: 8,
+      paddingY: 12,
     });
     els.billboardCreator.setAttribute("position", `0 ${creatorCenterY} 0.035`);
     els.billboardDesc.setAttribute("position", `0 ${descCenterY} 0.04`);
@@ -784,10 +848,10 @@ export function createMediaStandComponentDefinition(
       fontSizePx: 34,
       fontWeight: "400",
       canvasWidth: 960,
-      canvasHeight: 230,
+      canvasHeight: 212,
       maxLines: 5,
       paddingX: 20,
-      paddingY: 8,
+      paddingY: 10,
     });
 
     if (hasCreator) {
@@ -797,13 +861,13 @@ export function createMediaStandComponentDefinition(
         align: "left",
         baseline: "top",
         color: STAND_VISUAL_TOKENS.TEXT_MUTED,
-        fontSizePx: 36,
+        fontSizePx: 32,
         fontWeight: "600",
         canvasWidth: 960,
-        canvasHeight: 90,
+        canvasHeight: 84,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 6,
+        paddingY: 8,
       });
       els.billboardCreator.setAttribute("visible", "true");
     } else {
@@ -813,13 +877,13 @@ export function createMediaStandComponentDefinition(
         align: "left",
         baseline: "top",
         color: STAND_VISUAL_TOKENS.TEXT_MUTED,
-        fontSizePx: 36,
+        fontSizePx: 32,
         fontWeight: "600",
         canvasWidth: 960,
-        canvasHeight: 90,
+        canvasHeight: 84,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 6,
+        paddingY: 8,
       });
       els.billboardCreator.setAttribute("visible", "false");
     }
@@ -925,8 +989,11 @@ export function createMediaStandComponentDefinition(
     instance: MediaStandComponentInstance,
     controller: ExhibitInspectionController,
   ): void {
-    const target = controller.calculateRadialTargetPosition(
+    const target = controller.calculateErgonomicInspectionTarget(
       instance.data.galleryPosition,
+      ROOM_CENTER_COORDINATE,
+      INSPECTION_TARGET_TOKENS.STAND_FOCAL_DISTANCE_M,
+      INSPECTION_TARGET_TOKENS.STAND_INSPECTION_Y_M,
     );
     const dx = -target.x;
     const dz = -target.z;

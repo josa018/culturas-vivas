@@ -120,6 +120,36 @@ describe("ExhibitInspectionController", () => {
     expect(coincident).toEqual({ x: 1, y: 2, z: 3 });
   });
 
+  it("computes ergonomic radial inspection target along XZ ray at target elevation Y", () => {
+    const controller = new ExhibitInspectionController() as ExhibitInspectionController & {
+      calculateErgonomicInspectionTarget?: (
+        galleryPos: { x: number; y: number; z: number },
+        cameraPos?: { x: number; y: number; z: number },
+        focalDistance?: number,
+        targetElevationY?: number,
+      ) => { x: number; y: number; z: number };
+    };
+
+    expect(typeof controller.calculateErgonomicInspectionTarget).toBe("function");
+    expect(
+      controller.calculateErgonomicInspectionTarget!(
+        { x: 3.2, y: 1.76, z: 0 },
+        { x: 0, y: 1.6, z: 0 },
+        1.45,
+        1.92,
+      ),
+    ).toEqual({ x: 1.45, y: 1.92, z: 0 });
+
+    expect(
+      controller.calculateErgonomicInspectionTarget!(
+        { x: 0, y: 1.2, z: -3.2 },
+        { x: 0, y: 1.6, z: 0 },
+        1.4,
+        1.78,
+      ),
+    ).toEqual({ x: 0, y: 1.78, z: -1.4 });
+  });
+
   it("computes calculateFocalTargetPosition relative to camera origin", () => {
     const controller = new ExhibitInspectionController();
     expect(

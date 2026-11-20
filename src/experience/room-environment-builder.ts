@@ -225,12 +225,18 @@ function createSkyGradientTexture(
   ctx.fillRect(0, 0, size, size);
 
   if (preset.roomId === RoomId.MEXICANERO) {
-    ctx.fillStyle = "rgba(255, 250, 235, 0.65)";
+    ctx.fillStyle = "rgba(255, 250, 235, 0.42)";
     for (let i = 0; i < 36; i++) {
       const sx = ((i * 89 + 31) % (size - 16)) + 8;
       const sy = ((i * 47 + 19) % Math.floor(size * 0.34)) + 8;
       ctx.beginPath();
-      ctx.arc(sx, sy, 0.9, 0, Math.PI * 2);
+      ctx.arc(
+        sx,
+        sy,
+        ENVIRONMENT_BUDGET_TOKENS.MIN_SKY_STAR_RADIUS_PX,
+        0,
+        Math.PI * 2,
+      );
       ctx.fill();
     }
   }
