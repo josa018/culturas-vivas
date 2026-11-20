@@ -20,6 +20,7 @@ import {
   VR_HUD_RETURN_LOBBY_EVENT,
   VR_HUD_SWITCH_2D_EVENT,
   calculateHudWorldTransform,
+  computeCurvedHudStripTransform,
   createVrHologramHudComponentDefinition,
   ensureVrHologramHud,
   readCameraPoseFromScene,
@@ -1002,16 +1003,31 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     const instance = createMockHudInstance(el);
     instance.init();
 
-    // Cultural Nierika faja trim strips, side rails, and eyebrow header
-    expect(el.querySelectorAll(".cv-hud-faja-trim").length).toBe(2);
-    expect(el.querySelectorAll(".cv-hud-side-rail").length).toBe(2);
+    // Cultural curved cylindrical faja trim strips, side rails, and eyebrow header
+    expect(computeCurvedHudStripTransform(1.8, 0.01, 46)).toEqual({
+      radius: 1.79,
+      thetaStart: 157,
+      thetaLength: 46,
+      centerZ: 1.8,
+    });
+
+    const fajaTrims = Array.from(el.querySelectorAll(".cv-hud-faja-trim"));
+    const sideRails = Array.from(el.querySelectorAll(".cv-hud-side-rail"));
+    expect(fajaTrims).toHaveLength(2);
+    expect(sideRails).toHaveLength(2);
+    for (const strip of [...fajaTrims, ...sideRails]) {
+      expect(strip.tagName.toLowerCase()).toBe("a-cylinder");
+      expect(strip.getAttribute("radius")).toBe("1.79");
+      expect(strip.getAttribute("open-ended")).toBe("true");
+    }
+
     const eyebrow = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EYEBROW_LABEL}`);
     expect(eyebrow?.getAttribute("value")).toBe(
       VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
     );
     expect(eyebrow?.getAttribute("value")).toBe("MENÚ DE SALA");
 
-    // 3D beveled button boxes (depth: 0.024) + icon + cv-interactive-feedback
+    // 3D beveled lit button boxes (depth: 0.024, shader: lambert) + flat icon & label
     for (const id of [
       VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
       VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
@@ -1022,8 +1038,14 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
       expect(btn?.getAttribute("geometry")).toContain(
         `depth: ${VR_HUD_GEOMETRY.BUTTON_DEPTH_M}`,
       );
+      expect(btn?.getAttribute("material")).toContain("shader: lambert");
       expect(btn?.hasAttribute("cv-interactive-feedback")).toBe(true);
-      expect(btn?.querySelector(".cv-hud-btn-icon")).not.toBeNull();
+      const icon = btn?.querySelector(".cv-hud-btn-icon");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("material")).toContain("shader: flat");
+      expect(btn?.querySelector("[cv-canvas-text]")?.getAttribute("material")).toContain(
+        "shader: flat",
+      );
     }
 
     const dismissBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`);

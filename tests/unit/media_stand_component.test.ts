@@ -385,7 +385,7 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(rightPlane?.getAttribute("color")).toBe("#0f172a");
     expect(rightPlane?.getAttribute("material")).toContain("#0f172a");
 
-    // Control buttons must own direct geometry + material for A-Frame cursor raycaster hit-testing
+    // Control buttons must use lit 3D boxes while keeping labels flat
     for (const selector of [
       ".cv-stand-prev-btn",
       ".cv-stand-next-btn",
@@ -395,10 +395,37 @@ describe("cv-media-stand A-Frame Component", () => {
     ]) {
       const btn = el.querySelector(selector);
       expect(btn).not.toBeNull();
-      expect(btn?.getAttribute("geometry")).toContain("primitive: plane");
-      expect(btn?.getAttribute("material")).toContain("shader: flat");
-      expect(btn?.querySelector("[cv-canvas-text]")?.getAttribute("value")).toBeTruthy();
+      expect(btn?.getAttribute("geometry")).toContain("primitive: box");
+      expect(btn?.getAttribute("geometry")).toContain(
+        `depth: ${STAND_ANIMATION_TOKENS.CONTROL_BTN_DEPTH_M}`,
+      );
+      expect(btn?.getAttribute("material")).toContain("shader: lambert");
+      const label = btn?.querySelector("[cv-canvas-text]");
+      expect(label?.getAttribute("value")).toBeTruthy();
+      expect(label?.getAttribute("material")).toContain("shader: flat");
     }
+
+    // Deep 0.12m shadowbox frame + beveled rails + corner accents on shader: lambert recess mediaGroup
+    expect(STAND_ANIMATION_TOKENS.FRAME_DEPTH_M).toBe(0.12);
+    const frame = el.querySelector(".cv-stand-frame");
+    expect(frame?.tagName.toLowerCase()).toBe("a-box");
+    expect(frame?.getAttribute("material")).toContain("shader: lambert");
+    expect(el.querySelector(".cv-stand-bevel-rail")?.getAttribute("depth")).toBe("0.12");
+    expect(el.querySelector(".cv-stand-bevel-rail")?.getAttribute("material")).toContain(
+      "shader: lambert",
+    );
+    expect(el.querySelector(".cv-stand-corner-accent")?.getAttribute("material")).toContain(
+      "shader: lambert",
+    );
+    const mediaGroup = el.querySelector(".cv-stand-media-group");
+    const parseZ = (node: Element | null) =>
+      Number((node?.getAttribute("position") ?? "0 0 0").split(/\s+/)[2]);
+    const railFrontZ =
+      parseZ(el.querySelector(".cv-stand-bevel-rail")) +
+      STAND_ANIMATION_TOKENS.FRAME_DEPTH_M / 2;
+    expect(parseZ(mediaGroup)).toBeLessThan(railFrontZ);
+    expect(leftPlane?.getAttribute("material")).toContain("shader: flat");
+    expect(rightPlane?.getAttribute("material")).toContain("shader: flat");
   });
 
   it("keeps billboard title, credits, and description well-spaced inside card bounds even on maximum-length entries", async () => {

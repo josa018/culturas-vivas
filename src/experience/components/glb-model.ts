@@ -43,7 +43,7 @@ function createFallbackSculpture(): HTMLElement {
   sphere.setAttribute("radius", "0.25");
   sphere.setAttribute("position", "0 0.25 0");
   sphere.setAttribute("color", GLB_FALLBACK_COLORS.PRIMARY);
-  sphere.setAttribute("material", "shader: flat");
+  sphere.setAttribute("material", "shader: lambert");
 
   const cone = document.createElement("a-cone");
   cone.setAttribute("radius-bottom", "0.28");
@@ -51,7 +51,7 @@ function createFallbackSculpture(): HTMLElement {
   cone.setAttribute("height", "0.4");
   cone.setAttribute("position", "0 -0.05 0");
   cone.setAttribute("color", GLB_FALLBACK_COLORS.SECONDARY);
-  cone.setAttribute("material", "shader: flat");
+  cone.setAttribute("material", "shader: lambert");
 
   const ring = document.createElement("a-ring");
   ring.setAttribute("radius-inner", "0.28");
@@ -59,7 +59,7 @@ function createFallbackSculpture(): HTMLElement {
   ring.setAttribute("position", "0 0.1 0");
   ring.setAttribute("rotation", "90 0 0");
   ring.setAttribute("color", GLB_FALLBACK_COLORS.RING);
-  ring.setAttribute("material", "shader: flat");
+  ring.setAttribute("material", "shader: lambert; side: double");
 
   group.append(sphere, cone, ring);
   return group;

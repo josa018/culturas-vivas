@@ -32,7 +32,7 @@ const STAND_VISUAL_TOKENS = {
   TEXT_PRIMARY: "#EDE8DF",
   TEXT_MUTED: "#94a3b8",
   CLOSE_BG_COLOR: "#ef4444",
-  CONTROL_BG_COLOR: "#1e293b",
+  CONTROL_BG_COLOR: "#283548",
   CONTROL_TEXT_COLOR: "#f8fafc",
   COUNTER_TEXT_COLOR: "#cbd5e1",
   HEADER_OFFSET_Y: 0.74,
@@ -45,7 +45,7 @@ const STAND_VISUAL_TOKENS = {
   CLOSE_BTN_X: 0.72,
   COUNT_BADGE_POS: "0 0.675 0.03",
   HEADER_TEXT_POS: "0 0.79 0.03",
-  MEDIA_GROUP_POS: "0 0 0.01",
+  MEDIA_GROUP_POS: `0 0 ${STAND_ANIMATION_TOKENS.MEDIA_RECESS_Z_M}`,
   ROTATION_RAD_TO_DEG: 180 / Math.PI,
 } as const;
 
@@ -176,9 +176,9 @@ function createControlButton(
   btn.setAttribute("visible", "false");
   btn.setAttribute(
     "geometry",
-    `primitive: plane; width: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}; height: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}`,
+    `primitive: box; width: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}; height: ${STAND_DIMENSIONS.CONTROL_BTN_SIZE_M}; depth: ${STAND_ANIMATION_TOKENS.CONTROL_BTN_DEPTH_M}`,
   );
-  btn.setAttribute("material", `shader: flat; color: ${bgColor}`);
+  btn.setAttribute("material", `shader: lambert; color: ${bgColor}`);
 
   const label = createCanvasTextPlane({
     className: `${className}-label`,
@@ -193,7 +193,7 @@ function createControlButton(
     canvasWidth: 128,
     canvasHeight: 128,
     maxLines: 1,
-    position: "0 0 0.01",
+    position: `0 0 ${Number((STAND_ANIMATION_TOKENS.CONTROL_BTN_DEPTH_M / 2 + 0.004).toFixed(3))}`,
   });
 
   btn.appendChild(label);
@@ -208,16 +208,18 @@ function buildStandDom(
   const frameWidth = STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M + STAND_DIMENSIONS.FRAME_PADDING_M * 2;
   const frameHeight = STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M + STAND_DIMENSIONS.FRAME_PADDING_M * 2;
 
-  const frame = document.createElement("a-plane");
+  const frame = document.createElement("a-box");
   frame.setAttribute("class", "cv-stand-frame");
   frame.setAttribute("width", String(frameWidth));
   frame.setAttribute("height", String(frameHeight));
-  frame.setAttribute("position", "0 0 -0.02");
+  frame.setAttribute("depth", String(STAND_ANIMATION_TOKENS.FRAME_BACKING_DEPTH_M));
+  frame.setAttribute("position", `0 0 ${STAND_ANIMATION_TOKENS.FRAME_BACKING_Z_M}`);
   frame.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-  frame.setAttribute("material", "shader: flat");
+  frame.setAttribute("material", "shader: lambert");
 
   const railThickness = STAND_ANIMATION_TOKENS.RAIL_THICKNESS_M;
   const railDepth = STAND_ANIMATION_TOKENS.FRAME_DEPTH_M;
+  const railCenterZ = STAND_ANIMATION_TOKENS.RAIL_CENTER_Z_M;
   const halfW = frameWidth / 2;
   const halfH = frameHeight / 2;
 
@@ -229,29 +231,29 @@ function buildStandDom(
     rail.setAttribute("depth", String(railDepth));
     rail.setAttribute("position", pos);
     rail.setAttribute("color", STAND_VISUAL_TOKENS.HEADER_BG_COLOR);
-    rail.setAttribute("material", "shader: flat");
+    rail.setAttribute("material", "shader: lambert");
     return rail;
   };
 
   const topRail = createBevelRail(
     frameWidth + railThickness * 2,
     railThickness,
-    `0 ${Number((halfH + railThickness / 2).toFixed(3))} -0.02`,
+    `0 ${Number((halfH + railThickness / 2).toFixed(3))} ${railCenterZ}`,
   );
   const bottomRail = createBevelRail(
     frameWidth + railThickness * 2,
     railThickness,
-    `0 ${Number((-halfH - railThickness / 2).toFixed(3))} -0.02`,
+    `0 ${Number((-halfH - railThickness / 2).toFixed(3))} ${railCenterZ}`,
   );
   const leftRail = createBevelRail(
     railThickness,
     frameHeight,
-    `${Number((-halfW - railThickness / 2).toFixed(3))} 0 -0.02`,
+    `${Number((-halfW - railThickness / 2).toFixed(3))} 0 ${railCenterZ}`,
   );
   const rightRail = createBevelRail(
     railThickness,
     frameHeight,
-    `${Number((halfW + railThickness / 2).toFixed(3))} 0 -0.02`,
+    `${Number((halfW + railThickness / 2).toFixed(3))} 0 ${railCenterZ}`,
   );
 
   const cornerSize = STAND_ANIMATION_TOKENS.CORNER_ACCENT_SIZE_M;
@@ -270,10 +272,10 @@ function buildStandDom(
     accent.setAttribute("depth", String(railDepth + 0.01));
     accent.setAttribute(
       "position",
-      `${Number(cx.toFixed(3))} ${Number(cy.toFixed(3))} -0.015`,
+      `${Number(cx.toFixed(3))} ${Number(cy.toFixed(3))} ${STAND_ANIMATION_TOKENS.CORNER_ACCENT_Z_M}`,
     );
     accent.setAttribute("color", accentColor);
-    accent.setAttribute("material", "shader: flat");
+    accent.setAttribute("material", "shader: lambert");
     return accent;
   });
 

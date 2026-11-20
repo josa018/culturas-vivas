@@ -147,8 +147,12 @@ function createMockThree(): Record<string, unknown> {
       }
     },
     CylinderGeometry: class extends MockGeometry {
-      constructor(_rt = 1, _rb = 1, _h = 1, seg = 16) {
+      radiusTop: number;
+      radiusBottom: number;
+      constructor(rt = 1, rb = 1, _h = 1, seg = 16) {
         super(seg * 4);
+        this.radiusTop = rt;
+        this.radiusBottom = rb;
       }
     },
     RingGeometry: class extends MockGeometry {
@@ -449,5 +453,140 @@ describe("Procedural 3D room environment builder & budget", () => {
       );
     }
     built.dispose();
+  });
+
+  it("renders ambient particles as lit 3D InstancedMesh octahedrons, updates 3-axis matrices, and attenuates scale in inspection cone", () => {
+    const mockThree = createMockThree();
+    const built = buildRoomEnvironment(RoomId.WIXARIKA, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+
+    const traversed: Array<Record<string, unknown>> = [];
+    (built.root as unknown as MockObject3D).traverse((node) => {
+      traversed.push(node as Record<string, unknown>);
+    });
+
+    const particleNode = traversed.find(
+      (n) => (n.userData as { isAmbientParticles?: boolean } | undefined)?.isAmbientParticles === true,
+    ) as
+      | {
+          isInstancedMesh?: boolean;
+          isPoints?: boolean;
+          count: number;
+          geometry?: { index?: { count: number } };
+          material?: { kind?: string };
+          instanceMatrix: { needsUpdate: boolean };
+          setMatrixAt: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+
+    expect(particleNode).toBeDefined();
+    expect(particleNode?.isInstancedMesh).toBe(true);
+    expect(particleNode?.isPoints).not.toBe(true);
+    expect(particleNode?.material?.kind).toBe("MeshLambertMaterial");
+    expect(particleNode?.count).toBeGreaterThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES);
+    expect(particleNode?.count).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES);
+    expect(built.stats.particleCount).toBe(particleNode?.count);
+
+    // Check MockObject3D compose captures 3-axis Euler tumble and cone scale attenuation
+    const composeScales: number[] = [];
+    const composeEulerSums: number[] = [];
+    const origCompose = (mockThree.Matrix4 as unknown as { prototype: { compose: unknown } }).prototype;
+    expect(origCompose).toBeDefined();
+
+    particleNode!.setMatrixAt.mockClear();
+    built.updateParticles(1.5, { x: 0, y: 0, z: -1 });
+    expect(particleNode!.setMatrixAt).toHaveBeenCalledTimes(particleNode!.count);
+    expect(particleNode!.instanceMatrix.needsUpdate).toBe(true);
+
+    // Track last scale arguments passed to Matrix4.compose during attenuated vs unattenuated ticks
+    const mockMatrixProto = (mockThree.Matrix4 as unknown as {
+      new (): { compose: ReturnType<typeof vi.fn> };
+    });
+    expect(mockMatrixProto).toBeDefined();
+
+    // Verify scale & euler via a fresh build spying on Matrix4.compose args
+    composeScales.length = 0;
+    composeEulerSums.length = 0;
+    const spyThree = createMockThree();
+    const BaseEuler = spyThree.Euler as new () => { x: number; y: number; z: number };
+    const createdEulers: Array<{ x: number; y: number; z: number }> = [];
+    spyThree.Euler = class extends BaseEuler {
+      constructor() {
+        super();
+        createdEulers.push(this);
+      }
+    };
+    const BaseMatrix = spyThree.Matrix4 as new () => {
+      compose: (pos: unknown, quat: unknown, scale: { x: number; y: number; z: number }) => unknown;
+    };
+    spyThree.Matrix4 = class extends BaseMatrix {
+      override compose = vi.fn((_pos, _quat, scale: { x: number; y: number; z: number }) => {
+        composeScales.push(scale.x);
+        return this;
+      });
+    };
+
+    const spiedBuilt = buildRoomEnvironment(RoomId.WIXARIKA, {
+      three: spyThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+    composeScales.length = 0;
+    spiedBuilt.updateParticles(2.0, { x: 0, y: 0, z: -1 });
+    expect(composeScales.some((s) => s < 0.5)).toBe(true);
+    expect(composeScales.some((s) => s === 1)).toBe(true);
+    const activeEuler = createdEulers[createdEulers.length - 1];
+    expect(activeEuler).toBeDefined();
+    expect(activeEuler.x).not.toBe(0);
+    expect(activeEuler.y).not.toBe(0);
+    expect(activeEuler.z).not.toBe(0);
+
+    spiedBuilt.dispose();
+    built.dispose();
+  });
+
+  it("mounts multi-radius interior parallax layers and thickens secondary exterior props within mobile VR budgets", () => {
+    const mockThree = createMockThree();
+
+    for (const roomId of [RoomId.WIXARIKA, RoomId.NAAYERI, RoomId.MEXICANERO]) {
+      const built = buildRoomEnvironment(roomId, {
+        three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+        createCanvas: createCanvasMockFactory(),
+      });
+
+      const byName = new Map<string, Record<string, unknown>>();
+      (built.root as unknown as MockObject3D).traverse((rawNode) => {
+        const node = rawNode as Record<string, unknown>;
+        if (typeof node.name === "string" && node.name.length > 0) {
+          byName.set(node.name, node);
+        }
+      });
+
+      expect(byName.get("cv-env-dais-curb")).toBeDefined();
+      expect(byName.get("cv-env-radial-walkways")?.count).toBe(
+        ENVIRONMENT_BUDGET_TOKENS.WALKWAY_COUNT,
+      );
+      expect(byName.get("cv-env-column-caps")?.count).toBe(16);
+      expect(byName.get("cv-env-pergola-rafters")?.count).toBe(8);
+      expect(byName.get("cv-env-hanging-lanterns")?.count).toBe(8);
+
+      const secondary = byName.get("cv-env-landscape-secondary") as
+        | { geometry?: { radiusTop?: number } }
+        | undefined;
+      expect(secondary).toBeDefined();
+      if (typeof secondary?.geometry?.radiusTop === "number") {
+        expect(secondary.geometry.radiusTop).toBeGreaterThanOrEqual(0.34);
+      }
+
+      expect(built.stats.triangleCount).toBeLessThanOrEqual(
+        ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES,
+      );
+      expect(built.stats.drawCalls).toBeLessThanOrEqual(
+        ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS,
+      );
+      expect(built.stats.withinBudget).toBe(true);
+      built.dispose();
+    }
   });
 });

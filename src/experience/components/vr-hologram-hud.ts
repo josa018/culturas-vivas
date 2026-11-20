@@ -132,6 +132,30 @@ function clearPendingHudDismiss(
   }
 }
 
+export interface CurvedHudStripTransform {
+  readonly radius: number;
+  readonly thetaStart: number;
+  readonly thetaLength: number;
+  readonly centerZ: number;
+}
+
+/**
+ * Computes cylindrical arc parameters inset radially inside the curved HUD backdrop.
+ */
+export function computeCurvedHudStripTransform(
+  radiusM: number,
+  radialInsetM: number,
+  thetaLengthDeg: number,
+  thetaOffsetDeg: number = 0,
+): CurvedHudStripTransform {
+  return {
+    radius: Number((radiusM - radialInsetM).toFixed(4)),
+    thetaStart: Number((180 - thetaLengthDeg / 2 + thetaOffsetDeg).toFixed(4)),
+    thetaLength: Number(thetaLengthDeg.toFixed(4)),
+    centerZ: Number(radiusM.toFixed(4)),
+  };
+}
+
 /**
  * Computes world-space position and Y-rotation for the HUD panel
  * placed at focal distance ahead of the camera along its gaze azimuth.
@@ -268,7 +292,7 @@ function createHudButtonEntity(options: {
   );
   btn.setAttribute(
     "material",
-    `shader: flat; color: ${options.backgroundColor}; opacity: 0.95`,
+    `shader: lambert; color: ${options.backgroundColor}; opacity: 0.95`,
   );
 
   const accentBar = document.createElement("a-plane");
@@ -369,16 +393,27 @@ export function createVrHologramHudComponentDefinition() {
         evt?.stopPropagation?.();
       });
 
-      // Top & bottom procedural woven Nayarit faja trim strips
+      // Top & bottom curved cylindrical procedural Nayarit faja trim strips
+      const trimArc = computeCurvedHudStripTransform(
+        VR_HUD_GEOMETRY.CURVED_RADIUS_M,
+        VR_HUD_GEOMETRY.TRIM_RADIAL_INSET_M,
+        VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG,
+      );
       const createFajaTrim = (yPos: number): HTMLElement => {
-        const trim = document.createElement("a-plane");
+        const trim = document.createElement("a-cylinder");
         trim.setAttribute("class", "cv-hud-faja-trim");
-        trim.setAttribute("width", String(VR_HUD_GEOMETRY.PANEL_WIDTH_M));
+        trim.setAttribute("radius", String(trimArc.radius));
         trim.setAttribute("height", String(VR_HUD_GEOMETRY.FAJA_HEIGHT_M));
-        trim.setAttribute("position", `0 ${Number(yPos.toFixed(4))} 0.032`);
+        trim.setAttribute("theta-start", String(trimArc.thetaStart));
+        trim.setAttribute("theta-length", String(trimArc.thetaLength));
+        trim.setAttribute("open-ended", "true");
+        trim.setAttribute(
+          "position",
+          `0 ${Number(yPos.toFixed(4))} ${trimArc.centerZ}`,
+        );
         trim.setAttribute(
           "material",
-          `shader: flat; color: #ffffff; transparent: true`,
+          "shader: flat; side: double; color: #ffffff; transparent: true",
         );
         const fajaTex = createCanvasTextureFromDrawer(512, 32, (ctx) =>
           renderFajaBorderPattern(ctx, 512, 32),
@@ -394,19 +429,28 @@ export function createVrHologramHudComponentDefinition() {
         -VR_HUD_GEOMETRY.PANEL_HEIGHT_M / 2 + VR_HUD_GEOMETRY.FAJA_HEIGHT_M / 2 + 0.008,
       );
 
-      // Left & right golden Nierika side rails
-      const createSideRail = (xPos: number): HTMLElement => {
-        const rail = document.createElement("a-plane");
+      // Left & right golden curved Nierika side rails
+      const createSideRail = (thetaOffsetDeg: number): HTMLElement => {
+        const railArc = computeCurvedHudStripTransform(
+          VR_HUD_GEOMETRY.CURVED_RADIUS_M,
+          VR_HUD_GEOMETRY.TRIM_RADIAL_INSET_M,
+          VR_HUD_GEOMETRY.SIDE_RAIL_ARC_THETA_DEG,
+          thetaOffsetDeg,
+        );
+        const rail = document.createElement("a-cylinder");
         rail.setAttribute("class", "cv-hud-side-rail");
-        rail.setAttribute("width", String(VR_HUD_GEOMETRY.SIDE_RAIL_WIDTH_M));
+        rail.setAttribute("radius", String(railArc.radius));
         rail.setAttribute("height", String(VR_HUD_GEOMETRY.PANEL_HEIGHT_M - 0.04));
-        rail.setAttribute("position", `${Number(xPos.toFixed(4))} 0 0.03`);
+        rail.setAttribute("theta-start", String(railArc.thetaStart));
+        rail.setAttribute("theta-length", String(railArc.thetaLength));
+        rail.setAttribute("open-ended", "true");
+        rail.setAttribute("position", `0 0 ${railArc.centerZ}`);
         rail.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
-        rail.setAttribute("material", "shader: flat");
+        rail.setAttribute("material", "shader: lambert; side: double");
         return rail;
       };
-      const leftRail = createSideRail(-VR_HUD_GEOMETRY.PANEL_WIDTH_M / 2);
-      const rightRail = createSideRail(VR_HUD_GEOMETRY.PANEL_WIDTH_M / 2);
+      const leftRail = createSideRail(-(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2));
+      const rightRail = createSideRail(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2);
 
       // Cultural eyebrow label
       const eyebrowLabel = createCanvasTextPlane({
@@ -451,7 +495,7 @@ export function createVrHologramHudComponentDefinition() {
         label: VR_HUD_DICTIONARY.SWITCH_TO_2D_LABEL,
         position: "-0.34 -0.02 0.06",
         rotation: "0 10 0",
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
         ownedTextures: this.ownedTextures ?? [],
       });
@@ -475,7 +519,7 @@ export function createVrHologramHudComponentDefinition() {
         label: VR_HUD_DICTIONARY.EXIT_TOUR_LABEL,
         position: "0.34 -0.02 0.06",
         rotation: "0 -10 0",
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_COCHINILLA,
         ownedTextures: this.ownedTextures ?? [],
       });
@@ -500,7 +544,7 @@ export function createVrHologramHudComponentDefinition() {
         position: "0 -0.28 0.06",
         width: VR_HUD_GEOMETRY.LOBBY_BUTTON_WIDTH_M,
         height: VR_HUD_GEOMETRY.LOBBY_BUTTON_HEIGHT_M,
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
         ownedTextures: this.ownedTextures ?? [],
       });

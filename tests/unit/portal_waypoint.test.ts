@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PORTAL_ANIMATION_TOKENS,
+  PORTAL_DEPTH_TOKENS,
 } from "../../src/experience/constants";
 import {
   createPortalComponentDefinition,
@@ -71,8 +72,21 @@ describe("PortalWaypoint Component", () => {
     const aperture = portalEl.querySelector("a-plane.clickable");
     expect(aperture).not.toBeNull();
     expect(aperture?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    expect(aperture?.getAttribute("position")).toBe(
+      `0 0 ${PORTAL_DEPTH_TOKENS.APERTURE_Z_M}`,
+    );
     expect(portalEl.querySelector(".cv-portal-threshold")).not.toBeNull();
     expect(portalEl.querySelector(".cv-portal-frieze")).not.toBeNull();
+
+    const depthRings = Array.from(portalEl.querySelectorAll(".cv-portal-depth-ring"));
+    expect(depthRings).toHaveLength(3);
+    expect(
+      depthRings.map((ring) => ring.getAttribute("position")),
+    ).toEqual([
+      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[0]}`,
+      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[1]}`,
+      `0 0 ${PORTAL_DEPTH_TOKENS.RING_OFFSETS_Z[2]}`,
+    ]);
   });
 
   it("triggers cv-portal-activated event on click", () => {

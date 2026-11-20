@@ -314,4 +314,44 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
 
     ExhibitRoomBuilder.teardownRoom(scene);
   });
+
+  it("renders MODEL_3D fallback geometric sculptures in ExhibitRoomBuilder and cv-glb-model using lit shader: lambert", async () => {
+    const { createGlbModelComponentDefinition } = await import(
+      "../../src/experience/components/glb-model"
+    );
+
+    const glbEl = document.createElement("a-entity");
+    const glbDef = createGlbModelComponentDefinition();
+    const glbInstance = Object.create(glbDef);
+    glbInstance.el = glbEl;
+    glbInstance.data = { src: "", maxExtent: 1.05 };
+    glbInstance.init();
+
+    for (const tag of ["a-sphere", "a-cone", "a-ring"]) {
+      expect(glbEl.querySelector(tag)?.getAttribute("material")).toContain(
+        "shader: lambert",
+      );
+    }
+    glbInstance.remove();
+
+    const exhibitEl = ExhibitRoomBuilder.createExhibitEntity(
+      {
+        id: "test-fallback-sculpture",
+        title: "Escultura",
+        description: "Fallback 3D",
+        mediaType: ExhibitMediaType.MODEL_3D,
+        galleryPosition: { x: 0, y: 1.2, z: -2.8 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+      "vr",
+    );
+    const fallbackModelSphere = exhibitEl.querySelector("a-sphere");
+    const fallbackModelCone = exhibitEl.querySelector("a-cone");
+    const fallbackModelRing = exhibitEl.querySelector("a-ring");
+    expect(fallbackModelSphere?.getAttribute("material")).toContain("shader: lambert");
+    expect(fallbackModelCone?.getAttribute("material")).toContain("shader: lambert");
+    expect(fallbackModelRing?.getAttribute("material")).toContain("shader: lambert");
+  });
 });

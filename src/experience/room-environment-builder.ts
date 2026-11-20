@@ -1,4 +1,4 @@
-import { RoomId } from "../shared/room-catalog";
+import { ROOM_LAYOUT_TOKENS, RoomId } from "../shared/room-catalog";
 import {
   ENVIRONMENT_BUDGET_TOKENS,
   PROCEDURAL_TEXTURE_TOKENS,
@@ -88,7 +88,13 @@ export interface RoomEnvironmentThreeLike {
   readonly Matrix4: new () => ThreeMatrix4Like;
   readonly Vector3: new (x?: number, y?: number, z?: number) => ThreeVector3Like;
   readonly Quaternion: new () => ThreeQuaternionLike;
-  readonly Euler: new (x?: number, y?: number, z?: number) => unknown;
+  readonly Euler: new (x?: number, y?: number, z?: number) => ThreeEulerLike;
+}
+
+interface ThreeEulerLike {
+  x: number;
+  y: number;
+  z: number;
 }
 
 interface ThreeGeometryLike {
@@ -130,6 +136,7 @@ export interface ThreeObject3DLike {
   rotation: { set(x: number, y: number, z: number): void };
   castShadow?: boolean;
   receiveShadow?: boolean;
+  userData?: Record<string, unknown>;
   add(...objects: ThreeObject3DLike[]): void;
   remove(object: ThreeObject3DLike): void;
   traverse(callback: (node: unknown) => void): void;
@@ -174,7 +181,10 @@ export interface BuiltRoomEnvironment {
   readonly root: ThreeObject3DLike;
   readonly fog: unknown;
   readonly stats: RoomEnvironmentBudgetReport;
-  readonly updateParticles: (elapsedSeconds: number) => void;
+  readonly updateParticles: (
+    elapsedSeconds: number,
+    focusDirection?: { readonly x: number; readonly y: number; readonly z: number } | null,
+  ) => void;
   readonly dispose: () => void;
 }
 
@@ -287,6 +297,7 @@ export function measureRoomEnvironmentBudget(
       isInstancedMesh?: boolean;
       isPoints?: boolean;
       count?: number;
+      userData?: { isAmbientParticles?: boolean };
       geometry?: ThreeGeometryLike;
     };
 
@@ -300,6 +311,9 @@ export function measureRoomEnvironmentBudget(
       drawCalls += 1;
       const instances = typeof node.count === "number" ? node.count : 0;
       triangleCount += getGeometryTriangleCount(node.geometry) * instances;
+      if (node.userData?.isAmbientParticles === true) {
+        particleCount += instances;
+      }
       return;
     }
 
@@ -506,7 +520,38 @@ export function buildRoomEnvironment(
   ringMesh.receiveShadow = true;
   root.add(ringMesh);
 
-  // 5. Pavilion colonnade (InstancedMesh, 1 draw call) + pergola cornice ring (1 draw call)
+  // 4b. Near-eye depth layer: central dais curb + 6 radial stone walkways
+  const daisGeo = new three.CylinderGeometry(
+    ENVIRONMENT_BUDGET_TOKENS.DAIS_RADIUS_M,
+    ENVIRONMENT_BUDGET_TOKENS.DAIS_RADIUS_M + 0.1,
+    ENVIRONMENT_BUDGET_TOKENS.DAIS_HEIGHT_M,
+    24,
+  );
+  const daisMat = new three.MeshLambertMaterial({
+    color: textureSet.trim ? "#f1f5f9" : preset.propSecondaryColor,
+    map: textureSet.trim,
+  });
+  const daisMesh = new three.Mesh(daisGeo, daisMat);
+  daisMesh.name = "cv-env-dais-curb";
+  daisMesh.position.set(0, ENVIRONMENT_BUDGET_TOKENS.DAIS_HEIGHT_M / 2, 0);
+  daisMesh.receiveShadow = true;
+  root.add(daisMesh);
+
+  const walkwayGeo = new three.BoxGeometry(0.75, 0.03, 2.2);
+  const walkwayMat = new three.MeshLambertMaterial({
+    color: preset.columnColor,
+    map: textureSet.column,
+  });
+  const walkwayCount = ENVIRONMENT_BUDGET_TOKENS.WALKWAY_COUNT;
+  const walkwaysInstanced = new three.InstancedMesh(
+    walkwayGeo,
+    walkwayMat,
+    walkwayCount,
+  );
+  walkwaysInstanced.name = "cv-env-radial-walkways";
+  walkwaysInstanced.receiveShadow = true;
+
+  // 5. Pavilion colonnade (shafts + bases/capitals) + overhead pergola ring, rafters & hanging lanterns
   const colGeo = new three.CylinderGeometry(0.21, 0.26, 4.2, 8);
   const colMat = new three.MeshLambertMaterial({
     color: textureSet.column ? "#e2e8f0" : preset.columnColor,
@@ -517,26 +562,114 @@ export function buildRoomEnvironment(
   columnsInstanced.name = "cv-env-pavilion-columns";
   columnsInstanced.castShadow = true;
   columnsInstanced.receiveShadow = true;
-  const colMatrix = new three.Matrix4();
-  const colPos = new three.Vector3();
-  const colQuat = new three.Quaternion();
-  const colEuler = new three.Euler();
-  const colScale = new three.Vector3(1, 1, 1);
+
+  const capGeo = new three.CylinderGeometry(0.32, 0.36, 0.24, 8);
+  const capsInstanced = new three.InstancedMesh(capGeo, colMat, colCount * 2);
+  capsInstanced.name = "cv-env-column-caps";
+  capsInstanced.castShadow = true;
+  capsInstanced.receiveShadow = true;
+
+  const pergolaMat = new three.MeshLambertMaterial({
+    color: textureSet.trim ? "#f1f5f9" : preset.propSecondaryColor,
+    map: textureSet.trim,
+  });
+  const rafterGeo = new three.BoxGeometry(0.16, 0.22, 3.4);
+  const raftersInstanced = new three.InstancedMesh(
+    rafterGeo,
+    pergolaMat,
+    colCount,
+  );
+  raftersInstanced.name = "cv-env-pergola-rafters";
+  raftersInstanced.castShadow = true;
+
+  const lanternGeo = new three.OctahedronGeometry(0.14, 0);
+  const lanternMat = new three.MeshLambertMaterial({
+    color: preset.accentColor,
+    emissive: preset.accentColor,
+    emissiveIntensity: 0.35,
+  });
+  const lanternsInstanced = new three.InstancedMesh(
+    lanternGeo,
+    lanternMat,
+    colCount,
+  );
+  lanternsInstanced.name = "cv-env-hanging-lanterns";
+
+  const archMatrix = new three.Matrix4();
+  const archPos = new three.Vector3();
+  const archQuat = new three.Quaternion();
+  const archEuler = new three.Euler();
+  const archScale = new three.Vector3(1, 1, 1);
+
+  const writeArchInstance = (
+    mesh: ThreeInstancedMeshLike,
+    index: number,
+    x: number,
+    y: number,
+    z: number,
+    rotY: number,
+  ): void => {
+    archPos.set(x, y, z);
+    archEuler.x = 0;
+    archEuler.y = rotY;
+    archEuler.z = 0;
+    archQuat.setFromEuler(archEuler);
+    archMatrix.compose(archPos, archQuat, archScale);
+    mesh.setMatrixAt(index, archMatrix);
+  };
+
+  for (let i = 0; i < walkwayCount; i++) {
+    const angle = (i * Math.PI * 2) / walkwayCount;
+    writeArchInstance(
+      walkwaysInstanced,
+      i,
+      Math.cos(angle) * 2.95,
+      0.015,
+      Math.sin(angle) * 2.95,
+      -angle + Math.PI / 2,
+    );
+  }
+  walkwaysInstanced.instanceMatrix.needsUpdate = true;
+  root.add(walkwaysInstanced);
+
   for (let i = 0; i < colCount; i++) {
     // Offset by 22.5 deg so columns frame avenues without blocking front/portal axes
     const angle = (i * Math.PI * 2) / colCount + Math.PI / 8;
-    colPos.set(
-      Math.cos(angle) * ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M,
-      2.1,
-      Math.sin(angle) * ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M,
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const colX = cosA * ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M;
+    const colZ = sinA * ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M;
+
+    writeArchInstance(columnsInstanced, i, colX, 2.1, colZ, -angle);
+    writeArchInstance(capsInstanced, i * 2, colX, 0.12, colZ, -angle);
+    writeArchInstance(capsInstanced, i * 2 + 1, colX, 4.08, colZ, -angle);
+    writeArchInstance(
+      raftersInstanced,
+      i,
+      cosA * (ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M - 1.45),
+      4.25,
+      sinA * (ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M - 1.45),
+      -angle + Math.PI / 2,
     );
-    (colEuler as { y: number }).y = -angle;
-    colQuat.setFromEuler(colEuler);
-    colMatrix.compose(colPos, colQuat, colScale);
-    columnsInstanced.setMatrixAt(i, colMatrix);
+    writeArchInstance(
+      lanternsInstanced,
+      i,
+      cosA * ENVIRONMENT_BUDGET_TOKENS.LANTERN_RING_RADIUS_M,
+      3.55,
+      sinA * ENVIRONMENT_BUDGET_TOKENS.LANTERN_RING_RADIUS_M,
+      -angle,
+    );
   }
   columnsInstanced.instanceMatrix.needsUpdate = true;
-  root.add(columnsInstanced);
+  capsInstanced.instanceMatrix.needsUpdate = true;
+  raftersInstanced.instanceMatrix.needsUpdate = true;
+  lanternsInstanced.instanceMatrix.needsUpdate = true;
+  root.add(
+    columnsInstanced,
+    capsInstanced,
+    raftersInstanced,
+    lanternsInstanced,
+  );
 
   const pergolaGeo = new three.TorusGeometry(
     ENVIRONMENT_BUDGET_TOKENS.COLUMN_RING_RADIUS_M,
@@ -544,10 +677,6 @@ export function buildRoomEnvironment(
     6,
     24,
   );
-  const pergolaMat = new three.MeshLambertMaterial({
-    color: textureSet.trim ? "#f1f5f9" : preset.propSecondaryColor,
-    map: textureSet.trim,
-  });
   const pergolaMesh = new three.Mesh(pergolaGeo, pergolaMat);
   pergolaMesh.name = "cv-env-pergola-ring";
   pergolaMesh.rotation.set(Math.PI / 2, 0, 0);
@@ -585,7 +714,7 @@ export function buildRoomEnvironment(
 
   const secondaryGeo =
     preset.landscapeTheme === "sierra" || preset.landscapeTheme === "canyon"
-      ? new three.CylinderGeometry(0.18, 0.26, 2.2, 6)
+      ? new three.CylinderGeometry(0.34, 0.44, 2.2, 6)
       : new three.ConeGeometry(0.75, 2.1, 5);
   const secondaryCount = 14;
   const secondaryMat = new three.MeshLambertMaterial({
@@ -607,51 +736,103 @@ export function buildRoomEnvironment(
   });
   root.add(secondaryProps);
 
-  // 7. Ambient Cultural Particles (48..56 Points, 1 draw call)
+  // 7. Ambient 3D Cultural Prisms (40..60 lit Octahedron InstancedMesh, 1 draw call)
   const particleCount = preset.particleCount;
   const basePositions = new Float32Array(particleCount * 3);
-  const livePositions = new Float32Array(particleCount * 3);
+  const radiusSpan =
+    ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MAX_RADIUS_M -
+    ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MIN_RADIUS_M;
+  const heightSpan =
+    ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MAX_HEIGHT_M -
+    ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MIN_HEIGHT_M;
   for (let i = 0; i < particleCount; i++) {
     const angle = (i / particleCount) * Math.PI * 2 * 3.1;
-    const radius = 2.2 + ((i * 7) % 10) * 0.44;
-    const y = 0.6 + ((i * 11) % 13) * 0.25;
-    const px = Math.cos(angle) * radius;
-    const pz = Math.sin(angle) * radius;
-    basePositions[i * 3] = px;
+    const radius =
+      ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MIN_RADIUS_M +
+      (((i * 7) % 10) / 9) * radiusSpan;
+    const y =
+      ENVIRONMENT_BUDGET_TOKENS.PARTICLE_MIN_HEIGHT_M +
+      (((i * 11) % 13) / 12) * heightSpan;
+    basePositions[i * 3] = Math.cos(angle) * radius;
     basePositions[i * 3 + 1] = y;
-    basePositions[i * 3 + 2] = pz;
-    livePositions[i * 3] = px;
-    livePositions[i * 3 + 1] = y;
-    livePositions[i * 3 + 2] = pz;
+    basePositions[i * 3 + 2] = Math.sin(angle) * radius;
   }
 
-  const particleGeo = new three.BufferGeometry();
-  const posAttr = new three.BufferAttribute(livePositions, 3);
-  particleGeo.setAttribute("position", posAttr);
-  const particleMat = new three.PointsMaterial({
+  const particleGeo = new three.OctahedronGeometry(
+    ENVIRONMENT_BUDGET_TOKENS.PARTICLE_RADIUS_M,
+    0,
+  );
+  const particleMat = new three.MeshLambertMaterial({
     color: preset.particleColor,
-    size: ENVIRONMENT_BUDGET_TOKENS.PARTICLE_SIZE_M,
-    transparent: true,
-    opacity: 0.72,
-    depthWrite: false,
+    emissive: preset.particleColor,
+    emissiveIntensity: 0.25,
   });
-  const particles = new three.Points(particleGeo, particleMat);
+  const particles = new three.InstancedMesh(
+    particleGeo,
+    particleMat,
+    particleCount,
+  );
   particles.name = "cv-env-ambient-particles";
+  particles.userData = { ...(particles.userData ?? {}), isAmbientParticles: true };
   root.add(particles);
 
   const fog = new three.Fog(preset.fog.color, preset.fog.near, preset.fog.far);
-  const stats = measureRoomEnvironmentBudget(root);
 
-  const updateParticles = (elapsedSeconds: number): void => {
+  const particleMatrix = new three.Matrix4();
+  const particlePos = new three.Vector3();
+  const particleScale = new three.Vector3(1, 1, 1);
+  const particleQuat = new three.Quaternion();
+  const particleEuler = new three.Euler();
+
+  const updateParticles = (
+    elapsedSeconds: number,
+    focusDirection?: { readonly x: number; readonly y: number; readonly z: number } | null,
+  ): void => {
+    const focusLen = focusDirection
+      ? Math.hypot(focusDirection.x, focusDirection.y, focusDirection.z)
+      : 0;
+    const fx = focusLen > 0 ? focusDirection!.x / focusLen : 0;
+    const fy = focusLen > 0 ? focusDirection!.y / focusLen : 0;
+    const fz = focusLen > 0 ? focusDirection!.z / focusLen : 0;
+
     for (let i = 0; i < particleCount; i++) {
       const idx = i * 3;
-      const baseY = basePositions[idx + 1];
-      livePositions[idx] = basePositions[idx] + Math.sin(elapsedSeconds * 0.6 + i) * 0.08;
-      livePositions[idx + 1] = baseY + Math.sin(elapsedSeconds * 0.9 + i * 0.5) * 0.12;
-      livePositions[idx + 2] = basePositions[idx + 2] + Math.cos(elapsedSeconds * 0.5 + i) * 0.08;
+      const px = basePositions[idx] + Math.sin(elapsedSeconds * 0.6 + i) * 0.08;
+      const py =
+        basePositions[idx + 1] + Math.sin(elapsedSeconds * 0.9 + i * 0.5) * 0.12;
+      const pz =
+        basePositions[idx + 2] + Math.cos(elapsedSeconds * 0.5 + i) * 0.08;
+
+      particleEuler.x = elapsedSeconds * (0.45 + (i % 5) * 0.12) + i;
+      particleEuler.y = elapsedSeconds * (0.55 + (i % 4) * 0.14) + i * 0.7;
+      particleEuler.z = elapsedSeconds * (0.35 + (i % 3) * 0.16) + i * 0.3;
+
+      let scaleVal = 1;
+      if (focusLen > 0) {
+        const dx = px;
+        const dy = py - ROOM_LAYOUT_TOKENS.EYE_HEIGHT_M;
+        const dz = pz;
+        const dist = Math.hypot(dx, dy, dz);
+        if (
+          dist > 0 &&
+          (dx * fx + dy * fy + dz * fz) / dist >=
+            ENVIRONMENT_BUDGET_TOKENS.PARTICLE_INSPECTION_CONE_COS
+        ) {
+          scaleVal = ENVIRONMENT_BUDGET_TOKENS.PARTICLE_INSPECTION_ATTENUATED_SCALE;
+        }
+      }
+
+      particlePos.set(px, py, pz);
+      particleQuat.setFromEuler(particleEuler);
+      particleScale.set(scaleVal, scaleVal, scaleVal);
+      particleMatrix.compose(particlePos, particleQuat, particleScale);
+      particles.setMatrixAt(i, particleMatrix);
     }
-    posAttr.needsUpdate = true;
+    particles.instanceMatrix.needsUpdate = true;
   };
+
+  updateParticles(0);
+  const stats = measureRoomEnvironmentBudget(root);
 
   let disposed = false;
   const dispose = (): void => {

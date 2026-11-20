@@ -197,4 +197,12 @@ describe("Procedural Canvas Textures & Room Environment Presets", () => {
       );
     }
   });
+
+  it("enforces high-contrast sculpted lighting across all 5 room environment presets", () => {
+    for (const roomId of Object.values(RoomId)) {
+      const preset = getRoomEnvironmentPreset(roomId);
+      expect(preset.lighting.hemisphereIntensity).toBeLessThanOrEqual(0.5);
+      expect(preset.lighting.directionalIntensity).toBeGreaterThanOrEqual(1.15);
+    }
+  });
 });
