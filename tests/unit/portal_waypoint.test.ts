@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  PORTAL_ANIMATION_TOKENS,
+  PORTAL_DIMENSIONS,
+} from "../../src/experience/constants";
+import {
   createPortalComponentDefinition,
   createPortalEntity,
   PORTAL_ACTIVATED_EVENT,
@@ -54,7 +58,29 @@ describe("PortalWaypoint Component", () => {
     const labelPlane = portalEl.querySelector("[cv-canvas-text]");
     expect(labelPlane).not.toBeNull();
     expect(labelPlane?.getAttribute("value")).toBe("Cultura Wixárika");
+    expect(labelPlane?.getAttribute("position")).toBe("0 1.38 0.1");
+    expect(portalEl.querySelector(".cv-portal-label-plate")).not.toBeNull();
     expect(portalEl.querySelector("a-text")).toBeNull();
+
+    const glowRing = portalEl.querySelector(".cv-portal-glow-ring");
+    expect(glowRing).not.toBeNull();
+    expect(glowRing?.getAttribute("material")).not.toContain("wireframe: true");
+    expect(glowRing?.getAttribute("animation__portal_pulse")).toContain(
+      `dur: ${PORTAL_ANIMATION_TOKENS.AMBIENT_PULSE_MS}`,
+    );
+    expect(Number(glowRing?.getAttribute("height"))).toBeCloseTo(2.34, 5);
+    expect(glowRing?.getAttribute("position")).toBe("0 -0.23 0.015");
+
+    const aperture = portalEl.querySelector("a-plane.clickable");
+    expect(aperture).not.toBeNull();
+    expect(aperture?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    expect((PORTAL_DIMENSIONS as Record<string, number>).APERTURE_HEIGHT_M).toBeCloseTo(2.46, 5);
+    expect((PORTAL_DIMENSIONS as Record<string, number>).APERTURE_CENTER_Y).toBeCloseTo(-0.23, 5);
+    expect(Number(aperture?.getAttribute("height"))).toBeCloseTo(2.46, 5);
+    expect(aperture?.getAttribute("position")).toBe("0 -0.23 0.01");
+    expect(portalEl.querySelector(".cv-portal-threshold")).not.toBeNull();
+    expect(portalEl.querySelector(".cv-portal-frieze")).not.toBeNull();
+    expect(portalEl.querySelectorAll(".cv-portal-depth-ring")).toHaveLength(0);
   });
 
   it("triggers cv-portal-activated event on click", () => {

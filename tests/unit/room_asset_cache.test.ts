@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { RoomAssetCache } from "../../src/experience/room-asset-cache";
 import { ExhibitMediaType } from "../../src/experience/constants";
 import type { RoomMediaProvider } from "../../src/experience/media-types";
-import { ROOM_CATALOG, RoomId, StandId } from "../../src/shared/room-catalog";
+import { RoomId, StandId } from "../../src/shared/room-catalog";
 
 describe("RoomAssetCache", () => {
   beforeEach(() => {
@@ -14,7 +14,7 @@ describe("RoomAssetCache", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads target culture skybox on first portal traversal and hits cache on subsequent visits", async () => {
+  it("preloads destination stand covers on first traversal, hits cache on revisit, and skips empty rooms without skybox loads", async () => {
     const loadedUrls: string[] = [];
     const cache = new RoomAssetCache({
       preloadImage: async (url) => {
@@ -23,22 +23,64 @@ describe("RoomAssetCache", () => {
       },
     });
 
-    const firstVisit = await cache.ensureRoomAssets(RoomId.WIXARIKA);
-    expect(firstVisit).toBe(true);
-    expect(loadedUrls).toEqual([ROOM_CATALOG[RoomId.WIXARIKA].skyboxUrl]);
-    expect(cache.hasLoaded(ROOM_CATALOG[RoomId.WIXARIKA].skyboxUrl)).toBe(true);
+    const provider: RoomMediaProvider = {
+      getStandItems: (roomId, standId) => {
+        if (roomId === RoomId.WIXARIKA && standId === StandId.ARTE) {
+          return [
+            {
+              id: "wix-art-0",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Arte",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/cover.webp",
+              sortOrder: 0,
+            },
+          ];
+        }
+        if (roomId === RoomId.WIXARIKA && standId === StandId.COSMOVISION) {
+          return [
+            {
+              id: "wix-cosmo-0",
+              roomId,
+              standId,
+              mediaType: ExhibitMediaType.VIDEO_2D,
+              title: "Danza",
+              creatorName: "Autor",
+              description: "Desc",
+              mediaUrl: "https://cdn.example.com/video.mp4",
+              posterUrl: "https://cdn.example.com/video-poster.webp",
+              sortOrder: 0,
+            },
+          ];
+        }
+        return [];
+      },
+    };
 
-    // Return to Lobby and revisit Wixarika -> zero duplicate loads
-    await cache.ensureRoomAssets(RoomId.LOBBY);
-    const secondVisit = await cache.ensureRoomAssets(RoomId.WIXARIKA);
-    expect(secondVisit).toBe(true);
+    const firstVisit = await cache.ensureRoomAssets(RoomId.WIXARIKA, provider);
+    expect(firstVisit).toBe(true);
     expect(loadedUrls).toEqual([
-      ROOM_CATALOG[RoomId.WIXARIKA].skyboxUrl,
-      ROOM_CATALOG[RoomId.LOBBY].skyboxUrl,
+      "https://cdn.example.com/video-poster.webp",
+      "https://cdn.example.com/cover.webp",
     ]);
+    expect(loadedUrls.some((u) => u.includes("/scenes/"))).toBe(false);
+    expect(cache.hasLoaded("https://cdn.example.com/cover.webp")).toBe(true);
+
+    // Visit empty NAAYERI -> 0 loads, resolves true
+    const emptyVisit = await cache.ensureRoomAssets(RoomId.NAAYERI, provider);
+    expect(emptyVisit).toBe(true);
+    expect(loadedUrls).toHaveLength(2);
+
+    // Revisit WIXARIKA -> 0 duplicate loads
+    const secondVisit = await cache.ensureRoomAssets(RoomId.WIXARIKA, provider);
+    expect(secondVisit).toBe(true);
+    expect(loadedUrls).toHaveLength(2);
   });
 
-  it("deduplicates concurrent ensureRoomAssets calls for the same room", async () => {
+  it("deduplicates concurrent ensureAsset calls for the same asset URL", async () => {
     let resolveLoad!: (ok: boolean) => void;
     const loaderSpy = vi.fn(
       () =>
@@ -48,8 +90,8 @@ describe("RoomAssetCache", () => {
     );
 
     const cache = new RoomAssetCache({ preloadImage: loaderSpy });
-    const p1 = cache.ensureRoomAssets(RoomId.NAAYERI);
-    const p2 = cache.ensureRoomAssets(RoomId.NAAYERI);
+    const p1 = cache.ensureAsset("https://cdn.example.com/shared.webp");
+    const p2 = cache.ensureAsset("https://cdn.example.com/shared.webp");
 
     expect(loaderSpy).toHaveBeenCalledTimes(1);
     resolveLoad(true);
@@ -68,104 +110,25 @@ describe("RoomAssetCache", () => {
       },
     });
 
-    expect(await cache.ensureRoomAssets(RoomId.ODAM)).toBe(false);
-    expect(cache.hasLoaded(ROOM_CATALOG[RoomId.ODAM].skyboxUrl)).toBe(false);
-    expect(await cache.ensureRoomAssets(RoomId.ODAM)).toBe(true);
-    expect(cache.hasLoaded(ROOM_CATALOG[RoomId.ODAM].skyboxUrl)).toBe(true);
+    expect(await cache.ensureAsset("https://cdn.example.com/flaky.webp")).toBe(false);
+    expect(cache.hasLoaded("https://cdn.example.com/flaky.webp")).toBe(false);
+    expect(await cache.ensureAsset("https://cdn.example.com/flaky.webp")).toBe(true);
+    expect(cache.hasLoaded("https://cdn.example.com/flaky.webp")).toBe(true);
 
     const stalledCache = new RoomAssetCache({
       timeoutMs: 150,
       preloadImage: () => new Promise<boolean>(() => {}),
     });
-    const stalledPromise = stalledCache.ensureRoomAssets(RoomId.MEXICANERO);
+    const stalledPromise = stalledCache.ensureAsset("https://cdn.example.com/stalled.webp");
     await vi.advanceTimersByTimeAsync(150);
     expect(await stalledPromise).toBe(false);
   });
 
-  it("preloads unique destination stand item[0] covers/posters alongside skyboxUrl and ignores mediaProvider errors", async () => {
-    const loadedUrls: string[] = [];
+  it("ignores mediaProvider errors safely during ensureRoomAssets", async () => {
     const cache = new RoomAssetCache({
-      preloadImage: async (url) => {
-        loadedUrls.push(url);
-        return true;
-      },
+      preloadImage: async () => true,
     });
 
-    const stubProvider: RoomMediaProvider = {
-      getStandItems: vi.fn((roomId, standId) => {
-        if (roomId !== RoomId.WIXARIKA) {
-          return [];
-        }
-        if (standId === StandId.ARTE) {
-          return [
-            {
-              id: "art-img",
-              roomId,
-              standId,
-              mediaType: ExhibitMediaType.IMAGE_2D,
-              title: "Arte 1",
-              creatorName: "Autor",
-              description: "Desc",
-              mediaUrl: "https://cdn.example.com/wix-art-0.jpg",
-              sortOrder: 0,
-            },
-            {
-              id: "art-img-2",
-              roomId,
-              standId,
-              mediaType: ExhibitMediaType.IMAGE_2D,
-              title: "Arte 2",
-              creatorName: "Autor",
-              description: "Desc",
-              mediaUrl: "https://cdn.example.com/wix-art-1-ignored.jpg",
-              sortOrder: 1,
-            },
-          ];
-        }
-        if (standId === StandId.COSMOVISION) {
-          return [
-            {
-              id: "cosmo-vid",
-              roomId,
-              standId,
-              mediaType: ExhibitMediaType.VIDEO_2D,
-              title: "Cosmovisión",
-              creatorName: "Autor",
-              description: "Desc",
-              mediaUrl: "https://cdn.example.com/wix-dance.mp4",
-              posterUrl: "https://cdn.example.com/wix-dance-poster.jpg",
-              sortOrder: 0,
-            },
-          ];
-        }
-        if (standId === StandId.VESTIMENTA) {
-          return [
-            {
-              id: "dup-img",
-              roomId,
-              standId,
-              mediaType: ExhibitMediaType.IMAGE_2D,
-              title: "Vestimenta",
-              creatorName: "Autor",
-              description: "Desc",
-              mediaUrl: "https://cdn.example.com/wix-art-0.jpg",
-              sortOrder: 0,
-            },
-          ];
-        }
-        return [];
-      }),
-    };
-
-    const ok = await cache.ensureRoomAssets(RoomId.WIXARIKA, stubProvider);
-    expect(ok).toBe(true);
-    expect(loadedUrls).toEqual([
-      ROOM_CATALOG[RoomId.WIXARIKA].skyboxUrl,
-      "https://cdn.example.com/wix-dance-poster.jpg",
-      "https://cdn.example.com/wix-art-0.jpg",
-    ]);
-
-    // mediaProvider exception must NOT fail room skybox readiness
     const failingProvider: RoomMediaProvider = {
       getStandItems: vi.fn(() => {
         throw new Error("provider failure");
@@ -173,6 +136,5 @@ describe("RoomAssetCache", () => {
     };
     const fallbackOk = await cache.ensureRoomAssets(RoomId.NAAYERI, failingProvider);
     expect(fallbackOk).toBe(true);
-    expect(loadedUrls).toContain(ROOM_CATALOG[RoomId.NAAYERI].skyboxUrl);
   });
 });

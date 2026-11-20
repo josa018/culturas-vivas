@@ -5,6 +5,7 @@ import {
   ROOM_LAYOUT_TOKENS,
   ROOM_PORTAL_ACCENTS,
   ROOM_TITLES,
+  RoomEnvironmentId,
   RoomId,
   STAND_LABELS,
   StandId,
@@ -12,6 +13,7 @@ import {
   getLobbyReturnTarget,
   isValidRoomStand,
 } from "../../src/shared/room-catalog";
+import { ROOM_DEFINITIONS } from "../../src/experience/constants";
 
 describe("Culture Room Catalog & Polar Layout", () => {
   it("defines LOBBY as DEFAULT_ROOM_ID plus all four Nayarit cultural rooms with bidirectional portals", () => {
@@ -132,5 +134,40 @@ describe("Culture Room Catalog & Polar Layout", () => {
 
     expect(minDiffDeg).toBeGreaterThanOrEqual(45);
     expect(Number(minChordM.toFixed(2))).toBeGreaterThanOrEqual(2.45);
+  });
+
+  it("maps all five rooms to RoomEnvironmentId presets without equirectangular skybox paths and grounds pedestal height to 1.2m", () => {
+    expect(ROOM_LAYOUT_TOKENS.MODEL_PEDESTAL_HEIGHT_M).toBe(
+      ROOM_LAYOUT_TOKENS.PEDESTAL_ELEVATION_M,
+    );
+    expect(ROOM_LAYOUT_TOKENS.MODEL_PEDESTAL_HEIGHT_M).toBe(1.2);
+    expect(ROOM_LAYOUT_TOKENS.DEFAULT_MODEL_ROTATION_SPEED).toBe(0.35);
+
+    const expectedPresets: Record<RoomId, RoomEnvironmentId> = {
+      [RoomId.LOBBY]: RoomEnvironmentId.LOBBY,
+      [RoomId.WIXARIKA]: RoomEnvironmentId.WIXARIKA,
+      [RoomId.NAAYERI]: RoomEnvironmentId.NAAYERI,
+      [RoomId.ODAM]: RoomEnvironmentId.ODAM,
+      [RoomId.MEXICANERO]: RoomEnvironmentId.MEXICANERO,
+    };
+
+    for (const roomId of Object.values(RoomId)) {
+      const entry = ROOM_CATALOG[roomId] as unknown as Record<string, unknown>;
+      expect(entry.environmentPresetId).toBe(expectedPresets[roomId]);
+      expect(entry.skyboxUrl).toBeUndefined();
+      expect(entry.skyboxAssetId).toBeUndefined();
+    }
+  });
+
+  it("elevates stand slots to STAND_ELEVATION_M (1.76m) while keeping portals at EYE_HEIGHT_M (1.6m)", () => {
+    expect((ROOM_LAYOUT_TOKENS as Record<string, unknown>).STAND_ELEVATION_M).toBe(1.76);
+    for (const roomDef of Object.values(ROOM_DEFINITIONS)) {
+      for (const stand of roomDef.stands) {
+        expect(stand.position.y).toBe(1.76);
+      }
+      for (const portal of roomDef.portals) {
+        expect(portal.position.y).toBe(1.6);
+      }
+    }
   });
 });

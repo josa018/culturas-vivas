@@ -9,7 +9,10 @@ import {
   createCanvasTextPlane,
   type DisposableCanvasTextureLike,
 } from "../../src/experience/components/canvas-text";
-import { EXHIBIT_DICTIONARY } from "../../src/experience/constants";
+import {
+  EXHIBIT_DICTIONARY,
+  RENDERER_QUALITY_TOKENS,
+} from "../../src/experience/constants";
 
 function createMockContext2D(): {
   ctx: CanvasContext2DLike;
@@ -141,13 +144,26 @@ describe("Canvas Text Renderer & cv-canvas-text Component", () => {
     const createdTextures: Array<{
       needsUpdate: boolean;
       colorSpace?: string;
+      anisotropy?: number;
+      generateMipmaps?: boolean;
+      minFilter?: number;
+      magFilter?: number;
       dispose: ReturnType<typeof vi.fn>;
     }> = [];
+
+    (globalThis as unknown as { THREE?: unknown }).THREE = {
+      LinearMipmapLinearFilter: 1008,
+      LinearFilter: 1006,
+    };
 
     const createTexture = vi.fn((): DisposableCanvasTextureLike => {
       const texture = {
         needsUpdate: false,
         colorSpace: "",
+        anisotropy: 1,
+        generateMipmaps: false,
+        minFilter: 0,
+        magFilter: 0,
         dispose: vi.fn(),
       };
       createdTextures.push(texture);
@@ -204,8 +220,15 @@ describe("Canvas Text Renderer & cv-canvas-text Component", () => {
     expect(fillTextCalls.map((c) => c.text)).toContain("Contenido próximamente");
     expect(createdTextures.length).toBe(1);
     expect(createdTextures[0]!.needsUpdate).toBe(true);
+    expect(createdTextures[0]!.anisotropy).toBe(
+      RENDERER_QUALITY_TOKENS.TEXTURE_ANISOTROPY,
+    );
+    expect(createdTextures[0]!.generateMipmaps).toBe(true);
+    expect(createdTextures[0]!.minFilter).toBe(1008);
+    expect(createdTextures[0]!.magFilter).toBe(1006);
     expect(mockMaterial.map).toBe(createdTextures[0]);
     expect(mockMaterial.transparent).toBe(true);
+    delete (globalThis as unknown as { THREE?: unknown }).THREE;
 
     // Update with another diacritic string disposes first texture and binds replacement
     instance.data = {

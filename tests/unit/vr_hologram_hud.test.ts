@@ -3,16 +3,24 @@ import {
   DEFAULT_ROOM_ID,
   InspectionState,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ANIMATION_DURATION_MS,
   VR_HUD_DICTIONARY,
   VR_HUD_ELEMENT_IDS,
+  VR_HUD_GEOMETRY,
 } from "../../src/experience/constants";
+import {
+  renderFajaBorderPattern,
+  renderHudIconGlyph,
+  type FajaCanvasContextLike,
+} from "../../src/experience/faja-pattern-renderer";
 import { RoomId } from "../../src/experience/types";
 import {
   VR_HUD_EXIT_EVENT,
   VR_HUD_RETURN_LOBBY_EVENT,
   VR_HUD_SWITCH_2D_EVENT,
   calculateHudWorldTransform,
+  computeCurvedHudStripTransform,
   createVrHologramHudComponentDefinition,
   ensureVrHologramHud,
   readCameraPoseFromScene,
@@ -206,23 +214,45 @@ describe("VR Hologram HUD Component", () => {
     expect(left.rotationDeg.y).toBeCloseTo(90, 2);
   });
 
-  it("readCameraPoseFromScene extracts camera object3D pose or returns default fallback", () => {
+  it("readCameraPoseFromScene extracts camera object3D pose including rig elevation or returns 1.65m fallback", () => {
     expect(readCameraPoseFromScene(null)).toEqual({
-      position: { x: 0, y: 1.6, z: 0 },
+      position: { x: 0, y: 1.65, z: 0 },
       yawRad: 0,
     });
 
     const scene = document.createElement("a-scene");
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    rig.setAttribute("position", "0 1.65 0");
     const camera = document.createElement("a-camera") as HTMLElement & {
       object3D?: { position: { x: number; y: number; z: number }; rotation: { y: number } };
     };
-    camera.object3D = { position: { x: 1.2, y: 1.7, z: -0.5 }, rotation: { y: 0.75 } };
-    scene.appendChild(camera);
+    camera.object3D = { position: { x: 1.2, y: 0.05, z: -0.5 }, rotation: { y: 0.75 } };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
 
     expect(readCameraPoseFromScene(scene)).toEqual({
       position: { x: 1.2, y: 1.7, z: -0.5 },
       yawRad: 0.75,
     });
+
+    // Summing #cv-camera-rig Y-rotation (via object3D or rotation attribute fallback) + child camera yaw
+    (rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: Math.PI },
+    };
+    camera.object3D = { position: { x: 0, y: 0, z: 0 }, rotation: { y: 0.2 } };
+    const rotatedPose = readCameraPoseFromScene(scene);
+    expect(rotatedPose.yawRad).toBeCloseTo(Math.PI + 0.2, 5);
+
+    const hudEl = document.createElement("a-entity") as VrHologramHudEntity;
+    const hudInstance = createMockHudInstance(hudEl);
+    hudInstance.init();
+    hudInstance.summon(rotatedPose);
+    const [, , hudZ] = (hudEl.getAttribute("position") ?? "0 0 0")
+      .split(/\s+/)
+      .map(Number);
+    // Facing ~180 deg (+Z) must anchor the HUD in +Z ahead of gaze, not at -Z behind visitor
+    expect(hudZ).toBeGreaterThan(1.0);
   });
 
   it("summons HUD, aborts active inspection, updates room chip, dismisses, and respects setEnabled(false)", () => {
@@ -809,6 +839,63 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     screen.unmount();
   });
 
+  it("synchronizes cv-gaze-reticle, a-cursor raycaster, cv-vr-tap-trigger, and cv-touch-raycaster across VR and 2D view modes", () => {
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    cursor.setAttribute("raycaster", "objects: .clickable");
+    cursor.setAttribute("fuse", "true");
+    const reticleSetViewModeSpy = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, unknown>;
+    }).components = {
+      cursor: { data: { fuse: true, rayOrigin: "entity" } },
+      "cv-gaze-reticle": { setViewMode: reticleSetViewModeSpy },
+    };
+    const sky = document.createElement("a-sky");
+    camera.appendChild(cursor);
+    scene.append(camera, sky);
+    document.body.appendChild(scene);
+
+    const appRoot = document.createElement("div");
+    document.body.appendChild(appRoot);
+
+    const screen = new ExperienceScreenView(() => {}, ViewMode.VR);
+    screen.mount(appRoot);
+    screen.show();
+
+    const touchEl = scene.querySelector("#cv-touch-raycaster");
+    expect(touchEl).not.toBeNull();
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: false");
+    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+    expect(reticleSetViewModeSpy).toHaveBeenCalledWith(ViewMode.VR);
+
+    const touchSetEnabledSpy = vi.fn();
+    (touchEl as unknown as {
+      components?: Record<string, { setEnabled?: (enabled: boolean) => void }>;
+    }).components = {
+      "cv-touch-raycaster": { setEnabled: touchSetEnabledSpy },
+    };
+
+    screen.setViewMode(ViewMode.TOUCH_2D);
+    expect(cursor.getAttribute("raycaster")).toBe("objects: none");
+    expect(cursor.getAttribute("fuse")).toBe("false");
+    expect(reticleSetViewModeSpy).toHaveBeenLastCalledWith(ViewMode.TOUCH_2D);
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: true");
+    expect(touchSetEnabledSpy).toHaveBeenCalledWith(true);
+    expect(
+      scene.querySelector("#cv-vr-tap-trigger")?.getAttribute("cv-vr-tap-trigger"),
+    ).toContain("hudToggleEnabled: false");
+
+    screen.setViewMode(ViewMode.VR);
+    expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+    expect(cursor.getAttribute("fuse")).toBe("true");
+    expect(reticleSetViewModeSpy).toHaveBeenLastCalledWith(ViewMode.VR);
+    expect(touchSetEnabledSpy).toHaveBeenLastCalledWith(false);
+
+    screen.unmount();
+  });
+
   it("dismisses open 3D HUD when tapping a .clickable target outside HUD_ROOT, while keeping HUD open when tapping PANEL_BACKDROP", () => {
     const scene = document.createElement("a-scene");
     const camera = document.createElement("a-camera");
@@ -904,5 +991,112 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     );
     expect(el.querySelectorAll("[cv-canvas-text]").length).toBeGreaterThanOrEqual(5);
     expect(el.querySelector("a-text")).toBeNull();
+  });
+
+  it("renders procedural faja borders, icon glyphs, cultural HUD trim, 3D depth buttons, room accent colors, and vertical rise animation", () => {
+    const fillRectCalls: Array<[number, number, number, number]> = [];
+    const mockCtx: FajaCanvasContextLike = {
+      fillStyle: "#000000",
+      strokeStyle: "#ffffff",
+      lineWidth: 1,
+      clearRect: vi.fn(),
+      fillRect: vi.fn((x, y, w, h) => fillRectCalls.push([x, y, w, h])),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn(),
+    };
+
+    renderFajaBorderPattern(mockCtx, 512, 32);
+    expect(fillRectCalls.length).toBeGreaterThan(0);
+    expect(mockCtx.beginPath).toHaveBeenCalled();
+
+    renderHudIconGlyph(mockCtx, "touch", "#008F85", 64);
+    renderHudIconGlyph(mockCtx, "lobby", "#D99B26", 64);
+    renderHudIconGlyph(mockCtx, "exit", "#B83A2C", 64);
+    expect(mockCtx.arc).toHaveBeenCalled();
+    expect(mockCtx.stroke).toHaveBeenCalled();
+
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+
+    // Cultural curved cylindrical faja trim strips, side rails, and eyebrow header
+    expect(computeCurvedHudStripTransform(1.8, 0.01, 46)).toEqual({
+      radius: 1.79,
+      thetaStart: 157,
+      thetaLength: 46,
+      centerZ: 1.8,
+    });
+
+    const fajaTrims = Array.from(el.querySelectorAll(".cv-hud-faja-trim"));
+    const sideRails = Array.from(el.querySelectorAll(".cv-hud-side-rail"));
+    expect(fajaTrims).toHaveLength(2);
+    expect(sideRails).toHaveLength(2);
+    for (const strip of [...fajaTrims, ...sideRails]) {
+      expect(strip.tagName.toLowerCase()).toBe("a-cylinder");
+      expect(strip.getAttribute("radius")).toBe("1.79");
+      expect(strip.getAttribute("open-ended")).toBe("true");
+    }
+
+    const eyebrow = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EYEBROW_LABEL}`);
+    expect(eyebrow?.getAttribute("value")).toBe(
+      VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
+    );
+    expect(eyebrow?.getAttribute("value")).toBe("MENÚ DE SALA");
+
+    // 3D beveled lit button boxes (depth: 0.024, shader: lambert) + flat icon & label
+    for (const id of [
+      VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
+      VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
+      VR_HUD_ELEMENT_IDS.EXIT_BTN,
+    ]) {
+      const btn = el.querySelector(`#${id}`);
+      expect(btn?.getAttribute("geometry")).toContain("primitive: box");
+      expect(btn?.getAttribute("geometry")).toContain(
+        `depth: ${VR_HUD_GEOMETRY.BUTTON_DEPTH_M}`,
+      );
+      expect(btn?.getAttribute("material")).toContain("shader: lambert");
+      expect(btn?.hasAttribute("cv-interactive-feedback")).toBe(true);
+      const icon = btn?.querySelector(".cv-hud-btn-icon");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("material")).toContain("shader: flat");
+      expect(btn?.querySelector("[cv-canvas-text]")?.getAttribute("material")).toContain(
+        "shader: flat",
+      );
+    }
+
+    const dismissBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`);
+    expect(dismissBtn?.getAttribute("geometry")).toContain("segments: 48");
+    expect(dismissBtn?.hasAttribute("cv-interactive-feedback")).toBe(true);
+
+    // Room title synchronization updates accent color alongside title text
+    instance.setRoomTitle(RoomId.WIXARIKA);
+    const roomChip = el.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`);
+    expect(roomChip?.getAttribute("cv-canvas-text")).toContain(
+      ROOM_PORTAL_ACCENTS[RoomId.WIXARIKA],
+    );
+    instance.setRoomTitle(RoomId.NAAYERI);
+    expect(roomChip?.getAttribute("cv-canvas-text")).toContain(
+      ROOM_PORTAL_ACCENTS[RoomId.NAAYERI],
+    );
+
+    // Combined scale + 0.05m vertical rise on summon and sink on dismiss
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(el.getAttribute("animation__hud_in")).toContain("to: 1 1 1");
+    expect(el.getAttribute("animation__hud_rise")).toContain("from: 0 1.4 -1.5");
+    expect(el.getAttribute("animation__hud_rise")).toContain("to: 0 1.45 -1.5");
+
+    instance.dismiss();
+    expect(el.getAttribute("animation__hud_out")).toContain(
+      "to: 0.001 0.001 0.001",
+    );
+    expect(el.getAttribute("animation__hud_sink")).toContain("to: 0 1.4 -1.5");
+
+    instance.remove();
   });
 });

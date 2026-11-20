@@ -89,10 +89,10 @@ describe("ScenePreloadManager", () => {
       onProgress: (p) => progressLog.push(p),
     });
 
-    const result = await manager.preloadAll(["/scenes/lobby.webp", "/scenes/wixarika.webp"]);
+    const result = await manager.preloadAll(["https://cdn.example.com/a.webp", "https://cdn.example.com/b.webp"]);
 
     expect(result.success).toBe(true);
-    expect(result.loaded).toEqual(["/scenes/lobby.webp", "/scenes/wixarika.webp"]);
+    expect(result.loaded).toEqual(["https://cdn.example.com/a.webp", "https://cdn.example.com/b.webp"]);
     expect(result.failed).toEqual([]);
     expect(MockImage.createdInstances.every((img) => img.crossOrigin === "anonymous")).toBe(true);
     expect(progressLog).toEqual([
@@ -101,14 +101,14 @@ describe("ScenePreloadManager", () => {
         loadedCount: 1,
         totalCount: 2,
         percentage: 50,
-        currentAsset: "/scenes/lobby.webp",
+        currentAsset: "https://cdn.example.com/a.webp",
         isComplete: false,
       },
       {
         loadedCount: 2,
         totalCount: 2,
         percentage: 100,
-        currentAsset: "/scenes/wixarika.webp",
+        currentAsset: "https://cdn.example.com/b.webp",
         isComplete: true,
       },
     ]);
@@ -119,7 +119,7 @@ describe("ScenePreloadManager", () => {
     vi.stubGlobal("Image", MockImage);
     const manager = new ScenePreloadManager({ timeoutMs: 1000 });
 
-    const ok = await manager.preloadAsset("/scenes/lobby.webp");
+    const ok = await manager.preloadAsset("https://cdn.example.com/a.webp");
     expect(ok).toBe(true);
   });
 
@@ -180,10 +180,10 @@ describe("ScenePreloadManager", () => {
       },
     });
 
-    const result = await manager.preloadAll(["/scenes/lobby.webp"]);
+    const result = await manager.preloadAll(["https://cdn.example.com/a.webp"]);
 
     expect(result.success).toBe(true);
-    expect(result.loaded).toEqual(["/scenes/lobby.webp"]);
+    expect(result.loaded).toEqual(["https://cdn.example.com/a.webp"]);
     expect(errorSpy).toHaveBeenCalled();
   });
 
@@ -231,13 +231,13 @@ describe("ScenePreloadManager", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("extracts only the critical LOBBY skybox asset for initial Splash preload", () => {
+  it("returns empty critical assets when Lobby stands are empty without legacy /scenes/*.webp paths", () => {
     const assets = getCriticalRoomAssets();
-    expect(assets).toEqual(["/scenes/lobby.webp"]);
-    expect(assets).toHaveLength(1);
+    expect(assets).toEqual([]);
+    expect(assets).toHaveLength(0);
   });
 
-  it("includes unique Lobby stand cover images and video posters while excluding cultural room assets", () => {
+  it("includes unique Lobby stand cover images and video posters while excluding cultural room assets and skyboxes", () => {
     const provider: RoomMediaProvider = {
       getStandItems: (roomId, standId) => {
         if (roomId === RoomId.LOBBY && standId === StandId.BIENVENIDA) {
@@ -289,7 +289,6 @@ describe("ScenePreloadManager", () => {
 
     const assets = getCriticalRoomAssets(provider);
     expect(assets).toEqual([
-      "/scenes/lobby.webp",
       "https://pub-demo.r2.dev/rooms/lobby/bienvenida/cover.webp",
       "https://pub-demo.r2.dev/rooms/lobby/nayarit/poster.webp",
     ]);

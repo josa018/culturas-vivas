@@ -11,13 +11,13 @@ import {
 } from "./media-types";
 
 /**
- * Resolves only the active Lobby skybox and Lobby cover/poster assets needed for Splash preload.
+ * Resolves only the active Lobby cover/poster assets needed for Splash preload.
  */
 export function getCriticalRoomAssets(
   mediaProvider: RoomMediaProvider = emptyRoomMediaProvider,
 ): string[] {
   const lobbyEntry = ROOM_CATALOG[DEFAULT_ROOM_ID];
-  const uniqueAssets = new Set<string>([lobbyEntry.skyboxUrl]);
+  const uniqueAssets = new Set<string>();
 
   for (const stand of lobbyEntry.stands) {
     const items = mediaProvider.getStandItems(DEFAULT_ROOM_ID, stand.standId);
@@ -41,7 +41,7 @@ export function getCriticalRoomAssets(
 
 export const PRELOAD_CONSTANTS = {
   DEFAULT_TIMEOUT_MS: 8000,
-  DEFAULT_CRITICAL_ASSETS: [ROOM_CATALOG[DEFAULT_ROOM_ID].skyboxUrl],
+  DEFAULT_CRITICAL_ASSETS: [] as readonly string[],
   PERCENTAGE_COMPLETE: 100,
   PERCENTAGE_START: 0,
 } as const;

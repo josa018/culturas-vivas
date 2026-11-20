@@ -1,4 +1,5 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
+import { ViewMode } from "../navigation/types";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
 import { ExhibitRoomBuilder } from "../experience/room-builder";
@@ -14,9 +15,18 @@ import {
 } from "../experience/components/portal-waypoint";
 import {
   DEFAULT_ROOM_ID,
+  PLAYER_RIG_TOKENS,
+  RETICLE_TOKENS,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../experience/constants";
+import { computeRigTargetYawRad } from "../experience/camera-orientation";
+import type { GazeReticleComponentInstance } from "../experience/components/gaze-reticle";
+import {
+  ensureTouchRaycaster,
+  type TouchRaycasterComponentInstance,
+} from "../experience/components/touch-raycaster";
 import { getSharedInspectionController } from "../experience/components/inspectable";
 import {
   ensureVrHologramHud,
@@ -64,6 +74,7 @@ export class ExperienceScreenView implements ScreenView {
   private returnLobbyBtnEl: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
   private viewMode: string = "vr";
+  private hasVisitedLobby: boolean = false;
   private isProgrammaticExit: boolean = false;
   private exitVRHandler: (() => void) | null = null;
   private portalHandler: ((evt: Event) => void) | null = null;
@@ -140,6 +151,21 @@ export class ExperienceScreenView implements ScreenView {
           roomChip.setAttribute("value", roomDef.title);
         }
       }
+
+      const cursorEl = document.querySelector("a-cursor");
+      const reticleComp = (
+        cursorEl as unknown as {
+          components?: Record<
+            string,
+            { setAccentColor?: (color: string) => void }
+          >;
+        } | null
+      )?.components?.["cv-gaze-reticle"];
+      const accentColor =
+        ROOM_PORTAL_ACCENTS[roomId] ?? ROOM_PORTAL_ACCENTS[DEFAULT_ROOM_ID];
+      if (reticleComp && typeof reticleComp.setAccentColor === "function") {
+        reticleComp.setAccentColor(accentColor);
+      }
     }
   }
 
@@ -204,6 +230,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.hasVisitedLobby = false;
     this.topBarEl = null;
     this.roomBadgeEl = null;
     this.returnLobbyBtnEl = null;
@@ -287,6 +314,7 @@ export class ExperienceScreenView implements ScreenView {
       return false;
     }
 
+    const sourceRoomId = this.transitionStateMachine.getActiveRoomId();
     const started = this.transitionStateMachine.triggerTransition(targetRoomId);
     if (!started) {
       return false;
@@ -311,10 +339,20 @@ export class ExperienceScreenView implements ScreenView {
     )?.components?.["cv-vr-tap-trigger"];
     tapComp?.setTransitionIdle(false);
 
-    // 2. Lock cursor raycaster during transition to prevent interaction glitches
+    // 2. Lock gaze & touch raycasters during transition to prevent interaction glitches
     const cursor = scene.querySelector("a-cursor");
     if (cursor) {
       cursor.setAttribute("raycaster", "objects: none");
+    }
+    const touchEl = scene.querySelector(`#${RETICLE_TOKENS.TOUCH_RAYCASTER_ID}`);
+    if (touchEl) {
+      touchEl.setAttribute("cv-touch-raycaster", "enabled: false");
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(false);
     }
 
     // 3. Ensure camera curtain exists on active camera
@@ -335,9 +373,7 @@ export class ExperienceScreenView implements ScreenView {
         curtain.fadeIn(() => {
           this.transitionStateMachine.notifyFadeInComplete();
           tapComp?.setTransitionIdle(true);
-          if (cursor) {
-            cursor.setAttribute("raycaster", "objects: .clickable");
-          }
+          this.synchronizePointerMode(scene);
         });
       };
 
@@ -345,12 +381,17 @@ export class ExperienceScreenView implements ScreenView {
         this.transitionStateMachine.notifyFadeOutComplete();
 
         const performSwap = () => {
-          // 4. Mount target room and update skybox
+          // 4. Mount target room and orient camera rig under blackout before curtain opens
           const roomGroup = ExhibitRoomBuilder.mountRoom(
             scene,
             targetRoomId,
             this.viewMode,
             this.mediaProvider,
+          );
+          this.applyContextualCameraOrientation(
+            scene,
+            targetRoomId,
+            sourceRoomId,
           );
           const skyEl = scene.querySelector("a-sky");
 
@@ -380,13 +421,12 @@ export class ExperienceScreenView implements ScreenView {
         this.viewMode,
         this.mediaProvider,
       );
+      this.applyContextualCameraOrientation(scene, targetRoomId, sourceRoomId);
       this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
       this.transitionStateMachine.notifyFadeInComplete();
       tapComp?.setTransitionIdle(true);
-      if (cursor) {
-        cursor.setAttribute("raycaster", "objects: .clickable");
-      }
+      this.synchronizePointerMode(scene);
     }
 
     return true;
@@ -411,6 +451,10 @@ export class ExperienceScreenView implements ScreenView {
         this.viewMode,
         this.mediaProvider,
       );
+      const activeRoomId = ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID;
+      if (!this.hasVisitedLobby && activeRoomId === RoomId.LOBBY) {
+        this.applyContextualCameraOrientation(scene, RoomId.LOBBY, null);
+      }
 
       // Attach curtain to camera on scene activation and fade in smoothly
       const cameraEl =
@@ -740,6 +784,66 @@ export class ExperienceScreenView implements ScreenView {
         this.transitionStateMachine.getState() === RoomTransitionState.IDLE,
       );
     }
+
+    this.synchronizePointerMode(scene);
+  }
+
+  private synchronizePointerMode(scene: AFrameSceneElement): void {
+    const isVr = this.viewMode === ViewMode.VR;
+    const isTransitionIdle =
+      this.transitionStateMachine.getState() === RoomTransitionState.IDLE;
+
+    const cursor = scene.querySelector("a-cursor");
+    if (cursor) {
+      cursor.setAttribute(
+        "raycaster",
+        isVr && isTransitionIdle ? "objects: .clickable" : "objects: none",
+      );
+      cursor.setAttribute("fuse", isVr ? "true" : "false");
+      const reticleComp = (
+        cursor as unknown as {
+          components?: Record<string, GazeReticleComponentInstance>;
+        }
+      ).components?.["cv-gaze-reticle"];
+      reticleComp?.setViewMode?.(this.viewMode);
+    }
+
+    const touchEl = ensureTouchRaycaster(scene);
+    if (touchEl) {
+      const enableTouch = !isVr && isTransitionIdle;
+      touchEl.setAttribute("cv-touch-raycaster", `enabled: ${enableTouch}`);
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(enableTouch);
+    }
+  }
+
+  private disablePointerMode(scene: AFrameSceneElement): void {
+    const cursor = scene.querySelector("a-cursor");
+    if (cursor) {
+      cursor.setAttribute("raycaster", "objects: none");
+      cursor.setAttribute("fuse", "false");
+      const reticleComp = (
+        cursor as unknown as {
+          components?: Record<string, GazeReticleComponentInstance>;
+        }
+      ).components?.["cv-gaze-reticle"];
+      reticleComp?.setViewMode?.(ViewMode.TOUCH_2D);
+    }
+
+    const touchEl = scene.querySelector(`#${RETICLE_TOKENS.TOUCH_RAYCASTER_ID}`);
+    if (touchEl) {
+      touchEl.setAttribute("cv-touch-raycaster", "enabled: false");
+      const touchComp = (
+        touchEl as unknown as {
+          components?: Record<string, TouchRaycasterComponentInstance>;
+        }
+      ).components?.["cv-touch-raycaster"];
+      touchComp?.setEnabled(false);
+    }
   }
 
   private disableSpatialHud(scene: AFrameSceneElement): void {
@@ -767,6 +871,95 @@ export class ExperienceScreenView implements ScreenView {
         }
       ).components?.["cv-vr-tap-trigger"];
       tapComp?.setHudToggleEnabled(false);
+    }
+
+    this.disablePointerMode(scene);
+  }
+
+  private applyContextualCameraOrientation(
+    scene: AFrameSceneElement,
+    targetRoomId: RoomId,
+    sourceRoomId: RoomId | null,
+  ): void {
+    const cameraEl =
+      scene.querySelector("a-camera") || scene.querySelector("[camera]");
+    const cameraObj = (
+      cameraEl as unknown as {
+        object3D?: {
+          rotation?: { x?: number; y?: number };
+          updateMatrix?: () => void;
+        };
+      } | null
+    )?.object3D;
+    const lookControls = (
+      cameraEl as unknown as {
+        components?: Record<
+          string,
+          {
+            yawObject?: { rotation?: { y?: number } };
+            pitchObject?: { rotation?: { x?: number } };
+          }
+        >;
+      } | null
+    )?.components?.["look-controls"];
+
+    const localObjYaw =
+      cameraObj?.rotation && Number.isFinite(cameraObj.rotation.y)
+        ? Number(cameraObj.rotation.y)
+        : 0;
+    const localLookYaw =
+      lookControls?.yawObject?.rotation &&
+      Number.isFinite(lookControls.yawObject.rotation.y)
+        ? Number(lookControls.yawObject.rotation.y)
+        : 0;
+    const currentCameraLocalYawRad =
+      localObjYaw !== 0 ? localObjYaw : localLookYaw;
+
+    const orientation = computeRigTargetYawRad({
+      targetRoomId,
+      sourceRoomId,
+      hasVisitedLobby: this.hasVisitedLobby,
+      viewMode: this.viewMode as ViewMode,
+      currentCameraLocalYawRad,
+    });
+
+    if (orientation.resetLocalLookControls && cameraEl) {
+      if (lookControls?.yawObject?.rotation) {
+        lookControls.yawObject.rotation.y = 0;
+      }
+      if (lookControls?.pitchObject?.rotation) {
+        lookControls.pitchObject.rotation.x = 0;
+      }
+      if (cameraObj?.rotation) {
+        cameraObj.rotation.y = 0;
+        cameraObj.updateMatrix?.();
+      }
+      cameraEl.setAttribute("rotation", "0 0 0");
+    }
+
+    if (orientation.rigYawRad !== null) {
+      const rigEl = scene.querySelector(`#${PLAYER_RIG_TOKENS.CAMERA_RIG_ID}`);
+      if (rigEl) {
+        const rigYawDeg =
+          Number((orientation.rigYawRad * (180 / Math.PI)).toFixed(4)) || 0;
+        rigEl.setAttribute("rotation", `0 ${rigYawDeg} 0`);
+        const rigObj = (
+          rigEl as unknown as {
+            object3D?: {
+              rotation?: { y: number };
+              updateMatrix?: () => void;
+            };
+          }
+        ).object3D;
+        if (rigObj?.rotation) {
+          rigObj.rotation.y = orientation.rigYawRad;
+          rigObj.updateMatrix?.();
+        }
+      }
+    }
+
+    if (targetRoomId === RoomId.LOBBY) {
+      this.hasVisitedLobby = true;
     }
   }
 

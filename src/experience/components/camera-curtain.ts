@@ -1,4 +1,8 @@
-import { CURTAIN_RENDER_ORDER, TRANSITION_TIMINGS } from "../constants";
+import {
+  CAMERA_CURTAIN_RADIUS_M,
+  CURTAIN_RENDER_ORDER,
+  TRANSITION_TIMINGS,
+} from "../constants";
 
 export const CAMERA_CURTAIN_ID = "cv-camera-curtain";
 
@@ -264,13 +268,15 @@ export function ensureCameraCurtain(cameraEl: HTMLElement): HTMLElement {
     `#${CAMERA_CURTAIN_ID}`,
   ) as HTMLElement;
   if (curtainEl) {
+    // Resize any pre-existing curtain sphere so desktop wide-FOV / stereo IPD frustums never clip
+    curtainEl.setAttribute("radius", String(CAMERA_CURTAIN_RADIUS_M));
     return curtainEl;
   }
 
   curtainEl = document.createElement("a-sphere");
   curtainEl.setAttribute("id", CAMERA_CURTAIN_ID);
   curtainEl.setAttribute("position", "0 0 0");
-  curtainEl.setAttribute("radius", "0.2");
+  curtainEl.setAttribute("radius", String(CAMERA_CURTAIN_RADIUS_M));
   curtainEl.setAttribute(
     "material",
     "side: back; color: #000000; shader: flat; transparent: true; opacity: 0; depthTest: false",

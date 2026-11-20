@@ -7,6 +7,7 @@ import {
   type CameraCurtainEntity,
 } from "../../src/experience/components/camera-curtain";
 import {
+  CAMERA_CURTAIN_RADIUS_M,
   CURTAIN_RENDER_ORDER,
   TRANSITION_TIMINGS,
 } from "../../src/experience/constants";
@@ -65,15 +66,21 @@ describe("CameraCurtain Component", () => {
     const cameraEl = document.createElement("a-camera");
     const curtain = ensureCameraCurtain(cameraEl);
 
+    expect(CAMERA_CURTAIN_RADIUS_M).toBe(0.5);
     expect(curtain.tagName.toLowerCase()).toBe("a-sphere");
     expect(curtain.getAttribute("id")).toBe(CAMERA_CURTAIN_ID);
     expect(curtain.getAttribute("position")).toBe("0 0 0");
-    expect(curtain.getAttribute("radius")).toBe("0.2");
+    expect(curtain.getAttribute("radius")).toBe("0.5");
     expect(curtain.getAttribute("visible")).toBe("false");
     expect(curtain.getAttribute("material")).toContain("side: back");
+    expect(curtain.getAttribute("material")).toContain("depthTest: false");
     expect(curtain.getAttribute("material")).toMatch(/opacity:\s*0/);
 
     expect(ensureCameraCurtain(cameraEl)).toBe(curtain);
+
+    // Pre-existing curtain node with stale radius is also resized to CAMERA_CURTAIN_RADIUS_M
+    curtain.setAttribute("radius", "0.2");
+    expect(ensureCameraCurtain(cameraEl).getAttribute("radius")).toBe("0.5");
   });
 
   it("clamps opacity within [0, 1] and updates material string", () => {

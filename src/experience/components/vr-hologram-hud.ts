@@ -1,7 +1,9 @@
 import {
   DEFAULT_ROOM_ID,
   InspectionState,
+  PLAYER_RIG_TOKENS,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ANIMATION_DURATION_MS,
   VR_HUD_COLORS,
   VR_HUD_DICTIONARY,
@@ -14,6 +16,13 @@ import {
   VR_HUD_VISIBLE_SCALE,
   type Vector3D,
 } from "../constants";
+import {
+  createCanvasTextureFromDrawer,
+  renderFajaBorderPattern,
+  renderHudIconGlyph,
+  type HudIconId,
+  type ProceduralHudTexture,
+} from "../faja-pattern-renderer";
 import { RoomId } from "../types";
 import {
   createCanvasTextPlane,
@@ -68,6 +77,8 @@ export interface VrHologramHudComponentInstance {
   dismissTimer?: ReturnType<typeof setTimeout> | null;
   hudOutCompleteHandler?: (() => void) | null;
   interactiveEls?: HTMLElement[];
+  ownedTextures?: ProceduralHudTexture[];
+  lastTransform?: VrHudWorldTransform | null;
   unsubscribeInspection?: (() => void) | null;
   init: () => void;
   setCallbacks: (callbacks: VrHudActionCallbacks) => void;
@@ -122,6 +133,30 @@ function clearPendingHudDismiss(
   }
 }
 
+export interface CurvedHudStripTransform {
+  readonly radius: number;
+  readonly thetaStart: number;
+  readonly thetaLength: number;
+  readonly centerZ: number;
+}
+
+/**
+ * Computes cylindrical arc parameters inset radially inside the curved HUD backdrop.
+ */
+export function computeCurvedHudStripTransform(
+  radiusM: number,
+  radialInsetM: number,
+  thetaLengthDeg: number,
+  thetaOffsetDeg: number = 0,
+): CurvedHudStripTransform {
+  return {
+    radius: Number((radiusM - radialInsetM).toFixed(4)),
+    thetaStart: Number((180 - thetaLengthDeg / 2 + thetaOffsetDeg).toFixed(4)),
+    thetaLength: Number(thetaLengthDeg.toFixed(4)),
+    centerZ: Number(radiusM.toFixed(4)),
+  };
+}
+
 /**
  * Computes world-space position and Y-rotation for the HUD panel
  * placed at focal distance ahead of the camera along its gaze azimuth.
@@ -153,11 +188,36 @@ export function calculateHudWorldTransform(
 /**
  * Extracts world position and yaw (radians) from the active scene camera.
  */
+function readAncestorYawRad(cameraEl: Element, sceneEl: HTMLElement): number {
+  let totalRad = 0;
+  let ancestor = cameraEl.parentElement;
+  while (ancestor && ancestor !== sceneEl) {
+    const parentRot = (
+      ancestor as unknown as {
+        object3D?: { rotation?: { y?: number } };
+      }
+    ).object3D?.rotation;
+    if (parentRot && typeof parentRot.y === "number") {
+      totalRad += parentRot.y;
+    } else {
+      const rotAttr = ancestor.getAttribute("rotation");
+      if (typeof rotAttr === "string") {
+        const parts = rotAttr.trim().split(/\s+/).map(Number);
+        if (Number.isFinite(parts[1])) {
+          totalRad += (parts[1] * Math.PI) / 180;
+        }
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return totalRad;
+}
+
 export function readCameraPoseFromScene(
   sceneEl: HTMLElement | null | undefined,
 ): VrHudCameraPose {
   const fallback: VrHudCameraPose = {
-    position: { x: 0, y: 1.6, z: 0 },
+    position: { x: 0, y: PLAYER_RIG_TOKENS.EYE_HEIGHT_M, z: 0 },
     yawRad: 0,
   };
   if (!sceneEl) {
@@ -175,74 +235,184 @@ export function readCameraPoseFromScene(
       object3D?: {
         position?: { x: number; y: number; z: number };
         rotation?: { y: number };
+        getWorldPosition?: (out: { x: number; y: number; z: number }) => unknown;
       };
     }
   ).object3D;
 
+  const localYawRad = typeof obj3D?.rotation?.y === "number" ? obj3D.rotation.y : 0;
+  const yawRad = localYawRad + readAncestorYawRad(cameraEl, sceneEl);
+
+  if (obj3D && typeof obj3D.getWorldPosition === "function") {
+    const worldPos = {
+      x: 0,
+      y: 0,
+      z: 0,
+      set(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        return this;
+      },
+    };
+    obj3D.getWorldPosition(worldPos);
+    return {
+      position: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+      yawRad,
+    };
+  }
+
   const pos = obj3D?.position;
-  const yawRad = typeof obj3D?.rotation?.y === "number" ? obj3D.rotation.y : 0;
+  if (!pos) {
+    return { position: fallback.position, yawRad };
+  }
+
+  // Sum rig ancestor positions up to sceneEl when running under DOM mocks without Three.js
+  let worldX = typeof pos.x === "number" ? pos.x : 0;
+  let worldY = typeof pos.y === "number" ? pos.y : 0;
+  let worldZ = typeof pos.z === "number" ? pos.z : 0;
+  let ancestor = cameraEl.parentElement;
+  while (ancestor && ancestor !== sceneEl) {
+    const parentPos = (
+      ancestor as unknown as {
+        object3D?: { position?: { x?: number; y?: number; z?: number } };
+      }
+    ).object3D?.position;
+    if (parentPos) {
+      worldX += typeof parentPos.x === "number" ? parentPos.x : 0;
+      worldY += typeof parentPos.y === "number" ? parentPos.y : 0;
+      worldZ += typeof parentPos.z === "number" ? parentPos.z : 0;
+    } else {
+      const posAttr = ancestor.getAttribute("position");
+      if (typeof posAttr === "string") {
+        const parts = posAttr.trim().split(/\s+/).map(Number);
+        worldX += Number.isFinite(parts[0]) ? parts[0] : 0;
+        worldY += Number.isFinite(parts[1]) ? parts[1] : 0;
+        worldZ += Number.isFinite(parts[2]) ? parts[2] : 0;
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
 
   return {
-    position: {
-      x: typeof pos?.x === "number" ? pos.x : fallback.position.x,
-      y: typeof pos?.y === "number" ? pos.y : fallback.position.y,
-      z: typeof pos?.z === "number" ? pos.z : fallback.position.z,
-    },
+    position: { x: worldX, y: worldY, z: worldZ },
     yawRad,
   };
+}
+
+function bindProceduralTexture(
+  plane: HTMLElement,
+  texture: ProceduralHudTexture | null,
+  ownedTextures: ProceduralHudTexture[],
+): void {
+  if (!texture) {
+    return;
+  }
+  ownedTextures.push(texture);
+  const attach = () => {
+    const obj3D = (
+      plane as unknown as {
+        object3D?: {
+          traverse?: (cb: (node: unknown) => void) => void;
+        };
+      }
+    ).object3D;
+    obj3D?.traverse?.((node: unknown) => {
+      const mat = (
+        node as {
+          material?: { map?: unknown; transparent?: boolean; needsUpdate?: boolean };
+        }
+      )?.material;
+      if (mat) {
+        mat.map = texture;
+        mat.transparent = true;
+        mat.needsUpdate = true;
+      }
+    });
+  };
+  attach();
+  plane.addEventListener?.("object3dset", attach);
 }
 
 function createHudButtonEntity(options: {
   id: string;
   action: string;
   label: string;
+  iconId: HudIconId;
   position: string;
   rotation?: string;
   backgroundColor: string;
   borderColor: string;
+  ownedTextures: ProceduralHudTexture[];
   width?: number;
   height?: number;
 }): HTMLElement {
   const width = options.width ?? VR_HUD_GEOMETRY.BUTTON_WIDTH_M;
   const height = options.height ?? VR_HUD_GEOMETRY.BUTTON_HEIGHT_M;
+  const depth = VR_HUD_GEOMETRY.BUTTON_DEPTH_M;
 
   const btn = document.createElement("a-entity");
   btn.setAttribute("id", options.id);
   btn.setAttribute("class", "cv-hud-control");
+  btn.setAttribute("cv-interactive-feedback", "");
   btn.setAttribute("data-action", options.action);
   btn.setAttribute("position", options.position);
   if (options.rotation) {
     btn.setAttribute("rotation", options.rotation);
   }
-  btn.setAttribute("geometry", `primitive: plane; width: ${width}; height: ${height}`);
+  btn.setAttribute(
+    "geometry",
+    `primitive: box; width: ${width}; height: ${height}; depth: ${depth}`,
+  );
   btn.setAttribute(
     "material",
-    `shader: flat; color: ${options.backgroundColor}; opacity: 0.95`,
+    `shader: lambert; color: ${options.backgroundColor}; opacity: 0.95`,
   );
 
   const accentBar = document.createElement("a-plane");
   accentBar.setAttribute("width", String(width));
   accentBar.setAttribute("height", "0.018");
-  accentBar.setAttribute("position", `0 ${height / 2 - 0.009} 0.005`);
+  accentBar.setAttribute(
+    "position",
+    `0 ${Number((height / 2 - 0.009).toFixed(4))} ${depth / 2 + 0.004}`,
+  );
   accentBar.setAttribute("color", options.borderColor);
   accentBar.setAttribute("material", "shader: flat");
+
+  const iconSize = Number((height * 0.48).toFixed(3));
+  const iconEl = document.createElement("a-plane");
+  iconEl.setAttribute("class", "cv-hud-btn-icon");
+  iconEl.setAttribute("width", String(iconSize));
+  iconEl.setAttribute("height", String(iconSize));
+  iconEl.setAttribute(
+    "position",
+    `${Number((-width / 2 + iconSize * 0.85).toFixed(4))} 0 ${depth / 2 + 0.006}`,
+  );
+  iconEl.setAttribute(
+    "material",
+    `shader: flat; transparent: true; color: ${options.borderColor}`,
+  );
+  const iconTex = createCanvasTextureFromDrawer(96, 96, (ctx) =>
+    renderHudIconGlyph(ctx, options.iconId, options.borderColor, 96),
+  );
+  bindProceduralTexture(iconEl, iconTex, options.ownedTextures);
 
   const labelEl = createCanvasTextPlane({
     value: options.label,
     align: "center",
     baseline: "middle",
     color: VR_HUD_COLORS.TEXT_BONE,
-    width: width * 0.9,
-    height: height * 0.68,
-    fontSizePx: 44,
+    width: width * 0.72,
+    height: height * 0.64,
+    fontSizePx: 42,
     fontWeight: "600",
     canvasWidth: 512,
     canvasHeight: 128,
     maxLines: 1,
-    position: "0 0 0.01",
+    position: `${Number((iconSize * 0.42).toFixed(4))} 0 ${depth / 2 + 0.008}`,
   });
 
-  btn.append(accentBar, labelEl);
+  btn.append(accentBar, iconEl, labelEl);
   return btn;
 }
 
@@ -263,6 +433,8 @@ export function createVrHologramHudComponentDefinition() {
       this.hudEpoch = 0;
       this.dismissTimer = null;
       this.hudOutCompleteHandler = null;
+      this.ownedTextures = [];
+      this.lastTransform = null;
 
       this.el.setAttribute("visible", "false");
       this.el.setAttribute("scale", VR_HUD_HIDDEN_SCALE);
@@ -295,16 +467,81 @@ export function createVrHologramHudComponentDefinition() {
         evt?.stopPropagation?.();
       });
 
-      // Top golden Nierika frame accent bar
-      const topTrim = document.createElement("a-plane");
-      topTrim.setAttribute("width", String(VR_HUD_GEOMETRY.PANEL_WIDTH_M));
-      topTrim.setAttribute("height", "0.015");
-      topTrim.setAttribute(
-        "position",
-        `0 ${VR_HUD_GEOMETRY.PANEL_HEIGHT_M / 2 - 0.02} 0.03`,
+      // Top & bottom curved cylindrical procedural Nayarit faja trim strips
+      const trimArc = computeCurvedHudStripTransform(
+        VR_HUD_GEOMETRY.CURVED_RADIUS_M,
+        VR_HUD_GEOMETRY.TRIM_RADIAL_INSET_M,
+        VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG,
       );
-      topTrim.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
-      topTrim.setAttribute("material", "shader: flat");
+      const createFajaTrim = (yPos: number): HTMLElement => {
+        const trim = document.createElement("a-cylinder");
+        trim.setAttribute("class", "cv-hud-faja-trim");
+        trim.setAttribute("radius", String(trimArc.radius));
+        trim.setAttribute("height", String(VR_HUD_GEOMETRY.FAJA_HEIGHT_M));
+        trim.setAttribute("theta-start", String(trimArc.thetaStart));
+        trim.setAttribute("theta-length", String(trimArc.thetaLength));
+        trim.setAttribute("open-ended", "true");
+        trim.setAttribute(
+          "position",
+          `0 ${Number(yPos.toFixed(4))} ${trimArc.centerZ}`,
+        );
+        trim.setAttribute(
+          "material",
+          "shader: flat; side: double; color: #ffffff; transparent: true",
+        );
+        const fajaTex = createCanvasTextureFromDrawer(512, 32, (ctx) =>
+          renderFajaBorderPattern(ctx, 512, 32),
+        );
+        bindProceduralTexture(trim, fajaTex, this.ownedTextures ?? []);
+        return trim;
+      };
+
+      const topFajaTrim = createFajaTrim(
+        VR_HUD_GEOMETRY.PANEL_HEIGHT_M / 2 - VR_HUD_GEOMETRY.FAJA_HEIGHT_M / 2 - 0.008,
+      );
+      const bottomFajaTrim = createFajaTrim(
+        -VR_HUD_GEOMETRY.PANEL_HEIGHT_M / 2 + VR_HUD_GEOMETRY.FAJA_HEIGHT_M / 2 + 0.008,
+      );
+
+      // Left & right golden curved Nierika side rails
+      const createSideRail = (thetaOffsetDeg: number): HTMLElement => {
+        const railArc = computeCurvedHudStripTransform(
+          VR_HUD_GEOMETRY.CURVED_RADIUS_M,
+          VR_HUD_GEOMETRY.TRIM_RADIAL_INSET_M,
+          VR_HUD_GEOMETRY.SIDE_RAIL_ARC_THETA_DEG,
+          thetaOffsetDeg,
+        );
+        const rail = document.createElement("a-cylinder");
+        rail.setAttribute("class", "cv-hud-side-rail");
+        rail.setAttribute("radius", String(railArc.radius));
+        rail.setAttribute("height", String(VR_HUD_GEOMETRY.PANEL_HEIGHT_M - 0.04));
+        rail.setAttribute("theta-start", String(railArc.thetaStart));
+        rail.setAttribute("theta-length", String(railArc.thetaLength));
+        rail.setAttribute("open-ended", "true");
+        rail.setAttribute("position", `0 0 ${railArc.centerZ}`);
+        rail.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
+        rail.setAttribute("material", "shader: lambert; side: double");
+        return rail;
+      };
+      const leftRail = createSideRail(-(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2));
+      const rightRail = createSideRail(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2);
+
+      // Cultural eyebrow label
+      const eyebrowLabel = createCanvasTextPlane({
+        id: VR_HUD_ELEMENT_IDS.EYEBROW_LABEL,
+        value: VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
+        align: "center",
+        baseline: "middle",
+        color: VR_HUD_COLORS.TEXT_BONE,
+        width: 0.72,
+        height: 0.065,
+        fontSizePx: 28,
+        fontWeight: "700",
+        canvasWidth: 512,
+        canvasHeight: 64,
+        maxLines: 1,
+        position: "0 0.345 0.04",
+      });
 
       // Active room title chip
       const roomChip = createCanvasTextPlane({
@@ -320,7 +557,7 @@ export function createVrHologramHudComponentDefinition() {
         canvasWidth: 1024,
         canvasHeight: 128,
         maxLines: 1,
-        position: "0 0.27 0.04",
+        position: "0 0.24 0.04",
       });
       this.roomChipEl = roomChip;
 
@@ -328,11 +565,13 @@ export function createVrHologramHudComponentDefinition() {
       const switch2dBtn = createHudButtonEntity({
         id: VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
         action: "switch-to-touch",
+        iconId: "touch",
         label: VR_HUD_DICTIONARY.SWITCH_TO_2D_LABEL,
-        position: "-0.34 0.0 0.06",
+        position: "-0.34 -0.02 0.06",
         rotation: "0 10 0",
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
+        ownedTextures: this.ownedTextures ?? [],
       });
 
       switch2dBtn.addEventListener?.("click", (evt) => {
@@ -350,11 +589,13 @@ export function createVrHologramHudComponentDefinition() {
       const exitBtn = createHudButtonEntity({
         id: VR_HUD_ELEMENT_IDS.EXIT_BTN,
         action: "request-exit",
+        iconId: "exit",
         label: VR_HUD_DICTIONARY.EXIT_TOUR_LABEL,
-        position: "0.34 0.0 0.06",
+        position: "0.34 -0.02 0.06",
         rotation: "0 -10 0",
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_COCHINILLA,
+        ownedTextures: this.ownedTextures ?? [],
       });
 
       exitBtn.addEventListener?.("click", (evt) => {
@@ -372,12 +613,14 @@ export function createVrHologramHudComponentDefinition() {
       const returnLobbyBtn = createHudButtonEntity({
         id: VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
         action: "return-lobby",
+        iconId: "lobby",
         label: VR_HUD_DICTIONARY.RETURN_LOBBY_LABEL,
         position: "0 -0.28 0.06",
         width: VR_HUD_GEOMETRY.LOBBY_BUTTON_WIDTH_M,
         height: VR_HUD_GEOMETRY.LOBBY_BUTTON_HEIGHT_M,
-        backgroundColor: VR_HUD_COLORS.SURFACE_OBSIDIAN,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+        ownedTextures: this.ownedTextures ?? [],
       });
       this.returnLobbyBtnEl = returnLobbyBtn;
       this.setRoomTitle(this.activeRoomId);
@@ -393,21 +636,39 @@ export function createVrHologramHudComponentDefinition() {
         );
       });
 
-      // Top-right circular dismiss button
+      // Top-right circular dismiss medallion
       const dismissBtn = document.createElement("a-entity");
       dismissBtn.setAttribute("id", VR_HUD_ELEMENT_IDS.DISMISS_BTN);
       dismissBtn.setAttribute("class", "cv-hud-control");
+      dismissBtn.setAttribute("cv-interactive-feedback", "");
       dismissBtn.setAttribute("data-action", "dismiss-hud");
       dismissBtn.setAttribute("position", "0.60 0.28 0.08");
       dismissBtn.setAttribute("rotation", "0 -14 0");
       dismissBtn.setAttribute(
         "geometry",
-        `primitive: circle; radius: ${VR_HUD_GEOMETRY.DISMISS_RADIUS_M}`,
+        `primitive: circle; radius: ${VR_HUD_GEOMETRY.DISMISS_RADIUS_M}; segments: ${VR_HUD_GEOMETRY.DISMISS_SEGMENTS}`,
       );
       dismissBtn.setAttribute(
         "material",
         `shader: flat; color: ${VR_HUD_COLORS.ACCENT_COCHINILLA}`,
       );
+
+      const dismissOuterRing = document.createElement("a-ring");
+      dismissOuterRing.setAttribute(
+        "radius-inner",
+        String(VR_HUD_GEOMETRY.DISMISS_RADIUS_M + 0.002),
+      );
+      dismissOuterRing.setAttribute(
+        "radius-outer",
+        String(VR_HUD_GEOMETRY.DISMISS_RADIUS_M + 0.01),
+      );
+      dismissOuterRing.setAttribute(
+        "segments-theta",
+        String(VR_HUD_GEOMETRY.DISMISS_SEGMENTS),
+      );
+      dismissOuterRing.setAttribute("position", "0 0 -0.002");
+      dismissOuterRing.setAttribute("color", VR_HUD_COLORS.ACCENT_CEMPASUCHIL);
+      dismissOuterRing.setAttribute("material", "shader: flat");
 
       const dismissLabel = createCanvasTextPlane({
         value: VR_HUD_DICTIONARY.DISMISS_LABEL,
@@ -423,7 +684,7 @@ export function createVrHologramHudComponentDefinition() {
         maxLines: 1,
         position: "0 0 0.01",
       });
-      dismissBtn.appendChild(dismissLabel);
+      dismissBtn.append(dismissOuterRing, dismissLabel);
 
       dismissBtn.addEventListener?.("click", (evt) => {
         evt?.stopPropagation?.();
@@ -439,7 +700,11 @@ export function createVrHologramHudComponentDefinition() {
       ];
       this.el.append(
         backdrop,
-        topTrim,
+        topFajaTrim,
+        bottomFajaTrim,
+        leftRail,
+        rightRail,
+        eyebrowLabel,
         roomChip,
         switch2dBtn,
         exitBtn,
@@ -485,11 +750,13 @@ export function createVrHologramHudComponentDefinition() {
       this.activeRoomId = roomId;
       const roomDef =
         ROOM_DEFINITIONS[roomId] ?? ROOM_DEFINITIONS[DEFAULT_ROOM_ID];
+      const accentColor =
+        ROOM_PORTAL_ACCENTS[roomId] ?? VR_HUD_COLORS.ACCENT_CEMPASUCHIL;
       if (this.roomChipEl) {
         setCanvasTextElement(this.roomChipEl, {
           mode: "label",
           value: roomDef.title,
-          color: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+          color: accentColor,
           align: "center",
           baseline: "middle",
           fontSizePx: 46,
@@ -535,6 +802,7 @@ export function createVrHologramHudComponentDefinition() {
               : null),
         );
       const transform = calculateHudWorldTransform(resolvedPose);
+      this.lastTransform = transform;
 
       const posAttr = `${transform.position.x} ${transform.position.y} ${transform.position.z}`;
       const rotAttr = `${transform.rotationDeg.x} ${transform.rotationDeg.y} ${transform.rotationDeg.z}`;
@@ -553,6 +821,7 @@ export function createVrHologramHudComponentDefinition() {
       }
 
       this.el.removeAttribute("animation__hud_out");
+      this.el.removeAttribute("animation__hud_sink");
       this.el.setAttribute("visible", "true");
       if (this.el.object3D) {
         this.el.object3D.visible = true;
@@ -567,10 +836,18 @@ export function createVrHologramHudComponentDefinition() {
       if (!hasAFrame) {
         this.el.setAttribute("scale", VR_HUD_VISIBLE_SCALE);
       } else {
+        const startY = Number(
+          (transform.position.y - VR_HUD_GEOMETRY.ELEVATION_DELTA_M).toFixed(4),
+        );
+        const startPosAttr = `${transform.position.x} ${startY} ${transform.position.z}`;
         this.el.setAttribute("scale", VR_HUD_HIDDEN_SCALE);
         this.el.setAttribute(
           "animation__hud_in",
           `property: scale; from: ${VR_HUD_HIDDEN_SCALE}; to: ${VR_HUD_VISIBLE_SCALE}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeOutCubic`,
+        );
+        this.el.setAttribute(
+          "animation__hud_rise",
+          `property: position; from: ${startPosAttr}; to: ${posAttr}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeOutCubic`,
         );
       }
     },
@@ -590,6 +867,7 @@ export function createVrHologramHudComponentDefinition() {
       this.hudEpoch = epoch;
       this.isOpen = false;
       this.el.removeAttribute("animation__hud_in");
+      this.el.removeAttribute("animation__hud_rise");
 
       const hasAFrame =
         typeof globalThis !== "undefined" &&
@@ -614,6 +892,18 @@ export function createVrHologramHudComponentDefinition() {
           "animation__hud_out",
           `property: scale; from: ${VR_HUD_VISIBLE_SCALE}; to: ${VR_HUD_HIDDEN_SCALE}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeInCubic`,
         );
+        if (this.lastTransform) {
+          const sinkY = Number(
+            (
+              this.lastTransform.position.y - VR_HUD_GEOMETRY.ELEVATION_DELTA_M
+            ).toFixed(4),
+          );
+          const sinkPos = `${this.lastTransform.position.x} ${sinkY} ${this.lastTransform.position.z}`;
+          this.el.setAttribute(
+            "animation__hud_sink",
+            `property: position; to: ${sinkPos}; dur: ${VR_HUD_ANIMATION_DURATION_MS}; easing: easeInCubic`,
+          );
+        }
         if (typeof this.el.addEventListener === "function") {
           this.hudOutCompleteHandler = finalizeHide;
           this.el.addEventListener("animationcomplete__hud_out", finalizeHide, {
@@ -640,6 +930,13 @@ export function createVrHologramHudComponentDefinition() {
       this.unsubscribeInspection?.();
       this.unsubscribeInspection = null;
       setHudInteractiveClickable(this, false);
+      if (this.ownedTextures) {
+        for (const tex of this.ownedTextures) {
+          tex.dispose();
+        }
+        this.ownedTextures = [];
+      }
+      this.lastTransform = null;
       this.isOpen = false;
       this.roomChipEl = null;
       this.returnLobbyBtnEl = null;

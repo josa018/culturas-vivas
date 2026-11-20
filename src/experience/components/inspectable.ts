@@ -2,14 +2,17 @@ import type { Vector3D } from "../constants";
 import {
   EXHIBIT_DICTIONARY,
   EXHIBIT_DIMENSIONS,
-  FOCAL_INSPECTION_DISTANCE,
+  INSPECTION_TARGET_TOKENS,
   INSPECTION_TIMINGS,
   InspectionState,
   METADATA_BILLBOARD_OFFSET,
   ExhibitMediaType,
+  RENDERER_QUALITY_TOKENS,
   ROOM_CENTER_COORDINATE,
+  STATION_ARCHITECTURE_TOKENS,
 } from "../constants";
 import { ExhibitInspectionController } from "../inspection-controller";
+import { createContactShadowDecal } from "../shadow-baker";
 import { createCanvasTextPlane } from "./canvas-text";
 
 let sharedInspectionController: ExhibitInspectionController | null = null;
@@ -70,6 +73,23 @@ export interface InspectableComponentInstance {
   returnToGallery: () => void;
   tick: (time: number, timeDelta: number) => void;
   remove: () => void;
+}
+
+export function computeModelTurntableDeltaRad(
+  timeDeltaMs: number,
+  rotationSpeedRadPerSec: number,
+  maxStepMs: number = INSPECTION_TIMINGS.MODEL_ROTATION_MAX_STEP_MS,
+): number {
+  if (
+    !Number.isFinite(timeDeltaMs) ||
+    timeDeltaMs <= 0 ||
+    !Number.isFinite(rotationSpeedRadPerSec) ||
+    rotationSpeedRadPerSec === 0
+  ) {
+    return 0;
+  }
+  const clampedMs = Math.min(timeDeltaMs, maxStepMs);
+  return (clampedMs / 1000) * rotationSpeedRadPerSec;
 }
 
 function isAFrameActive(): boolean {
@@ -137,7 +157,10 @@ export function createInspectableComponentDefinition() {
   return {
     schema: {
       id: { type: "string", default: "" },
-      focalDistance: { type: "number", default: FOCAL_INSPECTION_DISTANCE },
+      focalDistance: {
+        type: "number",
+        default: INSPECTION_TARGET_TOKENS.MODEL_FOCAL_DISTANCE_M,
+      },
       autoRotate: { type: "boolean", default: false },
       rotationSpeed: {
         type: "number",
@@ -185,6 +208,10 @@ export function createInspectableComponentDefinition() {
         "position",
         `${METADATA_BILLBOARD_OFFSET.x} ${METADATA_BILLBOARD_OFFSET.y} ${METADATA_BILLBOARD_OFFSET.z}`,
       );
+      billboard.setAttribute(
+        "rotation",
+        `${INSPECTION_TARGET_TOKENS.BILLBOARD_TILT_X_DEG} 0 0`,
+      );
       billboard.setAttribute("scale", INSPECTION_TIMINGS.PANEL_HIDDEN_SCALE);
       billboard.setAttribute("visible", "false");
 
@@ -202,14 +229,14 @@ export function createInspectableComponentDefinition() {
           ? 2
           : 1;
 
-      const creatorTop = estimatedTitleLines > 1 ? 0.13 : 0.21;
-      const creatorCenterY = creatorTop - 0.07;
+      const creatorTop = estimatedTitleLines > 1 ? 0.11 : 0.165;
+      const creatorCenterY = creatorTop - 0.055;
       const descTop = hasCreator
-        ? creatorTop - (estimatedCreatorLines > 1 ? 0.15 : 0.10)
+        ? creatorTop - (estimatedCreatorLines > 1 ? 0.12 : 0.085)
         : estimatedTitleLines > 1
-          ? 0.125
-          : 0.205;
-      const descCenterY = descTop - 0.18;
+          ? 0.105
+          : 0.16;
+      const descCenterY = descTop - 0.14;
 
       const titleEl = createCanvasTextPlane({
         className: "cv-billboard-title",
@@ -218,15 +245,15 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: EXHIBIT_DIMENSIONS.BILLBOARD_TITLE_WIDTH,
-        height: 0.18,
-        fontSizePx: 48,
+        height: 0.16,
+        fontSizePx: 40,
         fontWeight: "700",
         canvasWidth: 800,
-        canvasHeight: 116,
+        canvasHeight: 112,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 8,
-        position: "-0.12 0.26 0.03",
+        paddingY: 12,
+        position: "-0.12 0.21 0.03",
       });
 
       const creatorEl = createCanvasTextPlane({
@@ -239,14 +266,14 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: 1.46,
-        height: 0.14,
-        fontSizePx: 36,
+        height: 0.11,
+        fontSizePx: 32,
         fontWeight: "600",
         canvasWidth: 936,
-        canvasHeight: 90,
+        canvasHeight: 84,
         maxLines: 2,
         paddingX: 20,
-        paddingY: 6,
+        paddingY: 8,
         position: `0 ${creatorCenterY} 0.035`,
       });
 
@@ -257,14 +284,14 @@ export function createInspectableComponentDefinition() {
         align: "left",
         baseline: "top",
         width: 1.46,
-        height: 0.36,
+        height: 0.28,
         fontSizePx: 34,
         fontWeight: "400",
         canvasWidth: 936,
-        canvasHeight: 230,
+        canvasHeight: 212,
         maxLines: 5,
         paddingX: 20,
-        paddingY: 8,
+        paddingY: 10,
         position: `0 ${descCenterY} 0.04`,
       });
 
@@ -273,10 +300,10 @@ export function createInspectableComponentDefinition() {
       returnBtn.setAttribute("class", "cv-return-btn");
       returnBtn.setAttribute(
         "geometry",
-        `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}`,
+        `primitive: circle; radius: ${EXHIBIT_DIMENSIONS.CLOSE_BUTTON_RADIUS}; segments: ${RENDERER_QUALITY_TOKENS.CIRCLE_SEGMENTS}`,
       );
       returnBtn.setAttribute("material", "color: #e11d48; shader: flat");
-      returnBtn.setAttribute("position", "0.68 0.27 0.05");
+      returnBtn.setAttribute("position", "0.68 0.21 0.05");
       returnBtn.setAttribute("data-action", "return-exhibit");
 
       const returnText = createCanvasTextPlane({
@@ -315,6 +342,19 @@ export function createInspectableComponentDefinition() {
       this.el.appendChild(billboard);
       this.billboardEl = billboard;
       this.returnBtnEl = returnBtn;
+
+      if (
+        this.data.mediaType === ExhibitMediaType.MODEL_3D &&
+        !this.el.querySelector(".cv-contact-shadow")
+      ) {
+        this.el.appendChild(
+          createContactShadowDecal({
+            width: 0.95,
+            depth: 0.95,
+            yOffset: -1.18,
+          }),
+        );
+      }
 
       // Subscribe to controller for mutual exclusivity / auto-return
       this.unsubscribeController = getSharedInspectionController().subscribe(
@@ -355,11 +395,12 @@ export function createInspectableComponentDefinition() {
         controller.abortActiveInspection();
       }
 
-      // Compute dynamic radial target position
-      const targetPos = controller.calculateRadialTargetPosition(
+      // Compute dynamic ergonomic radial target position
+      const targetPos = controller.calculateErgonomicInspectionTarget(
         this.galleryPosition,
         ROOM_CENTER_COORDINATE,
-        this.data.focalDistance || FOCAL_INSPECTION_DISTANCE,
+        this.data.focalDistance || INSPECTION_TARGET_TOKENS.MODEL_FOCAL_DISTANCE_M,
+        INSPECTION_TARGET_TOKENS.MODEL_INSPECTION_Y_M,
       );
 
       const curX = this.el.object3D?.position?.x ?? this.galleryPosition.x;
@@ -394,18 +435,23 @@ export function createInspectableComponentDefinition() {
       }
 
       // Counter-translate pedestal if present so it remains grounded at gallery coords
-      const pedestal = this.el.querySelector("a-cylinder");
+      const pedestal =
+        this.el.querySelector(".cv-model-pedestal") ??
+        this.el.querySelector("a-cylinder");
       if (pedestal) {
+        const restY = pedestal.classList.contains("cv-model-pedestal")
+          ? STATION_ARCHITECTURE_TOKENS.PEDESTAL_REST_Y
+          : -0.4;
         const dx = targetPos.x - this.galleryPosition.x;
         const dy = targetPos.y - this.galleryPosition.y;
         const dz = targetPos.z - this.galleryPosition.z;
         const pedX = Number((-dx).toFixed(3));
-        const pedY = Number((-0.4 - dy).toFixed(3));
+        const pedY = Number((restY - dy).toFixed(3));
         const pedZ = Number((-dz).toFixed(3));
         pedestal.removeAttribute("animation__pedestal_return");
         pedestal.setAttribute(
           "animation__pedestal",
-          `property: position; from: 0 -0.4 0; to: ${pedX} ${pedY} ${pedZ}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+          `property: position; from: 0 ${restY} 0; to: ${pedX} ${pedY} ${pedZ}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
         pedestal.setAttribute("position", `${pedX} ${pedY} ${pedZ}`);
       }
@@ -550,17 +596,23 @@ export function createInspectableComponentDefinition() {
       }
 
       // Restore pedestal grounded position
-      const pedestal = this.el.querySelector("a-cylinder");
+      const pedestal =
+        this.el.querySelector(".cv-model-pedestal") ??
+        this.el.querySelector("a-cylinder");
       if (pedestal) {
+        const restY = pedestal.classList.contains("cv-model-pedestal")
+          ? STATION_ARCHITECTURE_TOKENS.PEDESTAL_REST_Y
+          : -0.4;
+        const restPos = `0 ${restY} 0`;
         const currentPedPos = pedestal.getAttribute("position");
         const pedFrom =
-          typeof currentPedPos === "string" ? currentPedPos : "0 -0.4 0";
+          typeof currentPedPos === "string" ? currentPedPos : restPos;
         pedestal.removeAttribute("animation__pedestal");
         pedestal.setAttribute(
           "animation__pedestal_return",
-          `property: position; from: ${pedFrom}; to: 0 -0.4 0; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+          `property: position; from: ${pedFrom}; to: ${restPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
-        pedestal.setAttribute("position", "0 -0.4 0");
+        pedestal.setAttribute("position", restPos);
       }
 
       // Smooth A-Frame animation back to gallery position sampling live 3D coordinates
@@ -598,6 +650,19 @@ export function createInspectableComponentDefinition() {
         this.el.addEventListener("animationcomplete__return", onReturnComplete);
       }
 
+      const modelTarget = this.el.querySelector(".cv-inspectable-model") as
+        | {
+            object3D?: { rotation?: { y: number } };
+            setAttribute?: (name: string, value: string) => void;
+          }
+        | null;
+      if (modelTarget) {
+        if (modelTarget.object3D?.rotation) {
+          modelTarget.object3D.rotation.y = 0;
+        }
+        modelTarget.setAttribute?.("rotation", "0 0 0");
+      }
+
       this.el.setAttribute(
         "rotation",
         `${this.galleryRotation.x} ${this.galleryRotation.y} ${this.galleryRotation.z}`,
@@ -611,10 +676,20 @@ export function createInspectableComponentDefinition() {
       }
     },
 
-    tick: function (this: InspectableComponentInstance) {
+    tick: function (
+      this: InspectableComponentInstance,
+      _time: number,
+      timeDelta: number,
+    ) {
       if (this.state === InspectionState.INSPECTING && this.data.autoRotate) {
-        if (this.el.object3D && this.el.object3D.rotation) {
-          this.el.object3D.rotation.y += this.data.rotationSpeed;
+        const modelTarget = this.el.querySelector(".cv-inspectable-model") as
+          | { object3D?: { rotation?: { y: number } } }
+          | null;
+        if (modelTarget?.object3D?.rotation) {
+          modelTarget.object3D.rotation.y += computeModelTurntableDeltaRad(
+            timeDelta,
+            this.data.rotationSpeed,
+          );
         }
       }
     },

@@ -6,6 +6,7 @@ import {
   GLB_FALLBACK_COLORS,
   ROOM_DEFINITIONS,
   ROOM_LAYOUT_TOKENS,
+  STATION_ARCHITECTURE_TOKENS,
   type ExhibitItemConfig,
 } from "./constants";
 import type { RoomId, RoomStandSlotConfig } from "./types";
@@ -13,6 +14,15 @@ import { createPortalEntity } from "./components/portal-waypoint";
 import { getSharedInspectionController } from "./components/inspectable";
 import { emptyRoomMediaProvider, type RoomMediaProvider, type StandMediaItem } from "./media-types";
 import { getSharedVideoController } from "./shared-video-controller";
+import { bakeRoomShadowMap, createContactShadowDecal } from "./shadow-baker";
+import {
+  getRoomEnvironmentPreset,
+  type RoomEnvironmentPreset,
+} from "./room-environment-presets";
+import {
+  createModelPedestalEntity,
+  createStandPlinthEntity,
+} from "./station-architecture";
 import { disposeObject3DResources } from "./three-disposal";
 
 export class ExhibitRoomBuilder {
@@ -47,62 +57,26 @@ export class ExhibitRoomBuilder {
     }
   }
 
-  public static async waitForSkyboxReady(
-    skyEl: HTMLElement | null,
-    timeoutMs = 1500,
-  ): Promise<boolean> {
-    if (!skyEl) {
-      return true;
-    }
-
-    const hasAFrame =
-      typeof globalThis !== "undefined" &&
-      Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
-
-    if (!hasAFrame || typeof skyEl.addEventListener !== "function") {
-      return true;
-    }
-
-    return new Promise<boolean>((resolve) => {
-      let resolved = false;
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          skyEl.removeEventListener("materialtextureloaded", onTextureLoaded);
-          resolve(true);
-        }
-      }, timeoutMs);
-
-      const onTextureLoaded = (): void => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timer);
-          skyEl.removeEventListener("materialtextureloaded", onTextureLoaded);
-          resolve(true);
-        }
-      };
-
-      skyEl.addEventListener("materialtextureloaded", onTextureLoaded, {
-        once: true,
-      });
-    });
-  }
-
   public static async waitForRoomReady(
     roomGroup: HTMLElement | null,
-    skyEl: HTMLElement | null,
+    skyElOrTimeout: HTMLElement | number | null = null,
     timeoutMs = 1500,
   ): Promise<boolean> {
+    const resolvedTimeoutMs =
+      typeof skyElOrTimeout === "number" ? skyElOrTimeout : timeoutMs;
+    const sceneEl =
+      (roomGroup?.closest?.("a-scene") as HTMLElement | null) ??
+      roomGroup?.parentElement ??
+      null;
+
     const hasAFrame =
       typeof globalThis !== "undefined" &&
       Boolean((globalThis as unknown as { AFRAME?: unknown }).AFRAME);
 
     if (!hasAFrame) {
+      bakeRoomShadowMap(sceneEl);
       return true;
     }
-
-    const skyboxPromise = this.waitForSkyboxReady(skyEl, timeoutMs);
 
     const roomGroupPromise = new Promise<boolean>((resolve) => {
       if (!roomGroup) {
@@ -128,7 +102,7 @@ export class ExhibitRoomBuilder {
           roomGroup.removeEventListener("loaded", onLoaded);
           resolve(true);
         }
-      }, timeoutMs);
+      }, resolvedTimeoutMs);
 
       const onLoaded = (): void => {
         if (!resolved) {
@@ -142,7 +116,7 @@ export class ExhibitRoomBuilder {
       roomGroup.addEventListener("loaded", onLoaded, { once: true });
     });
 
-    await Promise.all([skyboxPromise, roomGroupPromise]);
+    await roomGroupPromise;
 
     if (typeof requestAnimationFrame === "function") {
       await new Promise<void>((resolve) => {
@@ -154,12 +128,14 @@ export class ExhibitRoomBuilder {
       });
     }
 
+    bakeRoomShadowMap(sceneEl);
     return true;
   }
 
-  private static createExhibitEntity(
+  public static createExhibitEntity(
     exhibit: ExhibitItemConfig,
     viewMode: string,
+    preset: RoomEnvironmentPreset = getRoomEnvironmentPreset(DEFAULT_ROOM_ID),
   ): HTMLElement {
     const exhibitRoot = document.createElement("a-entity");
     exhibitRoot.setAttribute("id", exhibit.id);
@@ -182,22 +158,10 @@ export class ExhibitRoomBuilder {
 
     switch (exhibit.mediaType) {
       case ExhibitMediaType.MODEL_3D: {
-        const pedestal = document.createElement("a-cylinder");
-        pedestal.setAttribute("id", `${exhibit.id}-pedestal`);
-        pedestal.setAttribute(
-          "radius",
-          String(EXHIBIT_DIMENSIONS.PEDESTAL_RADIUS),
-        );
-        pedestal.setAttribute(
-          "height",
-          String(EXHIBIT_DIMENSIONS.PEDESTAL_HEIGHT),
-        );
-        pedestal.setAttribute("position", "0 -0.4 0");
-        pedestal.setAttribute("color", GLB_FALLBACK_COLORS.PEDESTAL);
-        pedestal.setAttribute("material", "shader: flat");
+        const pedestal = createModelPedestalEntity(exhibit.id, preset);
 
         const modelGroup = document.createElement("a-entity");
-        modelGroup.setAttribute("class", "clickable");
+        modelGroup.setAttribute("class", "clickable cv-inspectable-model");
         modelGroup.setAttribute("position", "0 0 0");
 
         if (exhibit.modelUrl) {
@@ -210,7 +174,7 @@ export class ExhibitRoomBuilder {
           sphere.setAttribute("radius", "0.25");
           sphere.setAttribute("position", "0 0.25 0");
           sphere.setAttribute("color", GLB_FALLBACK_COLORS.PRIMARY);
-          sphere.setAttribute("material", "shader: flat");
+          sphere.setAttribute("material", "shader: lambert");
 
           const cone = document.createElement("a-cone");
           cone.setAttribute("radius-bottom", "0.28");
@@ -218,7 +182,7 @@ export class ExhibitRoomBuilder {
           cone.setAttribute("height", "0.4");
           cone.setAttribute("position", "0 -0.05 0");
           cone.setAttribute("color", GLB_FALLBACK_COLORS.SECONDARY);
-          cone.setAttribute("material", "shader: flat");
+          cone.setAttribute("material", "shader: lambert");
 
           const ring = document.createElement("a-ring");
           ring.setAttribute("radius-inner", "0.28");
@@ -226,12 +190,17 @@ export class ExhibitRoomBuilder {
           ring.setAttribute("position", "0 0.1 0");
           ring.setAttribute("rotation", "90 0 0");
           ring.setAttribute("color", GLB_FALLBACK_COLORS.RING);
-          ring.setAttribute("material", "shader: flat");
+          ring.setAttribute("material", "shader: lambert; side: double");
 
           modelGroup.append(sphere, cone, ring);
         }
 
-        exhibitRoot.append(pedestal, modelGroup);
+        const contactShadow = createContactShadowDecal({
+          width: 0.95,
+          depth: 0.95,
+          yOffset: -1.18,
+        });
+        exhibitRoot.append(pedestal, modelGroup, contactShadow);
         break;
       }
 
@@ -424,6 +393,21 @@ export class ExhibitRoomBuilder {
       `roomId: ${stand.roomId}; standId: ${stand.standId}; label: ${stand.label}; accentColor: ${accentColor}; viewMode: ${viewMode}; galleryPosition: ${stand.position.x} ${stand.position.y} ${stand.position.z}; galleryRotation: ${stand.rotation.x} ${stand.rotation.y} ${stand.rotation.z}`,
     );
 
+    standRoot.appendChild(
+      createContactShadowDecal({
+        width: 1.35,
+        depth: 0.72,
+        yOffset: Number(
+          (
+            -(
+              ROOM_LAYOUT_TOKENS.STAND_ELEVATION_M -
+              STATION_ARCHITECTURE_TOKENS.CONTACT_SHADOW_CLEARANCE_M
+            )
+          ).toFixed(2),
+        ),
+      }),
+    );
+
     return standRoot;
   }
 
@@ -468,30 +452,37 @@ export class ExhibitRoomBuilder {
       ...standExhibits,
     ]);
 
-    const skyEl = sceneEl.querySelector("a-sky");
-    if (skyEl) {
-      skyEl.setAttribute("src", roomDef.skyboxUrl);
-    }
-
     const roomGroup = document.createElement("a-entity");
     roomGroup.setAttribute("id", this.ROOM_CONTAINER_ID);
     roomGroup.setAttribute("data-room-id", roomDef.id);
 
+    const preset = getRoomEnvironmentPreset(roomDef.id);
+
+    const envEl = document.createElement("a-entity");
+    envEl.setAttribute("cv-room-environment", `roomId: ${roomDef.id}`);
+    roomGroup.appendChild(envEl);
+
     for (const exhibit of roomDef.exhibits) {
-      roomGroup.appendChild(this.createExhibitEntity(exhibit, viewMode));
+      roomGroup.appendChild(this.createExhibitEntity(exhibit, viewMode, preset));
     }
 
     for (const { stand, items } of standItemsBySlot) {
+      roomGroup.appendChild(createStandPlinthEntity(stand, preset));
       roomGroup.appendChild(
         this.createMediaStandEntity(stand, roomDef.accentColor, viewMode, items),
       );
     }
 
     for (const portal of roomDef.portals) {
-      roomGroup.appendChild(createPortalEntity(portal));
+      roomGroup.appendChild(createPortalEntity(portal, preset));
     }
 
+    roomGroup.addEventListener("model-loaded", () => {
+      bakeRoomShadowMap(sceneEl);
+    });
+
     sceneEl.appendChild(roomGroup);
+    bakeRoomShadowMap(sceneEl);
     return roomGroup as HTMLElement;
   }
 
