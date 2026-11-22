@@ -19,6 +19,7 @@ import {
   getRoomEnvironmentPreset,
   type RoomEnvironmentPreset,
 } from "./room-environment-presets";
+import { getSharedEnvironmentQualityStore } from "./environment-quality-store";
 import {
   createModelPedestalEntity,
   createStandPlinthEntity,
@@ -459,7 +460,11 @@ export class ExhibitRoomBuilder {
     const preset = getRoomEnvironmentPreset(roomDef.id);
 
     const envEl = document.createElement("a-entity");
-    envEl.setAttribute("cv-room-environment", `roomId: ${roomDef.id}`);
+    const qualityTier = getSharedEnvironmentQualityStore().getTier();
+    envEl.setAttribute(
+      "cv-room-environment",
+      `roomId: ${roomDef.id}; qualityTier: ${qualityTier}`,
+    );
     roomGroup.appendChild(envEl);
 
     for (const exhibit of roomDef.exhibits) {

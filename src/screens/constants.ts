@@ -63,6 +63,7 @@ export const UI_CLASSES = {
   SPLASH_CREDITS_LABEL: "cv-splash-credits-label",
   SPLASH_CREDITS_LIST: "cv-splash-credits-list",
   SPLASH_CREDITS_ITEM: "cv-splash-credits-item",
+  ECO_TOGGLE_BTN: "cv-eco-toggle",
 } as const;
 
 export type PartnerLogoVariant = "wide" | "horizontal" | "emblem";
@@ -145,6 +146,11 @@ export const UI_TEXT = {
   SURVEY_FEEDBACK_PLACEHOLDER: "Escribe tu opinión aquí...",
   SURVEY_BTN_SUBMIT: "Enviar Encuesta",
   SURVEY_BTN_SKIP: "Omitir",
+
+  ECO_TOGGLE_LABEL: "Modo ahorro",
+  ECO_MODE_ON: "Modo ahorro: Activo",
+  ECO_MODE_OFF: "Modo ahorro: Inactivo",
+  ECO_TOGGLE_HINT: "Reduce detalles 3D si notas lentitud en tu dispositivo",
 } as const;
 
 export const SCREEN_TEXTS = UI_TEXT;

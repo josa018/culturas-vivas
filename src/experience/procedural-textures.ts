@@ -6,6 +6,7 @@ import {
   renderFajaBorderPattern,
   type FajaCanvasContextLike,
 } from "./faja-pattern-renderer";
+import { createSeededRandom } from "./landscape/seeded-noise";
 import type { RoomEnvironmentPreset } from "./room-environment-presets";
 
 export const PROCEDURAL_TEXTURE_KIND = {
@@ -16,6 +17,9 @@ export const PROCEDURAL_TEXTURE_KIND = {
   WATER_SHIMMER: "WATER_SHIMMER",
   WOVEN_FAJA: "WOVEN_FAJA",
   PETATE_REED: "PETATE_REED",
+  GROUND_GRAIN: "GROUND_GRAIN",
+  ROCK_STRATA: "ROCK_STRATA",
+  FOLIAGE_GRAIN: "FOLIAGE_GRAIN",
   CONTACT_SHADOW: "CONTACT_SHADOW",
 } as const;
 export type ProceduralTextureKind =
@@ -49,6 +53,7 @@ export interface ProceduralTextureLike {
   wrapS?: number;
   wrapT?: number;
   repeat?: { set?: (x: number, y: number) => void };
+  offset?: { x: number; y: number };
   anisotropy?: number;
   generateMipmaps?: boolean;
   minFilter?: number;
@@ -72,6 +77,7 @@ export interface ProceduralTextureDependencies {
   readonly linearFilter?: number;
   readonly srgbColorSpace?: string;
   readonly repeatCount?: number;
+  readonly anisotropy?: number;
 }
 
 export interface RoomTextureSet {
@@ -81,12 +87,10 @@ export interface RoomTextureSet {
   readonly contactShadow: ProceduralTextureLike | null;
 }
 
-function createSeededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0xffffffff;
-  };
+export interface LandscapeTextureSet {
+  readonly groundGrain: ProceduralTextureLike | null;
+  readonly rockStrata: ProceduralTextureLike | null;
+  readonly foliageGrain: ProceduralTextureLike | null;
 }
 
 function defaultCreateCanvas(
@@ -293,6 +297,63 @@ function drawPetateReed(
   }
 }
 
+function drawNeutralReliefSpeckles(
+  ctx: ProceduralCanvasContext2DLike,
+  size: number,
+  seed: number,
+  baseLuma: number,
+  count: number,
+  minW: number,
+  maxW: number,
+  minH: number,
+  maxH: number,
+): void {
+  const rand = createSeededRandom(seed);
+  const minLuma = PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA;
+  const clampedBase = Math.max(minLuma, baseLuma);
+  ctx.fillStyle = `rgb(${clampedBase}, ${clampedBase}, ${clampedBase})`;
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < count; i++) {
+    const luma = Math.min(
+      252,
+      minLuma + Math.floor(rand() * (252 - minLuma)),
+    );
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = `rgb(${luma}, ${luma}, ${luma})`;
+    const w = minW + Math.floor(rand() * (maxW - minW + 1));
+    const h = minH + Math.floor(rand() * (maxH - minH + 1));
+    ctx.fillRect(
+      Math.floor(rand() * size),
+      Math.floor(rand() * size),
+      w,
+      h,
+    );
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGroundGrain(
+  ctx: ProceduralCanvasContext2DLike,
+  size: number,
+): void {
+  drawNeutralReliefSpeckles(ctx, size, 606, 216, 160, 2, 10, 2, 8);
+}
+
+function drawRockStrata(
+  ctx: ProceduralCanvasContext2DLike,
+  size: number,
+): void {
+  drawNeutralReliefSpeckles(ctx, size, 707, 212, 64, 24, 96, 3, 12);
+}
+
+function drawFoliageGrain(
+  ctx: ProceduralCanvasContext2DLike,
+  size: number,
+): void {
+  drawNeutralReliefSpeckles(ctx, size, 808, 222, 140, 4, 14, 4, 14);
+}
+
 function drawContactShadow(
   ctx: ProceduralCanvasContext2DLike,
   size: number,
@@ -363,6 +424,15 @@ export function createProceduralTexture(
     case PROCEDURAL_TEXTURE_KIND.PETATE_REED:
       drawPetateReed(ctx, size);
       break;
+    case PROCEDURAL_TEXTURE_KIND.GROUND_GRAIN:
+      drawGroundGrain(ctx, size);
+      break;
+    case PROCEDURAL_TEXTURE_KIND.ROCK_STRATA:
+      drawRockStrata(ctx, size);
+      break;
+    case PROCEDURAL_TEXTURE_KIND.FOLIAGE_GRAIN:
+      drawFoliageGrain(ctx, size);
+      break;
     case PROCEDURAL_TEXTURE_KIND.CONTACT_SHADOW:
       drawContactShadow(ctx, size);
       break;
@@ -408,7 +478,7 @@ export function createProceduralTexture(
     texture.repeat?.set?.(rep, rep);
   }
 
-  texture.anisotropy = PROCEDURAL_TEXTURE_TOKENS.ANISOTROPY;
+  texture.anisotropy = deps.anisotropy ?? PROCEDURAL_TEXTURE_TOKENS.ANISOTROPY;
   texture.generateMipmaps = true;
   texture.minFilter = minFilter;
   texture.magFilter = magFilter;
@@ -443,6 +513,35 @@ export function createRoomTextureSet(
       PROCEDURAL_TEXTURE_KIND.CONTACT_SHADOW,
       preset.accentColor,
       deps,
+    ),
+  };
+}
+
+/**
+ * Generates neutral relief textures bound as albedo + bump maps for exterior terrain and flora.
+ */
+export function createLandscapeTextureSet(
+  deps: ProceduralTextureDependencies = {},
+): LandscapeTextureSet {
+  const reliefDeps: ProceduralTextureDependencies = {
+    ...deps,
+    repeatCount: 1,
+  };
+  return {
+    groundGrain: createProceduralTexture(
+      PROCEDURAL_TEXTURE_KIND.GROUND_GRAIN,
+      "",
+      reliefDeps,
+    ),
+    rockStrata: createProceduralTexture(
+      PROCEDURAL_TEXTURE_KIND.ROCK_STRATA,
+      "",
+      reliefDeps,
+    ),
+    foliageGrain: createProceduralTexture(
+      PROCEDURAL_TEXTURE_KIND.FOLIAGE_GRAIN,
+      "",
+      reliefDeps,
     ),
   };
 }

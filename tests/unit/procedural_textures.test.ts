@@ -5,6 +5,7 @@ import {
 } from "../../src/experience/constants";
 import {
   PROCEDURAL_TEXTURE_KIND,
+  createLandscapeTextureSet,
   createProceduralTexture,
   createRoomTextureSet,
   type ProceduralCanvasContext2DLike,
@@ -208,5 +209,81 @@ describe("Procedural Canvas Textures & Room Environment Presets", () => {
       expect(preset.lighting.hemisphereIntensity).toBeLessThanOrEqual(0.5);
       expect(preset.lighting.directionalIntensity).toBeGreaterThanOrEqual(1.15);
     }
+  });
+
+  it("generates neutral-luminance landscape relief textures with bumpMap deduplicated disposal", () => {
+    const { deps, mockCtx } = createMockTextureDeps();
+    const drawnColors: string[] = [];
+    const origFillRect = mockCtx.fillRect;
+    mockCtx.fillRect = vi.fn((...args: [number, number, number, number]) => {
+      drawnColors.push(mockCtx.fillStyle);
+      (origFillRect as (...a: number[]) => void)(...args);
+    });
+
+    const reliefKinds = [
+      PROCEDURAL_TEXTURE_KIND.GROUND_GRAIN,
+      PROCEDURAL_TEXTURE_KIND.ROCK_STRATA,
+      PROCEDURAL_TEXTURE_KIND.FOLIAGE_GRAIN,
+    ];
+    for (const kind of reliefKinds) {
+      drawnColors.length = 0;
+      const tex = createProceduralTexture(kind, "#D99B26", deps) as ProceduralTextureLike & {
+        minFilter?: number;
+        magFilter?: number;
+      };
+      expect(tex).not.toBeNull();
+      expect(tex.image).toEqual({ width: 256, height: 256 });
+      expect(tex.wrapS).toBe(deps.repeatWrapping);
+      expect(tex.wrapT).toBe(deps.repeatWrapping);
+      expect(tex.minFilter).toBe(1008);
+      expect(tex.magFilter).toBe(1006);
+      expect(tex.anisotropy).toBe(4);
+      expect(drawnColors.length).toBeGreaterThan(0);
+
+      for (const colorStr of drawnColors) {
+        const rgbMatch = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(colorStr);
+        const hexMatch = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(colorStr);
+        if (rgbMatch) {
+          expect(Number(rgbMatch[1])).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+          expect(Number(rgbMatch[2])).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+          expect(Number(rgbMatch[3])).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+        } else if (hexMatch) {
+          expect(parseInt(hexMatch[1]!, 16)).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+          expect(parseInt(hexMatch[2]!, 16)).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+          expect(parseInt(hexMatch[3]!, 16)).toBeGreaterThanOrEqual(
+            PROCEDURAL_TEXTURE_TOKENS.NEUTRAL_MIN_LUMA,
+          );
+        } else {
+          throw new Error(`Unexpected non-RGB/Hex relief draw color: ${colorStr}`);
+        }
+      }
+    }
+
+    const landscapeSet = createLandscapeTextureSet(deps);
+    expect(landscapeSet.groundGrain).not.toBeNull();
+    expect(landscapeSet.rockStrata).not.toBeNull();
+    expect(landscapeSet.foliageGrain).not.toBeNull();
+
+    const mockNode = {
+      material: {
+        map: landscapeSet.groundGrain,
+        bumpMap: landscapeSet.groundGrain,
+        dispose: vi.fn(),
+      },
+      traverse: (cb: (n: unknown) => void) => cb(mockNode),
+    };
+    const stats = disposeObject3DResources(mockNode);
+    expect(stats.texturesDisposed).toBe(1);
+    expect(landscapeSet.groundGrain!.dispose).toHaveBeenCalledTimes(1);
   });
 });

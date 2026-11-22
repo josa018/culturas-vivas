@@ -1,10 +1,14 @@
 import { ROOM_LAYOUT_TOKENS, RoomId } from "../shared/room-catalog";
 import {
   ENVIRONMENT_BUDGET_TOKENS,
+  ENVIRONMENT_QUALITY_TOKENS,
+  LANDSCAPE_TOKENS,
   PROCEDURAL_TEXTURE_TOKENS,
   SHADOW_CONFIG_TOKENS,
 } from "./constants";
+import type { EnvironmentQualityTier } from "./landscape/types";
 import {
+  createLandscapeTextureSet,
   createProceduralTexture,
   createRoomTextureSet,
   PROCEDURAL_TEXTURE_KIND,
@@ -15,6 +19,7 @@ import {
   getRoomEnvironmentPreset,
   type RoomEnvironmentPreset,
 } from "./room-environment-presets";
+import { buildLandscape } from "./landscape/landscape-builder";
 import { disposeObject3DResources } from "./three-disposal";
 
 export interface RoomEnvironmentBudgetReport {
@@ -85,10 +90,20 @@ export interface RoomEnvironmentThreeLike {
   ) => ThreeObject3DLike;
   readonly Fog: new (color: string, near: number, far: number) => unknown;
   readonly CanvasTexture: new (canvas: HTMLCanvasElement) => ProceduralTextureLike;
+  readonly Color: new (hex?: string | number) => ThreeColorLike;
   readonly Matrix4: new () => ThreeMatrix4Like;
   readonly Vector3: new (x?: number, y?: number, z?: number) => ThreeVector3Like;
   readonly Quaternion: new () => ThreeQuaternionLike;
   readonly Euler: new (x?: number, y?: number, z?: number) => ThreeEulerLike;
+}
+
+export interface ThreeColorLike {
+  r: number;
+  g: number;
+  b: number;
+  set(hex: string | number): ThreeColorLike;
+  setRGB(r: number, g: number, b: number): ThreeColorLike;
+  multiplyScalar(s: number): ThreeColorLike;
 }
 
 interface ThreeEulerLike {
@@ -110,8 +125,10 @@ interface ThreeBufferAttributeLike {
   needsUpdate: boolean;
 }
 
-interface ThreeBufferGeometryLike extends ThreeGeometryLike {
+export interface ThreeBufferGeometryLike extends ThreeGeometryLike {
   setAttribute(name: string, attribute: ThreeBufferAttributeLike): void;
+  setIndex(index: number[] | ThreeBufferAttributeLike): void;
+  computeVertexNormals(): void;
 }
 
 interface ThreeVector3Like {
@@ -142,11 +159,13 @@ export interface ThreeObject3DLike {
   traverse(callback: (node: unknown) => void): void;
 }
 
-interface ThreeInstancedMeshLike extends ThreeObject3DLike {
+export interface ThreeInstancedMeshLike extends ThreeObject3DLike {
   isInstancedMesh?: boolean;
   count: number;
   instanceMatrix: { needsUpdate: boolean };
+  instanceColor?: { needsUpdate: boolean } | null;
   setMatrixAt(index: number, matrix: ThreeMatrix4Like): void;
+  setColorAt(index: number, color: ThreeColorLike): void;
   dispose?: () => void;
 }
 
@@ -174,6 +193,7 @@ interface ThreeDirectionalLightLike extends ThreeObject3DLike {
 export interface RoomEnvironmentBuildDependencies {
   readonly three?: RoomEnvironmentThreeLike;
   readonly createCanvas?: (width: number, height: number) => HTMLCanvasElement | null;
+  readonly qualityTier?: EnvironmentQualityTier;
 }
 
 export interface BuiltRoomEnvironment {
@@ -229,7 +249,11 @@ function createSkyGradientTexture(
 
   const grad = ctx.createLinearGradient(0, 0, 0, size);
   grad.addColorStop(0, preset.skyGradient.topColor);
-  grad.addColorStop(0.55, preset.skyGradient.horizonColor);
+  grad.addColorStop(
+    LANDSCAPE_TOKENS.SKY_UPPER_HORIZON_STOP,
+    preset.skyGradient.horizonColor,
+  );
+  grad.addColorStop(LANDSCAPE_TOKENS.SKY_HORIZON_BAND_STOP, preset.fog.color);
   grad.addColorStop(1, preset.skyGradient.bottomColor);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
@@ -249,6 +273,20 @@ function createSkyGradientTexture(
       );
       ctx.fill();
     }
+  }
+
+  const { celestial } = preset.landscape;
+  if (celestial.kind !== "none") {
+    ctx.fillStyle = celestial.color;
+    ctx.beginPath();
+    ctx.arc(
+      celestial.u * size,
+      celestial.v * size,
+      celestial.radiusPx,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
   }
 
   const texture = new three.CanvasTexture(canvas);
@@ -274,6 +312,7 @@ function getGeometryTriangleCount(geometry: ThreeGeometryLike | undefined): numb
  */
 export function measureRoomEnvironmentBudget(
   root: ThreeObject3DLike | null | undefined,
+  qualityTier: EnvironmentQualityTier = ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER,
 ): RoomEnvironmentBudgetReport {
   if (!root) {
     return {
@@ -323,9 +362,18 @@ export function measureRoomEnvironmentBudget(
     }
   });
 
+  const maxTriangles =
+    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+      ? ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES
+      : LANDSCAPE_TOKENS.RICH_MAX_TRIANGLES;
+  const maxDrawCalls =
+    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+      ? ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS
+      : LANDSCAPE_TOKENS.RICH_MAX_DRAW_CALLS;
+
   const withinBudget =
-    triangleCount <= ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES &&
-    drawCalls <= ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS &&
+    triangleCount <= maxTriangles &&
+    drawCalls <= maxDrawCalls &&
     particleCount >= ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES &&
     particleCount <= ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES;
 
@@ -335,54 +383,6 @@ export function measureRoomEnvironmentBudget(
     particleCount,
     withinBudget,
   };
-}
-
-function scatterRingInstances(
-  mesh: ThreeInstancedMeshLike,
-  three: RoomEnvironmentThreeLike,
-  count: number,
-  options: {
-    innerRadius: number;
-    outerRadius: number;
-    baseY: number;
-    minScale: number;
-    maxScale: number;
-    heightScaleFactor?: number;
-    phaseOffset?: number;
-  },
-): void {
-  const matrix = new three.Matrix4();
-  const pos = new three.Vector3();
-  const quat = new three.Quaternion();
-  const euler = new three.Euler();
-  const scale = new three.Vector3();
-  const phase = options.phaseOffset ?? 0;
-  const hFactor = options.heightScaleFactor ?? 1;
-
-  for (let i = 0; i < count; i++) {
-    const t = i / count;
-    const angle = t * Math.PI * 2 + phase + Math.sin(i * 1.7) * 0.14;
-    const radiusWave = (Math.sin(i * 2.3 + phase) + 1) * 0.5;
-    const radius =
-      options.innerRadius +
-      (options.outerRadius - options.innerRadius) * radiusWave;
-    const uniformScale =
-      options.minScale +
-      (options.maxScale - options.minScale) * ((Math.cos(i * 1.9) + 1) * 0.5);
-
-    const sy = uniformScale * hFactor;
-    pos.set(
-      Math.cos(angle) * radius,
-      Math.max(0.15, options.baseY * sy - 0.25),
-      Math.sin(angle) * radius,
-    );
-    (euler as { y: number }).y = angle * 1.3;
-    quat.setFromEuler(euler);
-    scale.set(uniformScale, sy, uniformScale);
-    matrix.compose(pos, quat, scale);
-    mesh.setMatrixAt(i, matrix);
-  }
-  mesh.instanceMatrix.needsUpdate = true;
 }
 
 /**
@@ -401,6 +401,10 @@ export function buildRoomEnvironment(
   }
 
   const createCanvas = deps.createCanvas ?? getDefaultCanvasFactory();
+  const qualityTier: EnvironmentQualityTier =
+    deps.qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+      ? ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+      : ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER;
   const preset = getRoomEnvironmentPreset(roomId);
   const root = new three.Group();
   root.name = `cv-env-${roomId.toLowerCase()}`;
@@ -413,6 +417,10 @@ export function buildRoomEnvironment(
     anisotropy: PROCEDURAL_TEXTURE_TOKENS.ANISOTROPY,
   };
   const textureSet = createRoomTextureSet(preset, texDeps);
+  const landscapeTextures =
+    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+      ? {}
+      : createLandscapeTextureSet(texDeps);
   const skyTexture = createSkyGradientTexture(preset, three, createCanvas);
   const isCanyon = roomId === RoomId.NAAYERI;
   const canyonWaterTex = isCanyon
@@ -487,20 +495,15 @@ export function buildRoomEnvironment(
   floorMesh.receiveShadow = true;
   root.add(floorMesh);
 
-  const outerGeo = new three.CylinderGeometry(
-    ENVIRONMENT_BUDGET_TOKENS.OUTER_GROUND_RADIUS_M,
-    ENVIRONMENT_BUDGET_TOKENS.OUTER_GROUND_RADIUS_M,
-    0.2,
-    24,
+  const builtLandscape = buildLandscape(
+    preset,
+    three,
+    landscapeTextures,
+    qualityTier,
   );
-  const outerMat = new three.MeshLambertMaterial({
-    color: preset.outerGroundColor,
-  });
-  const outerMesh = new three.Mesh(outerGeo, outerMat);
-  outerMesh.name = "cv-env-outer-ground";
-  outerMesh.position.set(0, -0.25, 0);
-  outerMesh.receiveShadow = true;
-  root.add(outerMesh);
+  if (builtLandscape.objects.length > 0) {
+    root.add(...builtLandscape.objects);
+  }
 
   // 4. Exterior canyon water ring in Naayéri only (inner floor inlay ring removed across rooms)
   if (isCanyon) {
@@ -681,59 +684,7 @@ export function buildRoomEnvironment(
   pergolaMesh.castShadow = true;
   root.add(pergolaMesh);
 
-  // 6. Exterior Instanced Landscape (2 InstancedMesh draw calls tuned by biome)
-  const primaryLandscapeGeo =
-    preset.landscapeTheme === "canyon" || preset.landscapeTheme === "sierra"
-      ? new three.BoxGeometry(1.4, 3.2, 1.4)
-      : preset.landscapeTheme === "forest" || preset.landscapeTheme === "highland"
-        ? new three.ConeGeometry(1.1, 3.6, 6)
-        : new three.CylinderGeometry(0.42, 0.68, 2.8, 6);
-  const primaryCount = preset.landscapeTheme === "forest" ? 20 : 14;
-  const primaryMat = new three.MeshLambertMaterial({
-    color: preset.propPrimaryColor,
-  });
-  const primaryProps = new three.InstancedMesh(
-    primaryLandscapeGeo,
-    primaryMat,
-    primaryCount,
-  );
-  primaryProps.name = "cv-env-landscape-primary";
-  scatterRingInstances(primaryProps, three, primaryCount, {
-    innerRadius: ENVIRONMENT_BUDGET_TOKENS.LANDSCAPE_INNER_RADIUS_M + 2.2,
-    outerRadius: ENVIRONMENT_BUDGET_TOKENS.LANDSCAPE_OUTER_RADIUS_M,
-    baseY: 1.25,
-    minScale: 0.85,
-    maxScale: 1.55,
-    heightScaleFactor: preset.landscapeTheme === "canyon" ? 1.5 : 1.1,
-    phaseOffset: 0.2,
-  });
-  root.add(primaryProps);
-
-  const secondaryGeo =
-    preset.landscapeTheme === "sierra" || preset.landscapeTheme === "canyon"
-      ? new three.CylinderGeometry(0.34, 0.44, 2.2, 6)
-      : new three.ConeGeometry(0.75, 2.1, 5);
-  const secondaryCount = 14;
-  const secondaryMat = new three.MeshLambertMaterial({
-    color: preset.propSecondaryColor,
-  });
-  const secondaryProps = new three.InstancedMesh(
-    secondaryGeo,
-    secondaryMat,
-    secondaryCount,
-  );
-  secondaryProps.name = "cv-env-landscape-secondary";
-  scatterRingInstances(secondaryProps, three, secondaryCount, {
-    innerRadius: ENVIRONMENT_BUDGET_TOKENS.LANDSCAPE_INNER_RADIUS_M,
-    outerRadius: ENVIRONMENT_BUDGET_TOKENS.LANDSCAPE_OUTER_RADIUS_M - 3.5,
-    baseY: 0.95,
-    minScale: 0.65,
-    maxScale: 1.35,
-    phaseOffset: 1.15,
-  });
-  root.add(secondaryProps);
-
-  // 7. Ambient 3D Cultural Prisms (40..60 lit Octahedron InstancedMesh, 1 draw call)
+  // 6. Ambient 3D Cultural Prisms (40..60 lit Octahedron InstancedMesh, 1 draw call)
   const particleCount = preset.particleCount;
   const basePositions = new Float32Array(particleCount * 3);
   const radiusSpan =
@@ -785,6 +736,12 @@ export function buildRoomEnvironment(
     elapsedSeconds: number,
     focusDirection?: { readonly x: number; readonly y: number; readonly z: number } | null,
   ): void => {
+    builtLandscape.update(elapsedSeconds);
+    if (canyonWaterTex?.offset) {
+      canyonWaterTex.offset.x =
+        (elapsedSeconds * LANDSCAPE_TOKENS.WATER_SCROLL_SPEED) % 1;
+    }
+
     const focusLen = focusDirection
       ? Math.hypot(focusDirection.x, focusDirection.y, focusDirection.z)
       : 0;
@@ -829,7 +786,7 @@ export function buildRoomEnvironment(
   };
 
   updateParticles(0);
-  const stats = measureRoomEnvironmentBudget(root);
+  const stats = measureRoomEnvironmentBudget(root, qualityTier);
 
   let disposed = false;
   const dispose = (): void => {

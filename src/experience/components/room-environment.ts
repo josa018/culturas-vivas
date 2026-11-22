@@ -1,4 +1,6 @@
 import { ROOM_CATALOG, RoomId } from "../../shared/room-catalog";
+import { ENVIRONMENT_QUALITY_TOKENS } from "../constants";
+import type { EnvironmentQualityTier } from "../landscape/types";
 import {
   buildRoomEnvironment,
   type BuiltRoomEnvironment,
@@ -11,8 +13,16 @@ function normalizeRoomId(raw: string | undefined): RoomId {
   return candidate in ROOM_CATALOG ? candidate : RoomId.LOBBY;
 }
 
+function normalizeQualityTier(
+  raw: string | undefined,
+): EnvironmentQualityTier {
+  return raw === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+    ? ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
+    : ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER;
+}
+
 interface RoomEnvironmentComponentContext {
-  data: { roomId: string };
+  data: { roomId: string; qualityTier?: string };
   el: {
     object3D?: {
       add?: (obj: unknown) => void;
@@ -48,9 +58,11 @@ export function createRoomEnvironmentComponentDefinition(
       return;
     }
     const roomId = normalizeRoomId(this.data?.roomId);
+    const qualityTier = normalizeQualityTier(this.data?.qualityTier);
     const built = buildRoomEnvironment(roomId, {
       three,
       createCanvas: deps.createCanvas,
+      qualityTier,
     });
     this.builtEnv = built;
     this.elapsedSeconds = 0;
@@ -63,6 +75,10 @@ export function createRoomEnvironmentComponentDefinition(
   return {
     schema: {
       roomId: { type: "string", default: RoomId.LOBBY },
+      qualityTier: {
+        type: "string",
+        default: ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER,
+      },
     },
 
     init(this: RoomEnvironmentComponentContext) {
@@ -82,9 +98,14 @@ export function createRoomEnvironmentComponentDefinition(
 
     update(
       this: RoomEnvironmentComponentContext,
-      oldData?: { roomId?: string },
+      oldData?: { roomId?: string; qualityTier?: string },
     ) {
-      if (oldData && oldData.roomId && oldData.roomId !== this.data.roomId) {
+      if (
+        oldData &&
+        ((oldData.roomId && oldData.roomId !== this.data.roomId) ||
+          (oldData.qualityTier !== undefined &&
+            oldData.qualityTier !== this.data.qualityTier))
+      ) {
         mountOrRebuild.call(this);
       }
     },

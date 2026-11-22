@@ -44,6 +44,10 @@ import {
 import { RoomAssetCache } from "../experience/room-asset-cache";
 import { getSharedMediaCatalogClient } from "../experience/media-catalog-client";
 import type { RoomMediaProvider } from "../experience/media-types";
+import {
+  EnvironmentQualityStore,
+  getSharedEnvironmentQualityStore,
+} from "../experience/environment-quality-store";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -86,6 +90,9 @@ export class ExperienceScreenView implements ScreenView {
   private readonly transitionStateMachine: RoomTransitionStateMachine;
   private readonly roomAssetCache: RoomAssetCache;
   private readonly mediaProvider: RoomMediaProvider;
+  private readonly qualityStore: EnvironmentQualityStore;
+  private ecoToggleBtnEl: HTMLButtonElement | null = null;
+  private unsubscribeQuality: (() => void) | null = null;
 
   constructor(
     dispatch: NavigationDispatcher,
@@ -93,6 +100,7 @@ export class ExperienceScreenView implements ScreenView {
     transitionStateMachine?: RoomTransitionStateMachine,
     roomAssetCache?: RoomAssetCache,
     mediaProvider?: RoomMediaProvider,
+    qualityStore: EnvironmentQualityStore = getSharedEnvironmentQualityStore(),
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
@@ -100,6 +108,7 @@ export class ExperienceScreenView implements ScreenView {
       transitionStateMachine ?? new RoomTransitionStateMachine();
     this.roomAssetCache = roomAssetCache ?? new RoomAssetCache();
     this.mediaProvider = mediaProvider ?? getSharedMediaCatalogClient();
+    this.qualityStore = qualityStore;
   }
 
   public getTransitionStateMachine(): RoomTransitionStateMachine {
@@ -217,7 +226,40 @@ export class ExperienceScreenView implements ScreenView {
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
 
-    actionsGroup.append(returnLobbyButton, exitButton);
+    const ecoButton = document.createElement("button");
+    ecoButton.type = "button";
+    ecoButton.className = `${UI_CLASSES.BUTTON_OUTLINE} ${UI_CLASSES.ECO_TOGGLE_BTN}`;
+    ecoButton.setAttribute("data-action", "toggle-eco");
+    this.ecoToggleBtnEl = ecoButton;
+
+    const syncEcoHud = () => {
+      const isEco = this.qualityStore.isEcoMode();
+      ecoButton.setAttribute("aria-pressed", String(isEco));
+      ecoButton.classList.toggle("cv-eco-toggle--active", isEco);
+      ecoButton.textContent = isEco ? UI_TEXT.ECO_MODE_ON : UI_TEXT.ECO_MODE_OFF;
+    };
+    syncEcoHud();
+
+    ecoButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const nextTier = this.qualityStore.toggle();
+      if (typeof document !== "undefined") {
+        const envEntities = document.querySelectorAll("[cv-room-environment]");
+        for (const envEl of envEntities) {
+          const roomId =
+            envEl.closest("[data-room-id]")?.getAttribute("data-room-id") ??
+            ExhibitRoomBuilder.getActiveRoomId() ??
+            DEFAULT_ROOM_ID;
+          envEl.setAttribute(
+            "cv-room-environment",
+            `roomId: ${roomId}; qualityTier: ${nextTier}`,
+          );
+        }
+      }
+    });
+    this.unsubscribeQuality = this.qualityStore.subscribe(syncEcoHud);
+
+    actionsGroup.append(ecoButton, returnLobbyButton, exitButton);
     topBar.append(badge, actionsGroup);
     hudOverlay.appendChild(topBar);
 
@@ -230,10 +272,15 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    if (this.unsubscribeQuality) {
+      this.unsubscribeQuality();
+      this.unsubscribeQuality = null;
+    }
     this.hasVisitedLobby = false;
     this.topBarEl = null;
     this.roomBadgeEl = null;
     this.returnLobbyBtnEl = null;
+    this.ecoToggleBtnEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;

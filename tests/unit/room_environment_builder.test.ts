@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { RoomId } from "../../src/shared/room-catalog";
-import { ENVIRONMENT_BUDGET_TOKENS, SHADOW_CONFIG_TOKENS } from "../../src/experience/constants";
+import {
+  ENVIRONMENT_BUDGET_TOKENS,
+  LANDSCAPE_TOKENS,
+  SHADOW_CONFIG_TOKENS,
+} from "../../src/experience/constants";
 import { getRoomEnvironmentPreset } from "../../src/experience/room-environment-presets";
 import {
   buildRoomEnvironment,
@@ -56,11 +60,19 @@ class MockGeometry {
       this.index = null;
     }
   }
+
+  setIndex(index: number[] | { count: number }) {
+    this.index = Array.isArray(index) ? { count: index.length } : index;
+  }
+
+  computeVertexNormals = vi.fn();
 }
 
 class MockMaterial {
   dispose = vi.fn();
   map: { dispose: () => void } | null;
+  bumpMap: { dispose: () => void } | null;
+  bumpScale?: number;
   kind: string;
   fog: boolean;
   side?: number;
@@ -72,6 +84,8 @@ class MockMaterial {
   constructor(kind: string, opts: Record<string, unknown> = {}) {
     this.kind = kind;
     this.map = (opts.map as { dispose: () => void } | null) ?? null;
+    this.bumpMap = (opts.bumpMap as { dispose: () => void } | null) ?? null;
+    this.bumpScale = opts.bumpScale as number | undefined;
     this.fog = opts.fog !== false;
     this.side = opts.side as number | undefined;
     this.transparent = opts.transparent as boolean | undefined;
@@ -228,6 +242,7 @@ function createMockThree(): Record<string, unknown> {
       material: MockMaterial;
       count: number;
       instanceMatrix = { needsUpdate: false };
+      instanceColor: { needsUpdate: boolean } | null = null;
       dispose = vi.fn();
       constructor(geometry: MockGeometry, material: MockMaterial, count: number) {
         super();
@@ -236,6 +251,11 @@ function createMockThree(): Record<string, unknown> {
         this.count = count;
       }
       setMatrixAt = vi.fn();
+      setColorAt = vi.fn(() => {
+        if (!this.instanceColor) {
+          this.instanceColor = { needsUpdate: false };
+        }
+      });
     },
     Points: class extends MockObject3D {
       isPoints = true;
@@ -290,8 +310,42 @@ function createMockThree(): Record<string, unknown> {
       needsUpdate = false;
       colorSpace = "";
       repeat = { set: vi.fn() };
+      offset = { x: 0, y: 0 };
       dispose = vi.fn();
       constructor(public image: HTMLCanvasElement) {}
+    },
+    Color: class {
+      r = 1;
+      g = 1;
+      b = 1;
+      constructor(hex?: string | number) {
+        if (hex !== undefined) {
+          this.set(hex);
+        }
+      }
+      set(hex: string | number) {
+        if (typeof hex === "string") {
+          const clean = hex.replace(/^#/, "");
+          if (clean.length === 6) {
+            this.r = parseInt(clean.slice(0, 2), 16) / 255;
+            this.g = parseInt(clean.slice(2, 4), 16) / 255;
+            this.b = parseInt(clean.slice(4, 6), 16) / 255;
+          }
+        }
+        return this;
+      }
+      setRGB(r: number, g: number, b: number) {
+        this.r = r;
+        this.g = g;
+        this.b = b;
+        return this;
+      }
+      multiplyScalar(s: number) {
+        this.r *= s;
+        this.g *= s;
+        this.b *= s;
+        return this;
+      }
     },
     Matrix4: class {
       elements = new Array(16).fill(0);
@@ -339,15 +393,24 @@ describe("Procedural 3D room environment builder & budget", () => {
 
       const built = buildRoomEnvironment(roomId, deps);
       const preset = getRoomEnvironmentPreset(roomId);
-      const budget = measureRoomEnvironmentBudget(built.root);
+      const budget = measureRoomEnvironmentBudget(built.root, "rich");
 
       expect(built.fog).toBeTruthy();
       expect((built.fog as unknown as { color: string }).color).toBe(preset.fog.color);
-      expect(budget.triangleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES);
-      expect(budget.drawCalls).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS);
+      expect(budget.triangleCount).toBeLessThanOrEqual(LANDSCAPE_TOKENS.RICH_MAX_TRIANGLES);
+      expect(budget.drawCalls).toBeLessThanOrEqual(LANDSCAPE_TOKENS.RICH_MAX_DRAW_CALLS);
       expect(budget.particleCount).toBeGreaterThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES);
       expect(budget.particleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES);
       expect(budget.withinBudget).toBe(true);
+
+      const ecoCheck = buildRoomEnvironment(roomId, { ...deps, qualityTier: "eco" });
+      const ecoBudget = measureRoomEnvironmentBudget(ecoCheck.root, "eco");
+      expect(ecoBudget.triangleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES);
+      expect(ecoBudget.drawCalls).toBeLessThanOrEqual(LANDSCAPE_TOKENS.TARGET_MAX_DRAW_CALLS);
+      expect(ecoBudget.particleCount).toBeGreaterThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES);
+      expect(ecoBudget.particleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES);
+      expect(ecoBudget.withinBudget).toBe(true);
+      ecoCheck.dispose();
 
       const traversed: Array<Record<string, unknown>> = [];
       (built.root as unknown as MockObject3D).traverse((node) => {
@@ -575,6 +638,14 @@ describe("Procedural 3D room environment builder & budget", () => {
       expect(daisCurb?.material?.map).toBe(pergolaRing?.material?.map);
       // Remove the concentric floor inlay ring around the center circle across all rooms
       expect(byName.get("cv-env-floor-inlay")).toBeUndefined();
+      expect(byName.get("cv-env-outer-ground")).toBeUndefined();
+      const terrainNode = byName.get("cv-env-terrain") as
+        | { material?: { map?: unknown; bumpMap?: unknown; bumpScale?: number } }
+        | undefined;
+      expect(terrainNode).toBeDefined();
+      expect(terrainNode?.material?.map).toBeTruthy();
+      expect(terrainNode?.material?.bumpMap).toBe(terrainNode?.material?.map);
+      expect(terrainNode?.material?.bumpScale).toBe(LANDSCAPE_TOKENS.BUMP_SCALE);
       if (roomId === RoomId.NAAYERI) {
         const canyonWater = byName.get("cv-env-canyon-water") as
           | { material?: { map?: unknown } }
@@ -591,12 +662,61 @@ describe("Procedural 3D room environment builder & budget", () => {
       expect(byName.get("cv-env-pergola-rafters")?.count).toBe(8);
       expect(byName.get("cv-env-hanging-lanterns")?.count).toBe(8);
 
-      const secondary = byName.get("cv-env-landscape-secondary") as
-        | { geometry?: { radiusTop?: number } }
-        | undefined;
-      expect(secondary).toBeDefined();
-      if (typeof secondary?.geometry?.radiusTop === "number") {
-        expect(secondary.geometry.radiusTop).toBeGreaterThanOrEqual(0.34);
+      expect(byName.get("cv-env-landscape-primary")).toBeUndefined();
+      expect(byName.get("cv-env-landscape-secondary")).toBeUndefined();
+      for (const key of byName.keys()) {
+        expect(key.startsWith("cv-env-decor-")).toBe(false);
+      }
+
+      if (roomId === RoomId.WIXARIKA) {
+        const expectedWixarikaFlora = [
+          ["cv-env-flora-pine", 26],
+          ["cv-env-flora-agave", 16],
+          ["cv-env-flora-nopal", 10],
+          ["cv-env-flora-rock", 18],
+          ["cv-env-flora-shrub", 16],
+          ["cv-env-flora-grass-tuft", 28],
+          ["cv-env-flora-wildflower", 18],
+        ] as const;
+        for (const [floraName, expectedCount] of expectedWixarikaFlora) {
+          const floraNode = byName.get(floraName) as
+            | {
+                count: number;
+                setColorAt: ReturnType<typeof vi.fn>;
+                instanceColor: { needsUpdate: boolean } | null;
+                material?: {
+                  map?: unknown;
+                  bumpMap?: unknown;
+                  bumpScale?: number;
+                  transparent?: boolean;
+                };
+              }
+            | undefined;
+          expect(floraNode).toBeDefined();
+          expect(floraNode?.count).toBe(expectedCount);
+          expect(floraNode?.setColorAt).toHaveBeenCalledTimes(expectedCount);
+          expect(floraNode?.instanceColor?.needsUpdate).toBe(true);
+          expect(floraNode?.material?.map).toBeTruthy();
+          expect(floraNode?.material?.bumpMap).toBe(floraNode?.material?.map);
+          expect(floraNode?.material?.bumpScale).toBe(LANDSCAPE_TOKENS.BUMP_SCALE);
+          expect(floraNode?.material?.transparent).not.toBe(true);
+        }
+
+        const cloudsNode = byName.get("cv-env-clouds") as
+          | {
+              count: number;
+              material?: { transparent?: boolean };
+              setMatrixAt: ReturnType<typeof vi.fn>;
+            }
+          | undefined;
+        expect(cloudsNode).toBeDefined();
+        expect(cloudsNode?.count).toBe(LANDSCAPE_TOKENS.CLOUD_COUNT);
+        expect(cloudsNode?.material?.transparent).not.toBe(true);
+        cloudsNode!.setMatrixAt.mockClear();
+        built.updateParticles(2.0);
+        expect(cloudsNode!.setMatrixAt).toHaveBeenCalledTimes(
+          LANDSCAPE_TOKENS.CLOUD_COUNT,
+        );
       }
 
       expect(built.stats.triangleCount).toBeLessThanOrEqual(
@@ -608,5 +728,149 @@ describe("Procedural 3D room environment builder & budget", () => {
       expect(built.stats.withinBudget).toBe(true);
       built.dispose();
     }
+  });
+
+  it("mounts ambient biome fauna (birds/fireflies) and animates fauna + Naayéri canyon water via updateParticles", () => {
+    const mockThree = createMockThree();
+
+    const wixarika = buildRoomEnvironment(RoomId.WIXARIKA, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+    const wixarikaByName = new Map<string, Record<string, unknown>>();
+    (wixarika.root as unknown as MockObject3D).traverse((node) => {
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.name === "string" && rec.name.length > 0) {
+        wixarikaByName.set(rec.name, rec);
+      }
+    });
+    const birdFauna = wixarikaByName.get("cv-env-fauna") as
+      | {
+          count: number;
+          userData?: { isAmbientParticles?: boolean };
+          setMatrixAt: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(birdFauna).toBeDefined();
+    expect(birdFauna?.count).toBe(LANDSCAPE_TOKENS.FAUNA_BIRD_COUNT);
+    expect(birdFauna?.userData?.isAmbientParticles).not.toBe(true);
+    birdFauna!.setMatrixAt.mockClear();
+    wixarika.updateParticles(1.25);
+    expect(birdFauna!.setMatrixAt).toHaveBeenCalledTimes(
+      LANDSCAPE_TOKENS.FAUNA_BIRD_COUNT,
+    );
+    wixarika.dispose();
+
+    const mexicanero = buildRoomEnvironment(RoomId.MEXICANERO, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+    const mexByName = new Map<string, Record<string, unknown>>();
+    (mexicanero.root as unknown as MockObject3D).traverse((node) => {
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.name === "string" && rec.name.length > 0) {
+        mexByName.set(rec.name, rec);
+      }
+    });
+    const fireflyFauna = mexByName.get("cv-env-fauna") as
+      | {
+          count: number;
+          userData?: { isAmbientParticles?: boolean };
+          setMatrixAt: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    expect(fireflyFauna).toBeDefined();
+    expect(fireflyFauna?.count).toBe(LANDSCAPE_TOKENS.FAUNA_FIREFLY_COUNT);
+    expect(fireflyFauna?.userData?.isAmbientParticles).not.toBe(true);
+    mexicanero.dispose();
+
+    const naayeri = buildRoomEnvironment(RoomId.NAAYERI, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+    const naaByName = new Map<string, Record<string, unknown>>();
+    (naayeri.root as unknown as MockObject3D).traverse((node) => {
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.name === "string" && rec.name.length > 0) {
+        naaByName.set(rec.name, rec);
+      }
+    });
+    const waterMesh = naaByName.get("cv-env-canyon-water") as
+      | { material?: { map?: { offset?: { x: number; y: number } } } }
+      | undefined;
+    expect(waterMesh?.material?.map?.offset?.x).toBe(0);
+    naayeri.updateParticles(1.25);
+    expect(waterMesh?.material?.map?.offset?.x).toBeCloseTo(
+      LANDSCAPE_TOKENS.WATER_SCROLL_SPEED * 1.25,
+      5,
+    );
+    naayeri.dispose();
+  });
+
+  it("supports eco qualityTier by scaling flora instances, stripping bumpMap/clouds/fauna, and rebuilding cv-room-environment on tier change", () => {
+    const mockThree = createMockThree();
+    const ecoBuilt = buildRoomEnvironment(RoomId.WIXARIKA, {
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+      qualityTier: "eco",
+    });
+
+    const byName = new Map<string, Record<string, unknown>>();
+    (ecoBuilt.root as unknown as MockObject3D).traverse((node) => {
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.name === "string" && rec.name.length > 0) {
+        byName.set(rec.name, rec);
+      }
+    });
+
+    const expectedEcoPines = Math.max(
+      LANDSCAPE_TOKENS.ECO_MIN_INSTANCES,
+      Math.round(26 * LANDSCAPE_TOKENS.ECO_INSTANCE_SCALE),
+    );
+    const pineNode = byName.get("cv-env-flora-pine") as
+      | { count: number; material?: { bumpMap?: unknown } }
+      | undefined;
+    expect(pineNode?.count).toBe(expectedEcoPines);
+    expect(pineNode?.material?.bumpMap).toBeNull();
+    expect(
+      (byName.get("cv-env-terrain") as { material?: { bumpMap?: unknown } } | undefined)
+        ?.material?.bumpMap,
+    ).toBeNull();
+    expect(byName.get("cv-env-clouds")).toBeUndefined();
+    expect(byName.get("cv-env-fauna")).toBeUndefined();
+    expect(byName.get("cv-env-flora-shrub")).toBeUndefined();
+    for (const key of byName.keys()) {
+      expect(key.startsWith("cv-env-decor-")).toBe(false);
+    }
+
+    const ecoBudget = measureRoomEnvironmentBudget(ecoBuilt.root, "eco");
+    expect(ecoBudget.triangleCount).toBeLessThanOrEqual(
+      ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES,
+    );
+    expect(ecoBudget.drawCalls).toBeLessThanOrEqual(
+      LANDSCAPE_TOKENS.TARGET_MAX_DRAW_CALLS,
+    );
+    expect(ecoBudget.withinBudget).toBe(true);
+    ecoBuilt.dispose();
+
+    const def = createRoomEnvironmentComponentDefinition({
+      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
+      createCanvas: createCanvasMockFactory(),
+    });
+    const sceneObj = new MockObject3D() as MockObject3D & { fog: unknown };
+    const hostObj = new MockObject3D();
+    const instance: Record<string, unknown> = {
+      data: { roomId: RoomId.WIXARIKA, qualityTier: "rich" },
+      el: { object3D: hostObj, sceneEl: { object3D: sceneObj } },
+      ...def,
+    };
+    (instance.init as () => void).call(instance);
+    const richRoot = hostObj.children[0];
+    instance.data = { roomId: RoomId.WIXARIKA, qualityTier: "eco" };
+    (
+      instance.update as (oldData?: { roomId?: string; qualityTier?: string }) => void
+    ).call(instance, { roomId: RoomId.WIXARIKA, qualityTier: "rich" });
+    expect(hostObj.children[0]).not.toBe(richRoot);
+    (instance.remove as () => void).call(instance);
   });
 });
