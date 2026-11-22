@@ -20,7 +20,6 @@ import { SURVEY_CONSTANTS } from "../../src/survey/constants";
 import { SurveySubmissionService } from "../../src/survey/survey-submission-service";
 import { SESSION_CONSTANTS } from "../../src/session/constants";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
-import { EnvironmentQualityStore } from "../../src/experience/environment-quality-store";
 import { RoomId } from "../../src/experience/types";
 import { setSharedInspectionController } from "../../src/experience/components/inspectable";
 
@@ -457,62 +456,24 @@ describe("Screen Views & Interactions", () => {
     expect(indexHtml).toContain("visibility: hidden !important");
   });
 
-  it("WelcomeScreenView and ExperienceScreenView expose Eco Mode toggle syncing EnvironmentQualityStore and cv-room-environment", () => {
-    const mem = new Map<string, string>();
-    const qualityStore = new EnvironmentQualityStore({
-      getItem: (k) => mem.get(k) ?? null,
-      setItem: (k, v) => {
-        mem.set(k, v);
-      },
-      removeItem: (k) => {
-        mem.delete(k);
-      },
-    });
-
-    const welcome = new WelcomeScreenView(dispatch, qualityStore);
+  it("WelcomeScreenView and ExperienceScreenView omit any Eco Mode toggle while preserving primary navigation actions", () => {
+    const welcome = new WelcomeScreenView(dispatch);
     welcome.mount(root);
 
-    const welcomeToggle = root.querySelector(
-      '[data-action="toggle-eco"]',
-    ) as HTMLButtonElement | null;
-    expect(welcomeToggle).not.toBeNull();
-    expect(welcomeToggle?.getAttribute("aria-pressed")).toBe("false");
-    expect(welcomeToggle?.textContent).toContain(UI_TEXT.ECO_MODE_OFF);
-
-    welcomeToggle!.click();
-    expect(qualityStore.getTier()).toBe("eco");
-    expect(welcomeToggle?.getAttribute("aria-pressed")).toBe("true");
-    expect(welcomeToggle?.textContent).toContain(UI_TEXT.ECO_MODE_ON);
+    expect(root.querySelector('[data-action="toggle-eco"]')).toBeNull();
+    expect(root.querySelector(".cv-eco-toggle-wrap")).toBeNull();
     expect(root.querySelector('[data-action="vr"]')).not.toBeNull();
     expect(root.querySelector('[data-action="2d"]')).not.toBeNull();
     welcome.unmount();
 
     const scene = createMockScene();
-    const envEl = document.createElement("a-entity");
-    envEl.setAttribute("cv-room-environment", "roomId: WIXARIKA; qualityTier: eco");
-    scene.appendChild(envEl);
     document.body.appendChild(scene);
 
-    const exp = new ExperienceScreenView(
-      dispatch,
-      "2d",
-      undefined,
-      undefined,
-      undefined,
-      qualityStore,
-    );
+    const exp = new ExperienceScreenView(dispatch, "2d");
     exp.mount(root);
 
-    const hudToggle = root.querySelector(
-      '[data-action="toggle-eco"]',
-    ) as HTMLButtonElement | null;
-    expect(hudToggle).not.toBeNull();
-    expect(hudToggle?.getAttribute("aria-pressed")).toBe("true");
-
-    hudToggle!.click();
-    expect(qualityStore.getTier()).toBe("rich");
-    expect(hudToggle?.getAttribute("aria-pressed")).toBe("false");
-    expect(envEl.getAttribute("cv-room-environment")).toContain("qualityTier: rich");
+    expect(root.querySelector('[data-action="toggle-eco"]')).toBeNull();
+    expect(root.querySelector('[data-action="request-exit"]')).not.toBeNull();
     exp.unmount();
   });
 });

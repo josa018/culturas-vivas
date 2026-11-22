@@ -2,24 +2,14 @@ import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT, CULTURAL_ASSETS } from "./constants";
 import { getSharedVideoController } from "../experience/shared-video-controller";
-import {
-  EnvironmentQualityStore,
-  getSharedEnvironmentQualityStore,
-} from "../experience/environment-quality-store";
 
 export class WelcomeScreenView implements ScreenView {
   public readonly id = ScreenId.WELCOME;
   private container: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
-  private readonly qualityStore: EnvironmentQualityStore;
-  private unsubscribeQuality: (() => void) | null = null;
 
-  constructor(
-    dispatch: NavigationDispatcher,
-    qualityStore: EnvironmentQualityStore = getSharedEnvironmentQualityStore(),
-  ) {
+  constructor(dispatch: NavigationDispatcher) {
     this.dispatch = dispatch;
-    this.qualityStore = qualityStore;
   }
 
   public mount(parent: HTMLElement): void {
@@ -115,35 +105,8 @@ export class WelcomeScreenView implements ScreenView {
       this.dispatch(NavigationAction.SELECT_2D);
     });
 
-    const ecoWrapper = document.createElement("div");
-    ecoWrapper.className = "cv-eco-toggle-wrap";
-
-    const ecoButton = document.createElement("button");
-    ecoButton.type = "button";
-    ecoButton.className = UI_CLASSES.ECO_TOGGLE_BTN;
-    ecoButton.setAttribute("data-action", "toggle-eco");
-
-    const ecoHint = document.createElement("span");
-    ecoHint.className = "cv-eco-toggle-hint";
-    ecoHint.textContent = UI_TEXT.ECO_TOGGLE_HINT;
-
-    const syncEcoUi = () => {
-      const isEco = this.qualityStore.isEcoMode();
-      ecoButton.setAttribute("aria-pressed", String(isEco));
-      ecoButton.classList.toggle("cv-eco-toggle--active", isEco);
-      ecoButton.textContent = isEco ? UI_TEXT.ECO_MODE_ON : UI_TEXT.ECO_MODE_OFF;
-    };
-    syncEcoUi();
-
-    ecoButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this.qualityStore.toggle();
-    });
-    this.unsubscribeQuality = this.qualityStore.subscribe(syncEcoUi);
-
-    ecoWrapper.append(ecoButton, ecoHint);
     buttonStack.append(vrButton, touchButton);
-    card.append(title, description, buttonStack, ecoWrapper);
+    card.append(title, description, buttonStack);
     element.appendChild(card);
 
     parent.appendChild(element);
@@ -151,10 +114,6 @@ export class WelcomeScreenView implements ScreenView {
   }
 
   public unmount(): void {
-    if (this.unsubscribeQuality) {
-      this.unsubscribeQuality();
-      this.unsubscribeQuality = null;
-    }
     if (this.container) {
       this.container.remove();
       this.container = null;

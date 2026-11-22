@@ -393,24 +393,15 @@ describe("Procedural 3D room environment builder & budget", () => {
 
       const built = buildRoomEnvironment(roomId, deps);
       const preset = getRoomEnvironmentPreset(roomId);
-      const budget = measureRoomEnvironmentBudget(built.root, "rich");
+      const budget = measureRoomEnvironmentBudget(built.root);
 
       expect(built.fog).toBeTruthy();
       expect((built.fog as unknown as { color: string }).color).toBe(preset.fog.color);
-      expect(budget.triangleCount).toBeLessThanOrEqual(LANDSCAPE_TOKENS.RICH_MAX_TRIANGLES);
-      expect(budget.drawCalls).toBeLessThanOrEqual(LANDSCAPE_TOKENS.RICH_MAX_DRAW_CALLS);
+      expect(budget.triangleCount).toBeLessThanOrEqual(LANDSCAPE_TOKENS.MAX_TRIANGLES);
+      expect(budget.drawCalls).toBeLessThanOrEqual(LANDSCAPE_TOKENS.MAX_DRAW_CALLS);
       expect(budget.particleCount).toBeGreaterThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES);
       expect(budget.particleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES);
       expect(budget.withinBudget).toBe(true);
-
-      const ecoCheck = buildRoomEnvironment(roomId, { ...deps, qualityTier: "eco" });
-      const ecoBudget = measureRoomEnvironmentBudget(ecoCheck.root, "eco");
-      expect(ecoBudget.triangleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES);
-      expect(ecoBudget.drawCalls).toBeLessThanOrEqual(LANDSCAPE_TOKENS.TARGET_MAX_DRAW_CALLS);
-      expect(ecoBudget.particleCount).toBeGreaterThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES);
-      expect(ecoBudget.particleCount).toBeLessThanOrEqual(ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES);
-      expect(ecoBudget.withinBudget).toBe(true);
-      ecoCheck.dispose();
 
       const traversed: Array<Record<string, unknown>> = [];
       (built.root as unknown as MockObject3D).traverse((node) => {
@@ -720,10 +711,10 @@ describe("Procedural 3D room environment builder & budget", () => {
       }
 
       expect(built.stats.triangleCount).toBeLessThanOrEqual(
-        ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES,
+        LANDSCAPE_TOKENS.MAX_TRIANGLES,
       );
       expect(built.stats.drawCalls).toBeLessThanOrEqual(
-        ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS,
+        LANDSCAPE_TOKENS.MAX_DRAW_CALLS,
       );
       expect(built.stats.withinBudget).toBe(true);
       built.dispose();
@@ -807,52 +798,8 @@ describe("Procedural 3D room environment builder & budget", () => {
     naayeri.dispose();
   });
 
-  it("supports eco qualityTier by scaling flora instances, stripping bumpMap/clouds/fauna, and rebuilding cv-room-environment on tier change", () => {
+  it("mounts full-detail landscape layers unconditionally and rebuilds cv-room-environment on roomId change", () => {
     const mockThree = createMockThree();
-    const ecoBuilt = buildRoomEnvironment(RoomId.WIXARIKA, {
-      three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
-      createCanvas: createCanvasMockFactory(),
-      qualityTier: "eco",
-    });
-
-    const byName = new Map<string, Record<string, unknown>>();
-    (ecoBuilt.root as unknown as MockObject3D).traverse((node) => {
-      const rec = node as Record<string, unknown>;
-      if (typeof rec.name === "string" && rec.name.length > 0) {
-        byName.set(rec.name, rec);
-      }
-    });
-
-    const expectedEcoPines = Math.max(
-      LANDSCAPE_TOKENS.ECO_MIN_INSTANCES,
-      Math.round(26 * LANDSCAPE_TOKENS.ECO_INSTANCE_SCALE),
-    );
-    const pineNode = byName.get("cv-env-flora-pine") as
-      | { count: number; material?: { bumpMap?: unknown } }
-      | undefined;
-    expect(pineNode?.count).toBe(expectedEcoPines);
-    expect(pineNode?.material?.bumpMap).toBeNull();
-    expect(
-      (byName.get("cv-env-terrain") as { material?: { bumpMap?: unknown } } | undefined)
-        ?.material?.bumpMap,
-    ).toBeNull();
-    expect(byName.get("cv-env-clouds")).toBeUndefined();
-    expect(byName.get("cv-env-fauna")).toBeUndefined();
-    expect(byName.get("cv-env-flora-shrub")).toBeUndefined();
-    for (const key of byName.keys()) {
-      expect(key.startsWith("cv-env-decor-")).toBe(false);
-    }
-
-    const ecoBudget = measureRoomEnvironmentBudget(ecoBuilt.root, "eco");
-    expect(ecoBudget.triangleCount).toBeLessThanOrEqual(
-      ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES,
-    );
-    expect(ecoBudget.drawCalls).toBeLessThanOrEqual(
-      LANDSCAPE_TOKENS.TARGET_MAX_DRAW_CALLS,
-    );
-    expect(ecoBudget.withinBudget).toBe(true);
-    ecoBuilt.dispose();
-
     const def = createRoomEnvironmentComponentDefinition({
       three: mockThree as unknown as RoomEnvironmentBuildDependencies["three"],
       createCanvas: createCanvasMockFactory(),
@@ -860,17 +807,28 @@ describe("Procedural 3D room environment builder & budget", () => {
     const sceneObj = new MockObject3D() as MockObject3D & { fog: unknown };
     const hostObj = new MockObject3D();
     const instance: Record<string, unknown> = {
-      data: { roomId: RoomId.WIXARIKA, qualityTier: "rich" },
+      data: { roomId: RoomId.WIXARIKA },
       el: { object3D: hostObj, sceneEl: { object3D: sceneObj } },
       ...def,
     };
     (instance.init as () => void).call(instance);
-    const richRoot = hostObj.children[0];
-    instance.data = { roomId: RoomId.WIXARIKA, qualityTier: "eco" };
+    const firstRoot = hostObj.children[0] as MockObject3D;
+    const byName = new Map<string, Record<string, unknown>>();
+    firstRoot.traverse((node) => {
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.name === "string" && rec.name.length > 0) {
+        byName.set(rec.name, rec);
+      }
+    });
+    expect(byName.get("cv-env-clouds")).toBeDefined();
+    expect(byName.get("cv-env-fauna")).toBeDefined();
+    expect(byName.get("cv-env-flora-shrub")).toBeDefined();
+
+    instance.data = { roomId: RoomId.NAAYERI };
     (
-      instance.update as (oldData?: { roomId?: string; qualityTier?: string }) => void
-    ).call(instance, { roomId: RoomId.WIXARIKA, qualityTier: "rich" });
-    expect(hostObj.children[0]).not.toBe(richRoot);
+      instance.update as (oldData?: { roomId?: string }) => void
+    ).call(instance, { roomId: RoomId.WIXARIKA });
+    expect(hostObj.children[0]).not.toBe(firstRoot);
     (instance.remove as () => void).call(instance);
   });
 });

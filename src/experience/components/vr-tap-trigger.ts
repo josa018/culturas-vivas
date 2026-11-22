@@ -43,7 +43,13 @@ export interface AFrameCursorElement extends HTMLElement {
 }
 
 export interface VrTapTriggerEntity extends HTMLElement {
-  sceneEl?: HTMLElement;
+  sceneEl?: HTMLElement & {
+    renderer?: {
+      xr?: {
+        isPresenting?: boolean;
+      };
+    };
+  };
 }
 
 export interface VrTapTriggerComponentInstance {
@@ -61,6 +67,7 @@ export interface VrTapTriggerComponentInstance {
   cursorUpHandler: ((evt: Event) => void) | null;
   cursorClickHandler: (() => void) | null;
   init: () => void;
+  update?: () => void;
   setHudToggleEnabled: (enabled: boolean) => void;
   setTransitionIdle: (isIdle: boolean) => void;
   handleCursorDown: (evt: Event) => void;
@@ -156,6 +163,20 @@ function extractIntersectedEl(
   return cursorEl?.components?.cursor?.intersectedEl ?? null;
 }
 
+function resolveSceneEl(
+  el: VrTapTriggerEntity,
+): NonNullable<VrTapTriggerEntity["sceneEl"]> | null {
+  return (
+    el.sceneEl ??
+    (el.closest?.("a-scene") as VrTapTriggerEntity["sceneEl"] | null) ??
+    (typeof document !== "undefined"
+      ? (document.querySelector("a-scene") as
+          | VrTapTriggerEntity["sceneEl"]
+          | null)
+      : null)
+  );
+}
+
 export function createVrTapTriggerComponentDefinition() {
   return {
     schema: {
@@ -173,17 +194,17 @@ export function createVrTapTriggerComponentDefinition() {
       this.cursorUpHandler = null;
       this.cursorClickHandler = null;
 
-      const sceneEl =
-        this.el.sceneEl ??
-        (typeof document !== "undefined"
-          ? document.querySelector<HTMLElement>("a-scene")
-          : null);
+      const sceneEl = resolveSceneEl(this.el);
       const cursorEl =
         sceneEl?.querySelector<AFrameCursorElement>("a-cursor") ??
         sceneEl?.querySelector<AFrameCursorElement>("[cursor]") ??
         null;
 
       this.attachCursorListeners(cursorEl);
+    },
+
+    update: function (this: VrTapTriggerComponentInstance) {
+      this.setHudToggleEnabled(this.data?.hudToggleEnabled ?? true);
     },
 
     setHudToggleEnabled: function (
@@ -260,7 +281,12 @@ export function createVrTapTriggerComponentDefinition() {
     ): TapEvaluationOutcome {
       const upEl = extractIntersectedEl(evt, this.cursorEl);
       const upPoint = extractPointFromCursorEvent(evt);
-      const dragDistancePx = computeDragDistancePx(this.downPoint, upPoint);
+      const isXrPresenting = Boolean(
+        resolveSceneEl(this.el)?.renderer?.xr?.isPresenting,
+      );
+      const dragDistancePx = isXrPresenting
+        ? 0
+        : computeDragDistancePx(this.downPoint, upPoint);
       const elapsedSinceLastTapMs = nowMs - this.lastActivationTimestampMs;
 
       const outcome = evaluateCursorTap({

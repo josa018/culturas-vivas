@@ -1,12 +1,10 @@
 import { ROOM_LAYOUT_TOKENS, RoomId } from "../shared/room-catalog";
 import {
   ENVIRONMENT_BUDGET_TOKENS,
-  ENVIRONMENT_QUALITY_TOKENS,
   LANDSCAPE_TOKENS,
   PROCEDURAL_TEXTURE_TOKENS,
   SHADOW_CONFIG_TOKENS,
 } from "./constants";
-import type { EnvironmentQualityTier } from "./landscape/types";
 import {
   createLandscapeTextureSet,
   createProceduralTexture,
@@ -193,7 +191,6 @@ interface ThreeDirectionalLightLike extends ThreeObject3DLike {
 export interface RoomEnvironmentBuildDependencies {
   readonly three?: RoomEnvironmentThreeLike;
   readonly createCanvas?: (width: number, height: number) => HTMLCanvasElement | null;
-  readonly qualityTier?: EnvironmentQualityTier;
 }
 
 export interface BuiltRoomEnvironment {
@@ -312,7 +309,6 @@ function getGeometryTriangleCount(geometry: ThreeGeometryLike | undefined): numb
  */
 export function measureRoomEnvironmentBudget(
   root: ThreeObject3DLike | null | undefined,
-  qualityTier: EnvironmentQualityTier = ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER,
 ): RoomEnvironmentBudgetReport {
   if (!root) {
     return {
@@ -362,18 +358,9 @@ export function measureRoomEnvironmentBudget(
     }
   });
 
-  const maxTriangles =
-    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
-      ? ENVIRONMENT_BUDGET_TOKENS.MAX_TRIANGLES
-      : LANDSCAPE_TOKENS.RICH_MAX_TRIANGLES;
-  const maxDrawCalls =
-    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
-      ? ENVIRONMENT_BUDGET_TOKENS.MAX_DRAW_CALLS
-      : LANDSCAPE_TOKENS.RICH_MAX_DRAW_CALLS;
-
   const withinBudget =
-    triangleCount <= maxTriangles &&
-    drawCalls <= maxDrawCalls &&
+    triangleCount <= LANDSCAPE_TOKENS.MAX_TRIANGLES &&
+    drawCalls <= LANDSCAPE_TOKENS.MAX_DRAW_CALLS &&
     particleCount >= ENVIRONMENT_BUDGET_TOKENS.MIN_PARTICLES &&
     particleCount <= ENVIRONMENT_BUDGET_TOKENS.MAX_PARTICLES;
 
@@ -401,10 +388,6 @@ export function buildRoomEnvironment(
   }
 
   const createCanvas = deps.createCanvas ?? getDefaultCanvasFactory();
-  const qualityTier: EnvironmentQualityTier =
-    deps.qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
-      ? ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
-      : ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER;
   const preset = getRoomEnvironmentPreset(roomId);
   const root = new three.Group();
   root.name = `cv-env-${roomId.toLowerCase()}`;
@@ -417,10 +400,7 @@ export function buildRoomEnvironment(
     anisotropy: PROCEDURAL_TEXTURE_TOKENS.ANISOTROPY,
   };
   const textureSet = createRoomTextureSet(preset, texDeps);
-  const landscapeTextures =
-    qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER
-      ? {}
-      : createLandscapeTextureSet(texDeps);
+  const landscapeTextures = createLandscapeTextureSet(texDeps);
   const skyTexture = createSkyGradientTexture(preset, three, createCanvas);
   const isCanyon = roomId === RoomId.NAAYERI;
   const canyonWaterTex = isCanyon
@@ -499,7 +479,6 @@ export function buildRoomEnvironment(
     preset,
     three,
     landscapeTextures,
-    qualityTier,
   );
   if (builtLandscape.objects.length > 0) {
     root.add(...builtLandscape.objects);
@@ -786,7 +765,7 @@ export function buildRoomEnvironment(
   };
 
   updateParticles(0);
-  const stats = measureRoomEnvironmentBudget(root, qualityTier);
+  const stats = measureRoomEnvironmentBudget(root);
 
   let disposed = false;
   const dispose = (): void => {

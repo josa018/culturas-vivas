@@ -1,6 +1,5 @@
 import {
   ENVIRONMENT_BUDGET_TOKENS,
-  ENVIRONMENT_QUALITY_TOKENS,
   LANDSCAPE_TOKENS,
 } from "../constants";
 import type { ProceduralTextureLike } from "../procedural-textures";
@@ -24,7 +23,7 @@ import {
   sampleTerrainHeight,
   type TerrainParams,
 } from "./terrain-geometry";
-import type { IndexedBufferData, EnvironmentQualityTier } from "./types";
+import type { IndexedBufferData } from "./types";
 
 export interface LandscapeTextureBundle {
   readonly groundGrain?: ProceduralTextureLike | null;
@@ -57,9 +56,7 @@ export function buildLandscape(
   preset: RoomEnvironmentPreset,
   three: RoomEnvironmentThreeLike,
   textures: LandscapeTextureBundle = {},
-  qualityTier: EnvironmentQualityTier = ENVIRONMENT_QUALITY_TOKENS.DEFAULT_TIER,
 ): BuiltLandscape {
-  const isEco = qualityTier === ENVIRONMENT_QUALITY_TOKENS.ECO_TIER;
   const objects: ThreeObject3DLike[] = [];
 
   const terrainParams: TerrainParams = {
@@ -80,7 +77,7 @@ export function buildLandscape(
   const terrainMat = new three.MeshLambertMaterial({
     vertexColors: true,
     flatShading: true,
-    ...(textures.groundGrain && !isEco
+    ...(textures.groundGrain
       ? {
           map: textures.groundGrain,
           bumpMap: textures.groundGrain,
@@ -123,7 +120,7 @@ export function buildLandscape(
     objects.push(ridgeMesh);
   }
 
-  const speciesSpecs = getBiomeSpeciesSpecs(preset.landscapeTheme, qualityTier);
+  const speciesSpecs = getBiomeSpeciesSpecs(preset.landscapeTheme);
   const matrix = new three.Matrix4();
   const pos = new three.Vector3();
   const quat = new three.Quaternion();
@@ -147,7 +144,7 @@ export function buildLandscape(
     const speciesMat = new three.MeshLambertMaterial({
       vertexColors: true,
       flatShading: true,
-      ...(reliefTex && !isEco
+      ...(reliefTex
         ? {
             map: reliefTex,
             bumpMap: reliefTex,
@@ -156,14 +153,8 @@ export function buildLandscape(
         : {}),
     });
 
-    const effectiveCount = isEco
-      ? Math.max(
-          LANDSCAPE_TOKENS.ECO_MIN_INSTANCES,
-          Math.round(spec.count * LANDSCAPE_TOKENS.ECO_INSTANCE_SCALE),
-        )
-      : spec.count;
     const placements = scatterSpecies(
-      { ...spec, count: effectiveCount },
+      spec,
       preset.landscape.seed + (specIdx + 1) * 53,
       heightSampler,
       ENVIRONMENT_BUDGET_TOKENS.WALKWAY_COUNT,
@@ -197,13 +188,6 @@ export function buildLandscape(
       instanced.instanceColor.needsUpdate = true;
     }
     objects.push(instanced);
-  }
-
-  if (isEco) {
-    return {
-      objects,
-      update: () => {},
-    };
   }
 
   const faunaIsBirds = preset.landscape.fauna === "birds";

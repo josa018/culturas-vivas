@@ -213,6 +213,97 @@ function readAncestorYawRad(cameraEl: Element, sceneEl: HTMLElement): number {
   return totalRad;
 }
 
+interface Vector3Scratch {
+  x: number;
+  y: number;
+  z: number;
+  set: (x: number, y: number, z: number) => Vector3Scratch;
+  setFromMatrixPosition: (matrix: { elements?: ArrayLike<number> }) => Vector3Scratch;
+  normalize: () => Vector3Scratch;
+  negate: () => Vector3Scratch;
+}
+
+interface PoseReadableCamera {
+  getWorldPosition?: (out: Vector3Scratch) => unknown;
+  getWorldDirection?: (out: Vector3Scratch) => unknown;
+}
+
+function createScratchVector3(): Vector3Scratch {
+  const GlobalThree = (
+    globalThis as unknown as {
+      THREE?: { Vector3?: new () => Vector3Scratch };
+    }
+  ).THREE;
+  if (GlobalThree?.Vector3) {
+    return new GlobalThree.Vector3();
+  }
+  const vec: Vector3Scratch = {
+    x: 0,
+    y: 0,
+    z: 0,
+    set(x: number, y: number, z: number) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    },
+    setFromMatrixPosition(matrix: { elements?: ArrayLike<number> }) {
+      const e = matrix?.elements;
+      if (e && e.length >= 15) {
+        this.x = e[12];
+        this.y = e[13];
+        this.z = e[14];
+      }
+      return this;
+    },
+    normalize() {
+      const len = Math.hypot(this.x, this.y, this.z);
+      if (len > 0) {
+        this.x /= len;
+        this.y /= len;
+        this.z /= len;
+      }
+      return this;
+    },
+    negate() {
+      this.x = -this.x;
+      this.y = -this.y;
+      this.z = -this.z;
+      return this;
+    },
+  };
+  return vec;
+}
+
+function readPoseFromThreeCamera(
+  cam: PoseReadableCamera | null | undefined,
+): VrHudCameraPose | null {
+  if (
+    !cam ||
+    typeof cam.getWorldPosition !== "function" ||
+    typeof cam.getWorldDirection !== "function"
+  ) {
+    return null;
+  }
+  const pos = createScratchVector3();
+  const forward = createScratchVector3();
+  cam.getWorldPosition(pos);
+  cam.getWorldDirection(forward);
+  if (
+    !Number.isFinite(pos.x) ||
+    !Number.isFinite(pos.y) ||
+    !Number.isFinite(pos.z) ||
+    !Number.isFinite(forward.x) ||
+    !Number.isFinite(forward.z)
+  ) {
+    return null;
+  }
+  return {
+    position: { x: pos.x, y: pos.y, z: pos.z },
+    yawRad: Math.atan2(-forward.x, -forward.z),
+  };
+}
+
 export function readCameraPoseFromScene(
   sceneEl: HTMLElement | null | undefined,
 ): VrHudCameraPose {
@@ -222,6 +313,36 @@ export function readCameraPoseFromScene(
   };
   if (!sceneEl) {
     return fallback;
+  }
+
+  const xrManager = (
+    sceneEl as unknown as {
+      renderer?: {
+        xr?: {
+          isPresenting?: boolean;
+          getCamera?: () => PoseReadableCamera | null | undefined;
+        };
+      };
+      camera?: PoseReadableCamera | null | undefined;
+    }
+  ).renderer?.xr;
+
+  if (xrManager?.isPresenting) {
+    const xrPose =
+      readPoseFromThreeCamera(xrManager.getCamera?.()) ??
+      readPoseFromThreeCamera(
+        (sceneEl as unknown as { camera?: PoseReadableCamera }).camera,
+      );
+    if (xrPose) {
+      return xrPose;
+    }
+  }
+
+  const sceneCameraPose = readPoseFromThreeCamera(
+    (sceneEl as unknown as { camera?: PoseReadableCamera }).camera,
+  );
+  if (sceneCameraPose) {
+    return sceneCameraPose;
   }
 
   const cameraEl =
@@ -235,7 +356,7 @@ export function readCameraPoseFromScene(
       object3D?: {
         position?: { x: number; y: number; z: number };
         rotation?: { y: number };
-        getWorldPosition?: (out: { x: number; y: number; z: number }) => unknown;
+        getWorldPosition?: (out: Vector3Scratch) => unknown;
       };
     }
   ).object3D;
@@ -244,17 +365,7 @@ export function readCameraPoseFromScene(
   const yawRad = localYawRad + readAncestorYawRad(cameraEl, sceneEl);
 
   if (obj3D && typeof obj3D.getWorldPosition === "function") {
-    const worldPos = {
-      x: 0,
-      y: 0,
-      z: 0,
-      set(x: number, y: number, z: number) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        return this;
-      },
-    };
+    const worldPos = createScratchVector3();
     obj3D.getWorldPosition(worldPos);
     return {
       position: { x: worldPos.x, y: worldPos.y, z: worldPos.z },

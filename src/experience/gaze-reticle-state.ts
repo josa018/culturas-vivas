@@ -11,7 +11,7 @@ export interface ReticleDepthTransform {
 
 export interface ReticleVisibilityInput {
   readonly viewMode: string | ViewMode | null | undefined;
-  readonly isInspecting: boolean;
+  readonly isInspecting?: boolean;
   readonly hasClickableHit: boolean;
   readonly hasWakeZoneHit: boolean;
   readonly isFusing: boolean;
@@ -92,7 +92,7 @@ export function computeReticleDepthTransform(
 }
 
 /**
- * Resolves reticle visibility according to active view mode and Cinema Mode rules.
+ * Resolves reticle visibility across ViewMode.VR using wake zones and grace delay.
  */
 export function evaluateReticleVisibilityMode(
   input: ReticleVisibilityInput,
@@ -100,7 +100,7 @@ export function evaluateReticleVisibilityMode(
   if (input.viewMode !== ViewMode.VR) {
     return "HIDDEN";
   }
-  if (!input.isInspecting || input.hasClickableHit || input.isFusing) {
+  if (input.hasClickableHit || input.isFusing) {
     return "ACTIVE";
   }
   if (input.hasWakeZoneHit) {

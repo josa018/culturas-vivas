@@ -1,5 +1,3 @@
-export type EnvironmentQualityTier = "rich" | "eco";
-
 export type LandscapeSpeciesKind =
   | "PINE"
   | "BROADLEAF"

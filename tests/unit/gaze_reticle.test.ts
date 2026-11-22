@@ -229,6 +229,63 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
     instance.remove();
   });
 
+  it("auto-hides reticle globally during InspectionState.IDLE after 300ms and wakes on wake zones and clickables", () => {
+    (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
+      registerComponent: vi.fn(),
+      components: {},
+    };
+    let now = 1000;
+    let clickableDistance: number | null = null;
+    let wakeDistance: number | null = null;
+
+    const cursorEl = document.createElement("a-cursor") as unknown as GazeReticleEntity;
+    const def = createGazeReticleComponentDefinition({
+      nowMs: () => now,
+      getInspectionState: () => InspectionState.IDLE,
+      getRaycasterIntersection: () => clickableDistance,
+      getWakeIntersection: () => wakeDistance,
+    });
+    const instance = Object.create(def) as GazeReticleComponentInstance;
+    instance.el = cursorEl;
+    instance.data = {
+      fuseTimeout: INSPECTION_TIMINGS.FUSE_TIMEOUT_MS,
+      accentColor: RETICLE_TOKENS.DEFAULT_ACCENT_COLOR,
+    };
+    instance.init();
+
+    // Looking at empty space in IDLE starts grace delay in GUIDE
+    instance.tick();
+    expect(instance.visibilityMode).toBe("GUIDE");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain(
+      `opacity: ${RETICLE_TOKENS.GUIDE_OPACITY}`,
+    );
+
+    // After 300ms on empty space while IDLE -> hidden
+    now = 1300;
+    instance.tick();
+    expect(instance.visibilityMode).toBe("CINEMA_HIDDEN");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+
+    // Looking at a wake zone while IDLE wakes reticle as GUIDE
+    wakeDistance = 2.0;
+    now = 1350;
+    instance.tick();
+    expect(instance.visibilityMode).toBe("GUIDE");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.containerEl?.getAttribute("position")).toBe("0 0 -1.98");
+
+    // Looking at a clickable portal/exhibit/button wakes full ACTIVE opacity
+    clickableDistance = 1.5;
+    wakeDistance = null;
+    now = 1400;
+    instance.tick();
+    expect(instance.visibilityMode).toBe("ACTIVE");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain("opacity: 0.95");
+
+    instance.remove();
+  });
+
   it("computes surface-conforming reticle depth, negative z offset, and constant angular scale", () => {
     expect(computeReticleDepthTransform(1.43)).toEqual({
       depthM: 1.41,
@@ -252,7 +309,7 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
     });
   });
 
-  it("evaluates Cinema Mode visibility states across 2D, browsing, control wake zone, and 300ms delay", () => {
+  it("evaluates global auto-hide visibility states across 2D, clickable/wake zones, and 300ms delay for both browsing and inspection", () => {
     expect(
       evaluateReticleVisibilityMode({
         viewMode: "2d",
@@ -265,6 +322,7 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       }),
     ).toBe("HIDDEN");
 
+    // Browsing (isInspecting: false): grace window stays GUIDE < 300ms and hides at >= 300ms
     expect(
       evaluateReticleVisibilityMode({
         viewMode: "vr",
@@ -272,8 +330,44 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
         hasClickableHit: false,
         hasWakeZoneHit: false,
         isFusing: false,
-        nonInteractiveSinceMs: null,
-        nowMs: 1000,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1200,
+      }),
+    ).toBe("GUIDE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1300,
+      }),
+    ).toBe("CINEMA_HIDDEN");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: true,
+        isFusing: false,
+        nonInteractiveSinceMs: 500,
+        nowMs: 1500,
+      }),
+    ).toBe("GUIDE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: true,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 500,
+        nowMs: 1500,
       }),
     ).toBe("ACTIVE");
 

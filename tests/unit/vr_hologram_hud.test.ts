@@ -118,6 +118,9 @@ function createMockTapTriggerInstance(
     init: function (this: VrTapTriggerComponentInstance) {
       def.init.call(this);
     },
+    update: function (this: VrTapTriggerComponentInstance) {
+      def.update.call(this);
+    },
     setHudToggleEnabled: function (
       this: VrTapTriggerComponentInstance,
       enabled: boolean,
@@ -253,6 +256,60 @@ describe("VR Hologram HUD Component", () => {
       .map(Number);
     // Facing ~180 deg (+Z) must anchor the HUD in +Z ahead of gaze, not at -Z behind visitor
     expect(hudZ).toBeGreaterThan(1.0);
+  });
+
+  it("readCameraPoseFromScene extracts live WebXR HMD world position and gaze azimuth when xr.isPresenting is true and look-controls zeroes local rotation", () => {
+    const xrCamera = {
+      getWorldPosition: (out: { x: number; y: number; z: number; set?: (x: number, y: number, z: number) => unknown }) => {
+        out.x = 0.2;
+        out.y = 1.68;
+        out.z = -0.4;
+        return out;
+      },
+      getWorldDirection: (out: { x: number; y: number; z: number; set?: (x: number, y: number, z: number) => unknown }) => {
+        // Looking along -X (+90 deg yaw: yawRad = Math.PI / 2)
+        out.x = -1;
+        out.y = 0;
+        out.z = 0;
+        return out;
+      },
+    };
+
+    const scene = document.createElement("a-scene") as HTMLElement & {
+      renderer?: { xr?: { isPresenting?: boolean; getCamera?: () => unknown } };
+      camera?: unknown;
+    };
+    scene.renderer = {
+      xr: {
+        isPresenting: true,
+        getCamera: () => xrCamera,
+      },
+    };
+
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    const camera = document.createElement("a-camera") as HTMLElement & {
+      object3D?: { position: { x: number; y: number; z: number }; rotation: { y: number } };
+    };
+    // A-Frame look-controls zeroes and freezes local rotation upon entering WebXR
+    camera.object3D = { position: { x: 0, y: 0, z: 0 }, rotation: { y: 0 } };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
+
+    const xrPose = readCameraPoseFromScene(scene);
+    expect(xrPose.position).toEqual({ x: 0.2, y: 1.68, z: -0.4 });
+    expect(xrPose.yawRad).toBeCloseTo(Math.PI / 2, 3);
+
+    const hudEl = document.createElement("a-entity") as VrHologramHudEntity;
+    const hudInstance = createMockHudInstance(hudEl);
+    hudInstance.init();
+    hudInstance.summon(xrPose);
+    const [hudX, hudY, hudZ] = (hudEl.getAttribute("position") ?? "0 0 0")
+      .split(/\s+/)
+      .map(Number);
+    expect(hudX).toBeCloseTo(-1.3, 2);
+    expect(hudY).toBeCloseTo(1.53, 2);
+    expect(hudZ).toBeCloseTo(-0.4, 2);
   });
 
   it("summons HUD, aborts active inspection, updates room chip, dismisses, and respects setEnabled(false)", () => {
@@ -760,6 +817,41 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     vi.spyOn(Date, "now").mockReturnValue(5000);
     cursor.dispatchEvent(new CustomEvent("click", { detail: { intersectedEl: target } }));
     expect(tapTrigger.lastActivationTimestampMs).toBe(1400);
+  });
+
+  it("synchronizes hudToggleEnabled in update() and ignores stale pointer drag when WebXR is presenting", () => {
+    const { scene, cursor, tapTrigger } = setupTapScene();
+    const xrScene = scene as HTMLElement & {
+      renderer?: { xr?: { isPresenting?: boolean } };
+    };
+    let hudToggleCount = 0;
+    scene.addEventListener(VR_TAP_HUD_TOGGLE_EVENT, () => {
+      hudToggleCount++;
+    });
+
+    // Simulate A-Frame schema attribute toggle via update() lifecycle
+    tapTrigger.data = { hudToggleEnabled: false };
+    (tapTrigger as VrTapTriggerComponentInstance & { update?: () => void }).update?.();
+    expect(tapTrigger.hudToggleEnabled).toBe(false);
+
+    tapTrigger.data = { hudToggleEnabled: true };
+    (tapTrigger as VrTapTriggerComponentInstance & { update?: () => void }).update?.();
+    expect(tapTrigger.hudToggleEnabled).toBe(true);
+
+    // Simulate WebXR active presentation where reused A-Frame cursor detail carries stale pointer coords
+    xrScene.renderer = { xr: { isPresenting: true } };
+    vi.spyOn(Date, "now").mockReturnValue(2000);
+    cursor.dispatchEvent(
+      new CustomEvent("mousedown", {
+        detail: { intersectedEl: null, touchEvent: { touches: [{ clientX: 10, clientY: 10 }] } },
+      }),
+    );
+    cursor.dispatchEvent(
+      new CustomEvent("mouseup", {
+        detail: { intersectedEl: null, touchEvent: { changedTouches: [{ clientX: 180, clientY: 10 }] } },
+      }),
+    );
+    expect(hudToggleCount).toBe(1);
   });
 
   it("synchronizes 2D DOM HUD vs 3D tap-toggled HUD in ExperienceScreenView and persists across room transitions", () => {

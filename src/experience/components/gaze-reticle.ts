@@ -190,8 +190,9 @@ export function createGazeReticleComponentDefinition(
         this.data?.accentColor || RETICLE_TOKENS.DEFAULT_ACCENT_COLOR;
       this.viewMode = deps.getViewMode ? deps.getViewMode() : ViewMode.VR;
       this.visibilityMode =
-        this.viewMode === ViewMode.VR ? "ACTIVE" : "HIDDEN";
-      this.nonInteractiveSinceMs = null;
+        this.viewMode === ViewMode.VR ? "GUIDE" : "HIDDEN";
+      this.nonInteractiveSinceMs =
+        this.viewMode === ViewMode.VR ? resolveNowMs() : null;
       this.confirmResetTimer = null;
       this.cleanupListeners = [];
 
@@ -260,6 +261,7 @@ export function createGazeReticleComponentDefinition(
       this.idleDotEl = idleDot;
       this.progressRingEl = progressRing;
       this.confirmRingEl = confirmRing;
+      applyVisibilityStyle(this, this.visibilityMode);
 
       const enforceOrder = () => {
         applyRenderOrderToEntity(this.el);
@@ -357,15 +359,16 @@ export function createGazeReticleComponentDefinition(
       viewMode: string,
     ) {
       this.viewMode = viewMode;
-      this.nonInteractiveSinceMs = null;
       if (viewMode !== ViewMode.VR) {
+        this.nonInteractiveSinceMs = null;
         this.resetFuse();
         this.visibilityMode = "HIDDEN";
         applyVisibilityStyle(this, "HIDDEN");
         return;
       }
-      this.visibilityMode = "ACTIVE";
-      applyVisibilityStyle(this, "ACTIVE");
+      this.nonInteractiveSinceMs = resolveNowMs();
+      this.visibilityMode = "GUIDE";
+      applyVisibilityStyle(this, "GUIDE");
     },
 
     tick: function (this: GazeReticleComponentInstance) {
@@ -380,14 +383,19 @@ export function createGazeReticleComponentDefinition(
       const hasClickableHit = clickableDist !== null;
 
       let wakeDist: number | null = null;
-      if (activeViewMode === ViewMode.VR && isInspecting && !hasClickableHit) {
+      if (activeViewMode === ViewMode.VR && !hasClickableHit) {
         wakeDist = deps.getWakeIntersection
           ? deps.getWakeIntersection()
           : readDefaultWakeDistance(this.el);
       }
       const hasWakeZoneHit = wakeDist !== null;
 
-      if (isInspecting && !hasClickableHit && !hasWakeZoneHit && !this.reticleState.isFusing) {
+      if (
+        activeViewMode === ViewMode.VR &&
+        !hasClickableHit &&
+        !hasWakeZoneHit &&
+        !this.reticleState.isFusing
+      ) {
         if (this.nonInteractiveSinceMs === null) {
           this.nonInteractiveSinceMs = now;
         }

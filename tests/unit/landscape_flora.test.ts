@@ -87,13 +87,9 @@ describe("Low-poly biome flora geometry, catalog, and deterministic scatter", ()
     const heightSampler = (x: number, z: number) => 0.1 + Math.hypot(x, z) * 0.05;
 
     for (const theme of themes) {
-      const specs = getBiomeSpeciesSpecs(theme, "rich");
+      const specs = getBiomeSpeciesSpecs(theme);
       expect(specs.length).toBeGreaterThanOrEqual(6);
       expect(specs.length).toBeLessThanOrEqual(8);
-
-      const ecoSpecs = getBiomeSpeciesSpecs(theme, "eco");
-      expect(ecoSpecs.length).toBeGreaterThanOrEqual(3);
-      expect(ecoSpecs.length).toBeLessThanOrEqual(4);
 
       for (const spec of specs) {
         const first = scatterSpecies(spec, 17, heightSampler);
@@ -119,7 +115,7 @@ describe("Low-poly biome flora geometry, catalog, and deterministic scatter", ()
       }
     }
 
-    const sierra = getBiomeSpeciesSpecs("sierra", "rich");
+    const sierra = getBiomeSpeciesSpecs("sierra");
     expect(sierra.map((s) => s.kind)).toEqual([
       "PINE",
       "AGAVE",
@@ -142,7 +138,7 @@ describe("Low-poly biome flora geometry, catalog, and deterministic scatter", ()
     const heightSampler = () => 0;
 
     for (const theme of themes) {
-      const specs = getBiomeSpeciesSpecs(theme, "rich");
+      const specs = getBiomeSpeciesSpecs(theme);
       const occupied: Array<{ x: number; z: number; radius: number }> = [];
       const placedRadii: Array<{ x: number; z: number; r: number }> = [];
 
