@@ -3,6 +3,7 @@ import {
   ExhibitMediaType,
   FOCAL_INSPECTION_DISTANCE,
   FOCAL_INSPECTION_OFFSET,
+  INSPECTION_TARGET_TOKENS,
   InspectionState,
   PROTOTYPE_EXHIBITS,
   ROOM_CENTER_COORDINATE,
@@ -182,6 +183,36 @@ export class ExhibitInspectionController {
     return {
       x: Number((origin.x - ux * focalDistance).toFixed(3)),
       y: Number((origin.y - uy * focalDistance).toFixed(3)),
+      z: Number((origin.z - uz * focalDistance).toFixed(3)),
+    };
+  }
+
+  /**
+   * Computes an ergonomic inspection coordinate along the horizontal XZ ray
+   * toward camera origin while placing the exhibit at an explicit comfortable Y elevation.
+   */
+  public calculateErgonomicInspectionTarget(
+    galleryPos: Vector3D,
+    cameraPos?: Vector3D,
+    focalDistance: number = INSPECTION_TARGET_TOKENS.STAND_FOCAL_DISTANCE_M,
+    targetElevationY: number = INSPECTION_TARGET_TOKENS.STAND_INSPECTION_Y_M,
+  ): Vector3D {
+    const origin = cameraPos ?? ROOM_CENTER_COORDINATE;
+    const vx = origin.x - galleryPos.x;
+    const vz = origin.z - galleryPos.z;
+    const lenXZ = Math.hypot(vx, vz);
+    if (lenXZ === 0) {
+      return {
+        x: galleryPos.x,
+        y: Number(targetElevationY.toFixed(3)),
+        z: galleryPos.z,
+      };
+    }
+    const ux = vx / lenXZ;
+    const uz = vz / lenXZ;
+    return {
+      x: Number((origin.x - ux * focalDistance).toFixed(3)),
+      y: Number(targetElevationY.toFixed(3)),
       z: Number((origin.z - uz * focalDistance).toFixed(3)),
     };
   }

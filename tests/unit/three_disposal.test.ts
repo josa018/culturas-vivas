@@ -87,4 +87,46 @@ describe("Three.js PBR Resource Disposal", () => {
       texturesDisposed: 0,
     });
   });
+
+  it("invokes InstancedMesh.dispose() and disposes Points geometry/material once each", () => {
+    const instancedGeo = { dispose: vi.fn() };
+    const instancedTex = { dispose: vi.fn() };
+    const instancedMat = { dispose: vi.fn(), map: instancedTex };
+    const instancedMesh = {
+      isInstancedMesh: true,
+      geometry: instancedGeo,
+      material: instancedMat,
+      dispose: vi.fn(),
+    };
+
+    const pointsGeo = { dispose: vi.fn() };
+    const pointsMat = { dispose: vi.fn() };
+    const pointsNode = {
+      isPoints: true,
+      geometry: pointsGeo,
+      material: pointsMat,
+    };
+
+    const rootObj = {
+      traverse: (cb: (node: unknown) => void) => {
+        cb(instancedMesh);
+        cb(instancedMesh);
+        cb(pointsNode);
+      },
+    };
+
+    const stats = disposeObject3DResources(rootObj);
+
+    expect(instancedMesh.dispose).toHaveBeenCalledTimes(1);
+    expect(instancedGeo.dispose).toHaveBeenCalledTimes(1);
+    expect(instancedMat.dispose).toHaveBeenCalledTimes(1);
+    expect(instancedTex.dispose).toHaveBeenCalledTimes(1);
+    expect(pointsGeo.dispose).toHaveBeenCalledTimes(1);
+    expect(pointsMat.dispose).toHaveBeenCalledTimes(1);
+    expect(stats).toEqual({
+      geometriesDisposed: 2,
+      materialsDisposed: 2,
+      texturesDisposed: 1,
+    });
+  });
 });

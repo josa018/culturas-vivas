@@ -1,4 +1,13 @@
 import { SHARED_VIDEO_ELEMENT_ID } from "./constants";
+import {
+  AudioPreferencesStore,
+  getSharedAudioPreferencesStore,
+} from "./audio/audio-preferences-store";
+import { AudioEngine, getSharedAudioEngine } from "./audio/audio-engine";
+import {
+  SpatialMediaAudio,
+  getSharedSpatialMediaAudio,
+} from "./audio/spatial-media-audio";
 
 export interface VideoElementLike {
   id: string;
@@ -33,6 +42,9 @@ export interface SharedVideoControllerOptions {
   readonly createVideoElement?: () => VideoElementLike | null;
   readonly createVideoTexture?: (video: VideoElementLike) => DisposableVideoTexture | null;
   readonly onStateChange?: () => void;
+  readonly preferencesStore?: AudioPreferencesStore;
+  readonly audioEngine?: AudioEngine;
+  readonly spatialMediaAudio?: SpatialMediaAudio;
 }
 
 const NOT_ALLOWED_ERROR_NAME = "NotAllowedError";
@@ -87,19 +99,54 @@ export class SharedVideoController {
     video: VideoElementLike,
   ) => DisposableVideoTexture | null;
   private readonly onStateChange?: () => void;
+  private readonly preferencesStore: AudioPreferencesStore;
+  private readonly audioEngine: AudioEngine;
+  private readonly spatialMediaAudio: SpatialMediaAudio;
+  private readonly stateListeners = new Set<() => void>();
 
   private video: VideoElementLike | null = null;
   private texture: DisposableVideoTexture | null = null;
   private unlocked = false;
   private playing = false;
-  private muted = false;
+  private muted: boolean;
   private currentUrl: string | null = null;
   private playSequenceId = 0;
+  private unsubscribePrefs: (() => void) | null = null;
 
   constructor(options: SharedVideoControllerOptions = {}) {
     this.createVideoElement = options.createVideoElement ?? defaultCreateVideoElement;
     this.createVideoTexture = options.createVideoTexture ?? defaultCreateVideoTexture;
     this.onStateChange = options.onStateChange;
+    this.preferencesStore =
+      options.preferencesStore ?? getSharedAudioPreferencesStore();
+    this.audioEngine = options.audioEngine ?? getSharedAudioEngine();
+    this.spatialMediaAudio =
+      options.spatialMediaAudio ?? getSharedSpatialMediaAudio();
+    this.muted = this.preferencesStore.getPreferences().mediaMuted;
+
+    this.unsubscribePrefs = this.preferencesStore.subscribe((prefs) => {
+      if (this.muted !== prefs.mediaMuted) {
+        this.muted = prefs.mediaMuted;
+        if (this.video) {
+          this.video.muted = this.muted;
+        }
+        this.emitStateChange();
+      }
+    });
+  }
+
+  public subscribeStateChange(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private emitStateChange(): void {
+    this.onStateChange?.();
+    for (const listener of this.stateListeners) {
+      listener();
+    }
   }
 
   public ensureVideoElement(): VideoElementLike | null {
@@ -185,10 +232,12 @@ export class SharedVideoController {
     this.disposeTexture();
 
     if (options?.muted !== undefined) {
-      this.muted = options.muted;
+      this.preferencesStore.syncMediaMuted(options.muted);
     }
+    this.muted = this.preferencesStore.getPreferences().mediaMuted;
 
     video.muted = this.muted;
+    this.spatialMediaAudio.attachVideoElement(video);
     video.src = url;
     video.load();
     this.currentUrl = url;
@@ -202,7 +251,8 @@ export class SharedVideoController {
     if (started) {
       this.texture = this.createVideoTexture(video);
     }
-    this.onStateChange?.();
+    this.audioEngine.setMediaPlaybackActive(started);
+    this.emitStateChange();
     return this.texture;
   }
 
@@ -213,7 +263,8 @@ export class SharedVideoController {
     if (this.playing) {
       this.video.pause();
       this.playing = false;
-      this.onStateChange?.();
+      this.audioEngine.setMediaPlaybackActive(false);
+      this.emitStateChange();
       return false;
     }
     const seq = ++this.playSequenceId;
@@ -222,7 +273,8 @@ export class SharedVideoController {
       return false;
     }
     this.playing = resumed;
-    this.onStateChange?.();
+    this.audioEngine.setMediaPlaybackActive(resumed);
+    this.emitStateChange();
     return this.playing;
   }
 
@@ -231,12 +283,24 @@ export class SharedVideoController {
     if (this.video) {
       this.video.muted = muted;
     }
-    this.onStateChange?.();
+    this.preferencesStore.syncMediaMuted(muted);
+    this.emitStateChange();
     return this.muted;
   }
 
   public toggleMute(): boolean {
-    return this.setMuted(!this.muted);
+    void this.audioEngine.unlockFromUserGesture().then((ok) => {
+      if (ok) {
+        this.spatialMediaAudio.ensureConnected();
+      }
+    });
+    const nextPrefs = this.preferencesStore.toggleStandMedia();
+    this.muted = nextPrefs.mediaMuted;
+    if (this.video) {
+      this.video.muted = this.muted;
+    }
+    this.emitStateChange();
+    return this.muted;
   }
 
   /**
@@ -253,7 +317,15 @@ export class SharedVideoController {
     }
     this.playing = false;
     this.currentUrl = null;
-    this.onStateChange?.();
+    this.audioEngine.setMediaPlaybackActive(false);
+    this.emitStateChange();
+  }
+
+  public dispose(): void {
+    this.stopAndRelease();
+    this.unsubscribePrefs?.();
+    this.unsubscribePrefs = null;
+    this.stateListeners.clear();
   }
 
   private disposeTexture(): void {
@@ -277,6 +349,7 @@ export class SharedVideoController {
       if (isNotAllowedError(error) && !video.muted) {
         this.muted = true;
         video.muted = true;
+        this.preferencesStore.syncMediaMuted(true);
         try {
           await video.play();
           return seq === this.playSequenceId;

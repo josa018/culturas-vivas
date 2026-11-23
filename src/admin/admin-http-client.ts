@@ -20,6 +20,11 @@ export interface AdminNetworkFetcher {
     body?: unknown,
     headers?: Record<string, string>,
   ): Promise<T>;
+  put?<T = unknown>(
+    url: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T>;
   delete?<T = unknown>(
     url: string,
     headers?: Record<string, string>,
@@ -33,6 +38,11 @@ export interface AdminNetworkFetcher {
 
 export interface AdminMediaFetcher extends AdminNetworkFetcher {
   patch<T = unknown>(
+    url: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T>;
+  put<T = unknown>(
     url: string,
     body?: unknown,
     headers?: Record<string, string>,
@@ -98,6 +108,21 @@ export function createDefaultAdminFetcher(): AdminMediaFetcher {
     ): Promise<T> =>
       requestJson<T>(url, {
         method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...headers,
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      }),
+
+    put: <T = unknown>(
+      url: string,
+      body?: unknown,
+      headers: Record<string, string> = {},
+    ): Promise<T> =>
+      requestJson<T>(url, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",

@@ -75,7 +75,7 @@ function defaultPreloadImage(url: string, timeoutMs: number): Promise<boolean> {
 }
 
 /**
- * Caches decoded skybox assets across room transitions to avoid duplicate downloads.
+ * Caches decoded stand cover assets across room transitions to avoid duplicate downloads.
  */
 export class RoomAssetCache {
   private readonly loadedUrls = new Set<string>();
@@ -165,8 +165,6 @@ export class RoomAssetCache {
       }
     };
 
-    addUrl(entry.skyboxUrl);
-
     for (const stand of entry.stands) {
       try {
         const items = mediaProvider.getStandItems(entry.id, stand.standId);
@@ -185,9 +183,13 @@ export class RoomAssetCache {
       }
     }
 
+    if (uniqueUrls.length === 0) {
+      return true;
+    }
+
     const results = await Promise.all(
       uniqueUrls.map((url) => this.ensureAsset(url)),
     );
-    return results[0] === true;
+    return results.every(Boolean);
   }
 }

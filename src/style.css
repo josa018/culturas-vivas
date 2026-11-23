@@ -845,6 +845,77 @@ body {
   gap: 8px;
 }
 
+.cv-tutorial-sound-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--cv-radius-medium);
+  background: linear-gradient(
+    135deg,
+    rgba(217, 155, 38, 0.08),
+    rgba(0, 143, 133, 0.06)
+  );
+  border: 1px solid var(--cv-color-border-faja);
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.cv-tutorial-sound-text {
+  color: var(--cv-color-text-bone);
+  font-weight: 500;
+  flex: 1;
+}
+
+.cv-tutorial-sound-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.cv-tutorial-sound-btn {
+  width: auto !important;
+  min-width: 118px;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-color: var(--cv-color-accent-cempasuchil);
+  color: var(--cv-color-accent-cempasuchil);
+  background-color: rgba(217, 155, 38, 0.1);
+}
+
+.cv-tutorial-sound-btn::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: 0.75;
+}
+
+.cv-tutorial-sound-btn:hover {
+  background-color: rgba(217, 155, 38, 0.18);
+}
+
+.cv-tutorial-sound-btn--active {
+  border-color: var(--cv-color-accent-turquesa);
+  color: var(--cv-color-text-bone);
+  background-color: rgba(0, 143, 133, 0.24);
+  box-shadow: 0 0 0 1px rgba(0, 143, 133, 0.35);
+}
+
+.cv-tutorial-sound-btn--active::before {
+  background-color: var(--cv-color-accent-turquesa);
+  opacity: 1;
+  box-shadow: 0 0 8px var(--cv-color-accent-turquesa);
+}
+
+.cv-tutorial-sound-btn--active:hover {
+  background-color: rgba(0, 143, 133, 0.34);
+}
+
 /* Experience Screen HUD (Screen 4) */
 .cv-screen--experience {
   background-color: transparent !important;
@@ -882,14 +953,133 @@ body {
   gap: 8px;
 }
 
-.cv-hud-lobby-btn,
-.cv-hud-exit-btn {
+.cv-hud-exit-btn,
+.cv-hud-settings-btn {
   width: auto !important;
   min-height: 40px !important;
   padding: 8px 18px !important;
   font-size: 13px !important;
   background-color: rgba(18, 18, 18, 0.85) !important;
   backdrop-filter: blur(8px);
+}
+
+.cv-settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  pointer-events: auto;
+  z-index: 250;
+}
+
+.cv-settings-modal-backdrop[hidden] {
+  display: none !important;
+}
+
+.cv-settings-modal-card {
+  max-width: 380px;
+  gap: 18px;
+}
+
+.cv-settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cv-settings-modal-close {
+  width: auto !important;
+  min-width: 40px;
+  min-height: 40px !important;
+  padding: 6px 12px !important;
+}
+
+.cv-settings-sound-btn {
+  width: 100%;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.cv-settings-sound-btn--active {
+  border-color: var(--cv-color-accent-cempasuchil);
+  background-color: rgba(217, 155, 38, 0.16);
+  color: var(--cv-color-accent-cempasuchil);
+}
+
+.cv-settings-volume-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cv-settings-volume-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+}
+
+.cv-settings-volume-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cv-color-accent-turquesa);
+}
+
+.cv-volume-bars-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cv-volume-step-btn {
+  width: 42px !important;
+  min-width: 42px;
+  min-height: 40px !important;
+  padding: 6px 0 !important;
+  font-size: 18px !important;
+  line-height: 1;
+}
+
+.cv-volume-bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.cv-volume-bar {
+  width: 18px;
+  height: 30px;
+  border-radius: 5px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: rgba(51, 65, 85, 0.72);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.cv-volume-bar:active {
+  transform: scale(0.95);
+}
+
+.cv-volume-bar--active {
+  background-color: var(--cv-color-accent-cempasuchil);
+  border-color: var(--cv-color-accent-cempasuchil);
+}
+
+[data-volume-channel="effects"] .cv-volume-bar--active {
+  background-color: var(--cv-color-accent-turquesa);
+  border-color: var(--cv-color-accent-turquesa);
 }
 
 /* Modal Backdrop (Screen 5) */
@@ -1703,4 +1893,23 @@ a-scene canvas.a-canvas {
   height: 54px;
   object-fit: cover;
   border-radius: 6px;
+}
+
+.cv-admin-audio-guidance {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.cv-admin-audio-item {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) auto;
+}
+
+.cv-admin-audio-preview {
+  width: 100%;
+  height: 36px;
 }

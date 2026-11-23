@@ -152,6 +152,48 @@ describe("AppRouter", () => {
     router.destroy();
   });
 
+  it("synchronizes ExitModalScreenView to 2D Touch mode and switches to TUTORIAL + VR on switch-to-vr", () => {
+    const { router, fsm, fetcher } = createRouter();
+
+    (root.querySelector('[data-action="enter"]') as HTMLElement).click();
+    (root.querySelector('[data-action="2d"]') as HTMLElement).click();
+    (root.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+
+    const exitModal = root.querySelector(
+      `[data-screen-id="${ScreenId.EXIT_MODAL}"]`,
+    )!;
+    const switchVrBtn = exitModal.querySelector(
+      '[data-action="switch-to-vr"]',
+    ) as HTMLElement;
+    expect(switchVrBtn).toBeTruthy();
+    expect(
+      exitModal.querySelector('[data-action="switch-to-touch"]'),
+    ).toBeNull();
+
+    switchVrBtn.click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.TUTORIAL);
+    expect(fsm.getSession().viewMode).toBe("vr");
+    expect(
+      root
+        .querySelector(`[data-screen-id="${ScreenId.TUTORIAL}"]`)!
+        .classList.contains(UI_CLASSES.SCREEN_ACTIVE),
+    ).toBe(true);
+    expect(fetcher.calls.map((c) => c.body)).toEqual([
+      {
+        sessionId: "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d",
+        deviceType: "mobile",
+        mode: "2d",
+      },
+      {
+        sessionId: "3f2b8c1e-5a4d-4e7b-9c12-8d6f0a1b2c3d",
+        deviceType: "mobile",
+        mode: "vr",
+      },
+    ]);
+
+    router.destroy();
+  });
+
   it("unmounts all screens and unsubscribes from state machine on destroy()", () => {
     const { router, fsm } = createRouter();
 

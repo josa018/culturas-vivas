@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   createMediaStandComponentDefinition,
   type MediaStandComponentInstance,
@@ -6,7 +6,9 @@ import {
 } from "../../src/experience/components/media-stand";
 import {
   ExhibitMediaType,
+  INSPECTION_TIMINGS,
   InspectionState,
+  STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
 } from "../../src/experience/constants";
 import { ExhibitInspectionController } from "../../src/experience/inspection-controller";
@@ -17,6 +19,7 @@ import {
   type VideoElementLike,
 } from "../../src/experience/shared-video-controller";
 import { RoomId, StandId } from "../../src/shared/room-catalog";
+import { computeVideoBadgePosition } from "../../src/experience/media-stand-layout";
 
 function createMockVideoController() {
   const attributes = new Map<string, string>();
@@ -97,7 +100,7 @@ function createStandHost(
     label: "Arte",
     accentColor: "#D99B26",
     viewMode: "vr",
-    galleryPosition: { x: 0, y: 1.6, z: -3.2 },
+    galleryPosition: { x: 0, y: 1.76, z: -3.2 },
     galleryRotation: { x: 0, y: 0, z: 0 },
     itemsJson: "[]",
   };
@@ -110,7 +113,13 @@ describe("cv-media-stand A-Frame Component", () => {
   let inspectionController: ExhibitInspectionController;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     inspectionController = new ExhibitInspectionController();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
   });
 
   it("renders 'Contenido próximamente' with hidden non-clickable controls for empty stands", async () => {
@@ -246,6 +255,7 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(creator.getAttribute("value")).toBe("");
     expect(leftPlane.getAttribute("width")).toBe("0.534");
     expect(leftPlane.getAttribute("height")).toBe("0.95");
+    expect(el.querySelector(".cv-stand-video-badge")?.getAttribute("position")).toBe("0.057 0.383 0.025");
     expect(videoController.playVideo).toHaveBeenCalledWith("https://cdn.example.com/art-2.mp4");
     expect(prefetched).toEqual([
       "https://cdn.example.com/art-2-poster.jpg",
@@ -375,7 +385,7 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(rightPlane?.getAttribute("color")).toBe("#0f172a");
     expect(rightPlane?.getAttribute("material")).toContain("#0f172a");
 
-    // Control buttons must own direct geometry + material for A-Frame cursor raycaster hit-testing
+    // Control buttons must use lit 3D boxes while keeping labels flat
     for (const selector of [
       ".cv-stand-prev-btn",
       ".cv-stand-next-btn",
@@ -385,10 +395,37 @@ describe("cv-media-stand A-Frame Component", () => {
     ]) {
       const btn = el.querySelector(selector);
       expect(btn).not.toBeNull();
-      expect(btn?.getAttribute("geometry")).toContain("primitive: plane");
-      expect(btn?.getAttribute("material")).toContain("shader: flat");
-      expect(btn?.querySelector("[cv-canvas-text]")?.getAttribute("value")).toBeTruthy();
+      expect(btn?.getAttribute("geometry")).toContain("primitive: box");
+      expect(btn?.getAttribute("geometry")).toContain(
+        `depth: ${STAND_ANIMATION_TOKENS.CONTROL_BTN_DEPTH_M}`,
+      );
+      expect(btn?.getAttribute("material")).toContain("shader: lambert");
+      const label = btn?.querySelector("[cv-canvas-text]");
+      expect(label?.getAttribute("value")).toBeTruthy();
+      expect(label?.getAttribute("material")).toContain("shader: flat");
     }
+
+    // Deep 0.12m shadowbox frame + beveled rails + corner accents on shader: lambert recess mediaGroup
+    expect(STAND_ANIMATION_TOKENS.FRAME_DEPTH_M).toBe(0.12);
+    const frame = el.querySelector(".cv-stand-frame");
+    expect(frame?.tagName.toLowerCase()).toBe("a-box");
+    expect(frame?.getAttribute("material")).toContain("shader: lambert");
+    expect(el.querySelector(".cv-stand-bevel-rail")?.getAttribute("depth")).toBe("0.12");
+    expect(el.querySelector(".cv-stand-bevel-rail")?.getAttribute("material")).toContain(
+      "shader: lambert",
+    );
+    expect(el.querySelector(".cv-stand-corner-accent")?.getAttribute("material")).toContain(
+      "shader: lambert",
+    );
+    const mediaGroup = el.querySelector(".cv-stand-media-group");
+    const parseZ = (node: Element | null) =>
+      Number((node?.getAttribute("position") ?? "0 0 0").split(/\s+/)[2]);
+    const railFrontZ =
+      parseZ(el.querySelector(".cv-stand-bevel-rail")) +
+      STAND_ANIMATION_TOKENS.FRAME_DEPTH_M / 2;
+    expect(parseZ(mediaGroup)).toBeLessThan(railFrontZ);
+    expect(leftPlane?.getAttribute("material")).toContain("shader: flat");
+    expect(rightPlane?.getAttribute("material")).toContain("shader: flat");
   });
 
   it("keeps billboard title, credits, and description well-spaced inside card bounds even on maximum-length entries", async () => {
@@ -452,5 +489,358 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(parseY(titlePlane)).toBeGreaterThan(creatorTop);
     expect(creatorCenterY).toBeGreaterThan(descTop);
     expect(descBottom).toBeGreaterThanOrEqual(-bgHalf);
+    expect(titlePlane.getAttribute("cv-canvas-text")).toContain("paddingY: 12");
+    expect(titlePlane.getAttribute("cv-canvas-text")).toContain("canvasHeight: 112");
+    const billboardTop = parseY(billboard) + parseH(bgPlane) / 2;
+    const controlBar = el.querySelector(".cv-stand-control-bar")!;
+    const wakeBand = controlBar.querySelector(".cv-stand-reticle-wake")!;
+    const wakeBottom = parseY(controlBar) - parseH(wakeBand) / 2;
+    expect(billboardTop).toBeLessThanOrEqual(wakeBottom);
+    expect(wakeBand.getAttribute("material")).toContain("depthWrite: false");
+  });
+
+  it("animates radial glide, staggered control/billboard panels, slide pulse, Nierika frame accents, and cancels stale hide timers via transitionEpoch", async () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+
+    const items: StandMediaItem[] = [
+      {
+        id: "s-1",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza 1",
+        creatorName: "Artesano",
+        description: "Desc 1",
+        mediaUrl: "https://cdn.example.com/s1.jpg",
+        sortOrder: 0,
+      },
+      {
+        id: "s-2",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza 2",
+        creatorName: "Artesano",
+        description: "Desc 2",
+        mediaUrl: "https://cdn.example.com/s2.jpg",
+        sortOrder: 1,
+      },
+    ];
+
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Colección",
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        galleryPosition: { x: 3.2, y: 1.76, z: 0 },
+        galleryRotation: { x: 0, y: -90, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const def = createMediaStandComponentDefinition({
+      getInspectionController: () => inspectionController,
+      prefetchImage: vi.fn(),
+    });
+    const el = document.createElement("a-entity") as unknown as MediaStandEntity;
+    el.standItems = items;
+    const instance: MediaStandComponentInstance = Object.create(def);
+    instance.el = el;
+    instance.data = {
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      label: "Arte",
+      accentColor: "#D99B26",
+      viewMode: "vr",
+      galleryPosition: { x: 3.2, y: 1.76, z: 0 },
+      galleryRotation: { x: 0, y: -90, z: 0 },
+      itemsJson: "[]",
+    };
+    instance.init();
+
+    // Beveled frame rails + Nierika corner accents + cv-interactive-feedback on shared media group & controls
+    const mediaGroup = el.querySelector(".cv-stand-media-group");
+    expect(mediaGroup).not.toBeNull();
+    expect(mediaGroup?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    expect(mediaGroup?.querySelector(".cv-stand-left-plane")).not.toBeNull();
+    expect(mediaGroup?.querySelector(".cv-stand-right-plane")).not.toBeNull();
+    expect(mediaGroup?.querySelector(".cv-stand-video-badge")).not.toBeNull();
+    expect(el.querySelector(".cv-stand-left-plane")?.hasAttribute("cv-interactive-feedback")).toBe(false);
+
+    const topRail = el.querySelectorAll(".cv-stand-bevel-rail")[0]!;
+    const bottomRail = el.querySelectorAll(".cv-stand-bevel-rail")[1]!;
+    const headerBg = el.querySelector(".cv-stand-header-bg")!;
+    const headerLabel = el.querySelector(".cv-stand-header")!;
+    const countBadge = el.querySelector(".cv-stand-count-badge")!;
+    const parsePosX = (node: Element) => Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[0]);
+    const parsePosY = (node: Element) => Number((node.getAttribute("position") ?? "0 0 0").split(/\s+/)[1]);
+    const parseHeight = (node: Element) => Number(node.getAttribute("height") ?? 0);
+    expect(parsePosX(el.querySelector(".cv-stand-prev-btn")!)).toBeCloseTo(-0.74, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-counter")!)).toBeCloseTo(-0.5, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-next-btn")!)).toBeCloseTo(-0.26, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-play-btn")!)).toBeCloseTo(0.26, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-mute-btn")!)).toBeCloseTo(0.48, 5);
+    expect(parsePosX(el.querySelector(".cv-stand-close-btn")!)).toBeCloseTo(0.74, 5);
+    const topRailTopEdge = parsePosY(topRail) + parseHeight(topRail) / 2;
+    const bottomRailBottomEdge = parsePosY(bottomRail) - parseHeight(bottomRail) / 2;
+    const headerBottomEdge = parsePosY(headerBg) - parseHeight(headerBg) / 2;
+    expect(parseHeight(headerBg)).toBeCloseTo(0.28, 5);
+    expect(parsePosY(headerBg)).toBeCloseTo(0.76, 5);
+    expect(headerBottomEdge).toBeGreaterThan(topRailTopEdge);
+    expect(parsePosY(headerLabel)).toBeCloseTo(0.795, 5);
+    expect(parseHeight(headerLabel)).toBeCloseTo(0.12, 5);
+    expect(headerLabel.getAttribute("cv-canvas-text")).toContain("canvasHeight: 104");
+    expect(headerLabel.getAttribute("cv-canvas-text")).toContain("paddingY: 10");
+    expect(parsePosY(countBadge)).toBeCloseTo(0.685, 5);
+    expect(parseHeight(countBadge)).toBeCloseTo(0.085, 5);
+
+    expect(el.querySelectorAll(".cv-stand-bevel-rail").length).toBeGreaterThanOrEqual(4);
+    expect(el.querySelectorAll(".cv-stand-corner-accent").length).toBe(4);
+    for (const sel of [
+      ".cv-stand-prev-btn",
+      ".cv-stand-next-btn",
+      ".cv-stand-play-btn",
+      ".cv-stand-mute-btn",
+      ".cv-stand-close-btn",
+    ]) {
+      expect(el.querySelector(sel)?.hasAttribute("cv-interactive-feedback")).toBe(true);
+    }
+
+    await instance.inspect();
+    expect(el.getAttribute("animation__stand_inspect")).toContain(
+      `dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`,
+    );
+    expect(el.getAttribute("animation__stand_inspect")).toContain(
+      `easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+    );
+    expect(el.getAttribute("animation__stand_inspect")).toContain("to: 1.45 1.65 0");
+
+    const controlBar = el.querySelector(".cv-stand-control-bar")!;
+    const billboard = el.querySelector(".cv-stand-billboard")!;
+    const playBtn = controlBar.querySelector(".cv-stand-play-btn")!;
+    const btnTopEdge = parsePosY(controlBar) + parseHeight(playBtn) / 2;
+    const btnBottomEdge = parsePosY(controlBar) - parseHeight(playBtn) / 2;
+    const billboardPlane = billboard.querySelector("a-plane")!;
+    const billboardTopEdge = parsePosY(billboard) + parseHeight(billboardPlane) / 2;
+    expect(parsePosY(controlBar)).toBeCloseTo(-0.71, 5);
+    expect(btnTopEdge).toBeLessThan(bottomRailBottomEdge);
+    expect(billboard.getAttribute("rotation")).toBe("-12 0 0");
+    expect(parsePosY(billboard)).toBeCloseTo(-1.15, 5);
+    expect(parseHeight(billboardPlane)).toBeCloseTo(0.6, 5);
+    expect(billboardTopEdge).toBeLessThan(btnBottomEdge);
+
+    await vi.advanceTimersByTimeAsync(INSPECTION_TIMINGS.PANEL_ENTRANCE_DELAY_MS + 10);
+    expect(controlBar.getAttribute("animation__panel_in")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}`,
+    );
+    expect(billboard.getAttribute("animation__panel_in")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_ANIMATION_DURATION_MS}`,
+    );
+
+    // Slide pulse on nextSlide
+    await instance.nextSlide();
+    expect(el.querySelector(".cv-stand-left-plane")?.getAttribute("animation__slide_pulse")).toContain(
+      `dur: ${STAND_ANIMATION_TOKENS.SLIDE_PULSE_MS}`,
+    );
+
+    // Return at t = 0 -> plays 250ms exit and hides after 260ms, then rapid re-inspect at t = 100ms cancels stale hide timer
+    instance.returnToGallery();
+    expect(el.getAttribute("animation__stand_return")).toContain("to: 3.2 1.76 0");
+    expect(billboard.getAttribute("animation__panel_out")).toContain(
+      `dur: ${INSPECTION_TIMINGS.PANEL_EXIT_DURATION_MS}`,
+    );
+    expect(billboard.getAttribute("visible")).toBe("true");
+
+    await vi.advanceTimersByTimeAsync(100);
+    await instance.inspect();
+    await vi.advanceTimersByTimeAsync(470);
+    billboard.dispatchEvent(new Event("animationcomplete__panel_in"));
+    billboard.dispatchEvent(new Event("animationcomplete__panel_out"));
+
+    expect(instance.getLocalState()).toBe(InspectionState.INSPECTING);
+    expect(billboard.getAttribute("visible")).toBe("true");
+    expect(billboard.getAttribute("scale")).toBe("1 1 1");
+    expect(controlBar.getAttribute("visible")).toBe("true");
+    expect(controlBar.getAttribute("scale")).toBe("1 1 1");
+    expect(el.querySelector(".cv-stand-next-btn")?.classList.contains("clickable")).toBe(true);
+
+    expect(el.querySelector(".cv-stand-left-plane")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+    expect(el.querySelector(".cv-stand-right-plane")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+    expect(el.querySelector("[cv-canvas-text]")?.getAttribute("material")).toContain(
+      "shader: flat",
+    );
+
+    // Normal full return completes hide after 260ms
+    instance.returnToGallery();
+    await vi.advanceTimersByTimeAsync(270);
+    expect(billboard.getAttribute("visible")).toBe("false");
+    expect(controlBar.getAttribute("visible")).toBe("false");
+
+    instance.remove();
+  });
+
+  it("computes aspect-aware VIDEO badge positions inside media plane bounds", () => {
+    expect(computeVideoBadgePosition(1.5, 0.844)).toEqual({
+      x: 0.54,
+      y: 0.33,
+      z: 0.025,
+    });
+    expect(computeVideoBadgePosition(0.534, 0.95)).toEqual({
+      x: 0.057,
+      y: 0.383,
+      z: 0.025,
+    });
+    expect(computeVideoBadgePosition(0.95, 0.95)).toEqual({
+      x: 0.265,
+      y: 0.383,
+      z: 0.025,
+    });
+  });
+
+  it("mounts non-clickable reticle wake zone inside control bar", () => {
+    const items: StandMediaItem[] = [
+      {
+        id: "img-wake",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.IMAGE_2D,
+        title: "Pieza",
+        creatorName: "Autor",
+        description: "Desc",
+        mediaUrl: "https://cdn.example.com/wake.jpg",
+        sortOrder: 0,
+      },
+    ];
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+    });
+    const wakeBand = el.querySelector(".cv-stand-control-bar .cv-stand-reticle-wake");
+    expect(wakeBand).not.toBeNull();
+    expect(wakeBand?.getAttribute("data-reticle-wake")).toBe("true");
+    expect(wakeBand?.classList.contains("clickable")).toBe(false);
+    expect(wakeBand?.getAttribute("material")).toContain("opacity: 0");
+    instance.remove();
+  });
+
+  it("positions SpatialMediaAudio at stand coordinates and syncs mute button icon when Master toggles OFF", async () => {
+    const { AudioPreferencesStore } = await import(
+      "../../src/experience/audio/audio-preferences-store"
+    );
+    const { AudioEngine } = await import(
+      "../../src/experience/audio/audio-engine"
+    );
+    const { SpatialMediaAudio } = await import(
+      "../../src/experience/audio/spatial-media-audio"
+    );
+
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    const engine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => null,
+    });
+    const spatial = new SpatialMediaAudio({ audioEngine: engine });
+    const posSpy = vi.spyOn(spatial, "setStandWorldPosition");
+
+    const videoEl = {
+      id: "",
+      src: "",
+      muted: true,
+      paused: true,
+      loop: false,
+      playsInline: true,
+      crossOrigin: null,
+      preload: "metadata",
+      style: {},
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      play: vi.fn(async () => {}),
+      pause: vi.fn(),
+      load: vi.fn(),
+    };
+    const videoController = new SharedVideoController({
+      createVideoElement: () => videoEl,
+      createVideoTexture: () => ({ needsUpdate: false, dispose: vi.fn() }),
+      preferencesStore: prefs,
+      audioEngine: engine,
+      spatialMediaAudio: spatial,
+    });
+
+    const items: StandMediaItem[] = [
+      {
+        id: "vid-spatial",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Danza",
+        creatorName: "",
+        description: "Desc",
+        mediaUrl: "https://cdn.example.com/dance.mp4",
+        posterUrl: "https://cdn.example.com/dance-poster.jpg",
+        sortOrder: 0,
+      },
+    ];
+
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Desc",
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        galleryPosition: { x: -3.2, y: 1.76, z: 0 },
+        galleryRotation: { x: 0, y: 90, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const def = createMediaStandComponentDefinition({
+      getInspectionController: () => inspectionController,
+      getVideoController: () => videoController,
+      getSpatialMediaAudio: () => spatial,
+    });
+    const el = document.createElement("a-entity") as unknown as MediaStandEntity;
+    el.standItems = items;
+    el.setAttribute("position", "-3.2 1.76 0");
+
+    const instance: MediaStandComponentInstance = Object.create(def);
+    instance.el = el;
+    instance.data = {
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      label: "Arte y Artesanías",
+      accentColor: "#D99B26",
+      viewMode: "vr",
+      galleryPosition: { x: -3.2, y: 1.76, z: 0 },
+      galleryRotation: { x: 0, y: 90, z: 0 },
+      itemsJson: "[]",
+    };
+    instance.init();
+
+    await instance.inspect();
+    expect(posSpy).toHaveBeenCalledWith({ x: -1.45, y: 1.65, z: 0 });
+
+    const muteBtn = el.querySelector(".cv-stand-mute-btn");
+    const muteBtnText = () =>
+      muteBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value") ??
+      muteBtn?.getAttribute("value");
+
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.MUTE_ICON);
+    prefs.activateSound();
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.UNMUTE_ICON);
+    prefs.toggleMaster(); // OFF
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.MUTE_ICON);
+
+    instance.remove();
   });
 });

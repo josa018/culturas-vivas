@@ -9,6 +9,14 @@ import {
   type ServerlessResponse,
 } from "../../_http.js";
 import {
+  AUDIO_MIME_TO_EXTENSION,
+  AUDIO_PRESIGN_ASSET_KIND,
+  AUDIO_STORAGE_LIMITS,
+  buildAudioKeyPrefix,
+  fetchCombinedStorageUsageBytes,
+  validateAudioPresignRequest,
+} from "../../_audio-validation.js";
+import {
   MEDIA_STORAGE_LIMITS,
   MIME_TO_EXTENSION,
   validatePosterPresignRequest,
@@ -61,6 +69,65 @@ export function createPresignMediaHandler(deps: PresignMediaHandlerDeps = {}) {
       return;
     }
 
+    if (body.assetKind === AUDIO_PRESIGN_ASSET_KIND) {
+      const audioValidation = validateAudioPresignRequest({
+        roomId: body.roomId,
+        mimeType: body.mimeType,
+        fileSizeBytes: body.fileSizeBytes,
+      });
+      if (!audioValidation.ok) {
+        res
+          .status(audioValidation.status)
+          .json({ error: audioValidation.error });
+        return;
+      }
+
+      const validatedAudio = audioValidation.value;
+      try {
+        const db = resolveDb();
+        const storageUsageBytes = await fetchCombinedStorageUsageBytes(db);
+        const quotaCheck = validateQuotaCapacity(
+          storageUsageBytes,
+          validatedAudio.fileSizeBytes,
+        );
+        if (!quotaCheck.ok) {
+          res.status(quotaCheck.status).json({
+            error: quotaCheck.error,
+            storageUsageBytes,
+            maxStorageBytes: MEDIA_STORAGE_LIMITS.MAX_TOTAL_BYTES,
+          });
+          return;
+        }
+
+        const storage = resolveStorage();
+        const itemId = generateId();
+        const audioExt =
+          AUDIO_MIME_TO_EXTENSION[validatedAudio.mimeType] ?? "mp3";
+        const audioKey = `${buildAudioKeyPrefix(validatedAudio.roomId)}${itemId}.${audioExt}`;
+
+        const media = await storage.createPresignedUpload({
+          objectKey: audioKey,
+          contentType: validatedAudio.mimeType,
+          contentLength: validatedAudio.fileSizeBytes,
+          expiresInSeconds: AUDIO_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+        });
+
+        res.status(API_HTTP_STATUS.OK).json({
+          itemId,
+          storageProvider: storage.getProviderId(),
+          media,
+          storageUsageBytes,
+          maxStorageBytes: MEDIA_STORAGE_LIMITS.MAX_TOTAL_BYTES,
+        });
+      } catch (error) {
+        console.error("[/api/admin/media/presign] Audio Error:", error);
+        res.status(API_HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          error: "Failed to generate audio upload signature.",
+        });
+      }
+      return;
+    }
+
     if (body.posterOnly === true) {
       const posterValidation = validatePosterPresignRequest({
         roomId: body.roomId,
@@ -78,10 +145,7 @@ export function createPresignMediaHandler(deps: PresignMediaHandlerDeps = {}) {
       const validatedPoster = posterValidation.value;
       try {
         const db = resolveDb();
-        const usageRes = await db.execute(
-          "SELECT COALESCE(SUM(file_size_bytes), 0) AS usedBytes FROM room_media_items",
-        );
-        const storageUsageBytes = Number(usageRes.rows[0]?.usedBytes ?? 0);
+        const storageUsageBytes = await fetchCombinedStorageUsageBytes(db);
         const quotaCheck = validateQuotaCapacity(
           storageUsageBytes,
           validatedPoster.posterSizeBytes,
@@ -144,10 +208,7 @@ export function createPresignMediaHandler(deps: PresignMediaHandlerDeps = {}) {
 
     try {
       const db = resolveDb();
-      const usageRes = await db.execute(
-        "SELECT COALESCE(SUM(file_size_bytes), 0) AS usedBytes FROM room_media_items",
-      );
-      const storageUsageBytes = Number(usageRes.rows[0]?.usedBytes ?? 0);
+      const storageUsageBytes = await fetchCombinedStorageUsageBytes(db);
       const totalIncomingBytes =
         validated.fileSizeBytes + (validated.posterSizeBytes ?? 0);
 

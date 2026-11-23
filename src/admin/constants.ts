@@ -87,6 +87,11 @@ export const ADMIN_UI_CLASSES = {
   MEDIA_FIELD_COUNTER: "cv-admin-media-counter",
   MEDIA_POSTER_CONTROLS: "cv-admin-media-poster-controls",
   MEDIA_POSTER_PREVIEW: "cv-admin-media-poster-preview",
+  AUDIO_WIDGET: "cv-admin-audio-widget",
+  AUDIO_GUIDANCE: "cv-admin-audio-guidance",
+  AUDIO_MODE_SELECT: "cv-admin-audio-mode",
+  AUDIO_PLAYER_PREVIEW: "cv-admin-audio-preview",
+  AUDIO_TRACK_CARD: "cv-admin-audio-item",
 } as const;
 
 export const ADMIN_UI_TEXT = {
@@ -138,6 +143,7 @@ export const ADMIN_UI_TEXT = {
   // Tabs & Multimedia CMS
   TAB_TELEMETRY: "Telemetría y Encuestas",
   TAB_MEDIA: "Gestión Multimedia",
+  TAB_PLAYLISTS: "Música de Salas",
   MEDIA_SECTION_TITLE: "Multimedia por Sala y Stand",
   MEDIA_ROOM_LABEL: "Sala / Cultura",
   MEDIA_STAND_LABEL: "Categoría (Stand)",
@@ -162,11 +168,44 @@ export const ADMIN_UI_TEXT = {
   MEDIA_POSTER_CAPTURE_BTN: "Capturar vista previa",
   MEDIA_POSTER_CUSTOM_LABEL: "Miniatura personalizada (opcional, JPG/PNG/WebP)",
   MEDIA_CHANGE_POSTER_BTN: "Cambiar miniatura",
+
+  // Room Music Playlists CMS
+  AUDIO_SECTION_TITLE: "Playlists Musicales por Sala",
+  AUDIO_ROOM_LABEL: "Sala / Cultura",
+  AUDIO_PLAYBACK_MODE_LABEL: "Modo de reproducción",
+  AUDIO_MODE_SEQUENTIAL: "Secuencial (en orden)",
+  AUDIO_MODE_SHUFFLE: "Aleatorio (sin repetir)",
+  AUDIO_FILE_LABEL: "Archivo de audio (.mp3 o .m4a AAC, máx. 20 MiB)",
+  AUDIO_TITLE_LABEL: "Título de la pieza",
+  AUDIO_CREDIT_LABEL: "Autor / Intérprete / Colectivo (opcional)",
+  AUDIO_LICENSE_LABEL: "Nota de licencia o consentimiento (opcional)",
+  AUDIO_GUIDANCE_TEXT:
+    "Recomendación VR: exporta en AAC-LC (.m4a) o MP3 a 128-192 kbps (máx. 20 MiB) normalizado a -16 LUFS.",
+  AUDIO_UPLOAD_BTN: "Subir Pista",
+  AUDIO_UPLOADING_BTN: "Subiendo pista...",
+  AUDIO_EMPTY_PLAYLIST:
+    "Esta sala no tiene pistas asignadas. Se usará la música del Lobby.",
+  AUDIO_LOBBY_EMPTY: "No hay pistas cargadas en el Lobby.",
+  AUDIO_CREDIT_PREFIX: "Intérprete: ",
+  AUDIO_LICENSE_PREFIX: "Licencia: ",
 } as const;
 
 export const ADMIN_MEDIA_ENDPOINTS = {
   MEDIA: "/api/admin/media",
   PRESIGN: "/api/admin/media/presign",
+} as const;
+
+export const ADMIN_AUDIO_ENDPOINTS = {
+  AUDIO: "/api/admin/audio",
+  PRESIGN: "/api/admin/media/presign",
+} as const;
+
+export const ADMIN_AUDIO_LIMITS = {
+  MAX_AUDIO_BYTES: 20_971_520,
+  MAX_TITLE_LENGTH: 80,
+  MAX_CREDIT_LENGTH: 80,
+  MAX_LICENSE_LENGTH: 240,
+  ALLOWED_MIMES: ["audio/mpeg", "audio/mp4"] as const,
 } as const;
 
 export const ADMIN_MEDIA_LIMITS = {

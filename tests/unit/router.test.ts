@@ -144,6 +144,22 @@ describe("NavigationStateMachine", () => {
     expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
   });
 
+  it("switches to VR mode (TUTORIAL) from exit modal when in 2D touch mode", () => {
+    const fsm = new NavigationStateMachine(new SessionStore(storage));
+
+    fsm.dispatch(NavigationAction.FINISH_LOADING);
+    fsm.dispatch(NavigationAction.SELECT_2D);
+    fsm.dispatch(NavigationAction.REQUEST_EXIT);
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
+
+    expect(fsm.canDispatch(NavigationAction.SWITCH_TO_VR)).toBe(true);
+    fsm.dispatch(NavigationAction.SWITCH_TO_VR);
+
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.TUTORIAL);
+    expect(fsm.getSession().viewMode).toBe(ViewMode.VR);
+  });
+
   it("rejects illegal transitions without mutating state", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const fsm = new NavigationStateMachine(new SessionStore(storage));

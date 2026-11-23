@@ -1,4 +1,10 @@
-import { PORTAL_COLORS, PORTAL_DIMENSIONS } from "../constants";
+import {
+  PORTAL_ANIMATION_TOKENS,
+  PORTAL_COLORS,
+  PORTAL_DIMENSIONS,
+} from "../constants";
+import type { RoomEnvironmentPreset } from "../room-environment-presets";
+import { createMonumentalPortalParts } from "../station-architecture";
 import type { RoomId, RoomPortalConfig } from "../types";
 import { createCanvasTextPlane } from "./canvas-text";
 
@@ -96,7 +102,10 @@ export function registerPortalComponent(): void {
   }
 }
 
-export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
+export function createPortalEntity(
+  config: RoomPortalConfig,
+  preset?: RoomEnvironmentPreset,
+): HTMLElement {
   const portalRoot = document.createElement("a-entity");
   portalRoot.setAttribute("id", config.id);
   portalRoot.setAttribute("class", "cv-portal clickable");
@@ -114,51 +123,53 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
   );
 
   const frameColor = config.accentColor ?? PORTAL_COLORS.FRAME;
-
-  // Archway frame left pillar
-  const leftPillar = document.createElement("a-box");
-  leftPillar.setAttribute("width", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
-  leftPillar.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT));
-  leftPillar.setAttribute("depth", "0.08");
-  leftPillar.setAttribute(
-    "position",
-    `${-(PORTAL_DIMENSIONS.FRAME_WIDTH / 2)} 0 0`,
-  );
-  leftPillar.setAttribute("color", frameColor);
-  leftPillar.setAttribute("material", "shader: flat");
-
-  // Archway frame right pillar
-  const rightPillar = document.createElement("a-box");
-  rightPillar.setAttribute("width", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
-  rightPillar.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT));
-  rightPillar.setAttribute("depth", "0.08");
-  rightPillar.setAttribute(
-    "position",
-    `${PORTAL_DIMENSIONS.FRAME_WIDTH / 2} 0 0`,
-  );
-  rightPillar.setAttribute("color", frameColor);
-  rightPillar.setAttribute("material", "shader: flat");
-
-  // Archway top lintel
-  const lintel = document.createElement("a-box");
-  lintel.setAttribute(
-    "width",
-    String(PORTAL_DIMENSIONS.FRAME_WIDTH + PORTAL_DIMENSIONS.BORDER_THICKNESS),
-  );
-  lintel.setAttribute("height", String(PORTAL_DIMENSIONS.BORDER_THICKNESS));
-  lintel.setAttribute("depth", "0.08");
-  lintel.setAttribute("position", `0 ${PORTAL_DIMENSIONS.FRAME_HEIGHT / 2} 0`);
-  lintel.setAttribute("color", frameColor);
-  lintel.setAttribute("material", "shader: flat");
+  const archwayParts = createMonumentalPortalParts(config, preset);
 
   // Portal gateway aperture plane (interactive target)
   const aperture = document.createElement("a-plane");
   aperture.setAttribute("class", "clickable");
+  aperture.setAttribute("cv-interactive-feedback", "hoverScale: 1.04; hoverZLift: 0.03");
   aperture.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH));
-  aperture.setAttribute("height", String(PORTAL_DIMENSIONS.FRAME_HEIGHT));
+  aperture.setAttribute("height", String(PORTAL_DIMENSIONS.APERTURE_HEIGHT_M));
+  aperture.setAttribute(
+    "position",
+    `0 ${PORTAL_DIMENSIONS.APERTURE_CENTER_Y} 0.01`,
+  );
   aperture.setAttribute("color", PORTAL_COLORS.PORTAL_INNER);
   aperture.setAttribute("opacity", "0.85");
   aperture.setAttribute("material", "shader: flat; side: double");
+
+  // Inner ambient glowing portal aura (smooth energy veil without wireframe diagonals)
+  const glowRing = document.createElement("a-plane");
+  glowRing.setAttribute("class", "cv-portal-glow-ring");
+  glowRing.setAttribute("width", String(PORTAL_DIMENSIONS.FRAME_WIDTH - 0.12));
+  glowRing.setAttribute(
+    "height",
+    String(PORTAL_DIMENSIONS.APERTURE_HEIGHT_M - 0.12),
+  );
+  glowRing.setAttribute(
+    "position",
+    `0 ${PORTAL_DIMENSIONS.APERTURE_CENTER_Y} 0.015`,
+  );
+  glowRing.setAttribute(
+    "material",
+    `shader: flat; color: ${frameColor}; transparent: true; opacity: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MIN}; side: double; depthWrite: false`,
+  );
+  glowRing.setAttribute(
+    "animation__portal_pulse",
+    `property: material.opacity; from: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MIN}; to: ${PORTAL_ANIMATION_TOKENS.INNER_RING_OPACITY_MAX}; dir: alternate; loop: true; dur: ${PORTAL_ANIMATION_TOKENS.AMBIENT_PULSE_MS}; easing: easeInOutSine`,
+  );
+
+  // Architectural header nameplate backing & title above the carved lintel frieze
+  const labelPlate = document.createElement("a-plane");
+  labelPlate.setAttribute("class", "cv-portal-label-plate");
+  labelPlate.setAttribute("width", String(PORTAL_DIMENSIONS.LABEL_WIDTH - 0.18));
+  labelPlate.setAttribute("height", "0.32");
+  labelPlate.setAttribute("position", `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.08`);
+  labelPlate.setAttribute(
+    "material",
+    "shader: flat; color: #0B0F17; opacity: 0.92; transparent: true; side: double",
+  );
 
   // Floating room title billboard
   const labelText = createCanvasTextPlane({
@@ -173,10 +184,10 @@ export function createPortalEntity(config: RoomPortalConfig): HTMLElement {
     canvasWidth: 1024,
     canvasHeight: 160,
     maxLines: 2,
-    position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.02`,
+    position: `0 ${PORTAL_DIMENSIONS.LABEL_OFFSET_Y} 0.1`,
   });
 
-  portalRoot.append(leftPillar, rightPillar, lintel, aperture, labelText);
+  portalRoot.append(...archwayParts, aperture, glowRing, labelPlate, labelText);
   return portalRoot;
 }
 

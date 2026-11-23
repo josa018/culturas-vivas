@@ -5,6 +5,20 @@ import {
   type DisposableVideoTexture,
   type VideoElementLike,
 } from "../../src/experience/shared-video-controller";
+import { AudioPreferencesStore } from "../../src/experience/audio/audio-preferences-store";
+
+function createTestPrefsStore(initialMediaMuted = true): AudioPreferencesStore {
+  const map = new Map<string, string>();
+  const store = new AudioPreferencesStore({
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => map.set(k, v),
+    removeItem: (k) => map.delete(k),
+  });
+  if (!initialMediaMuted) {
+    store.syncMediaMuted(false);
+  }
+  return store;
+}
 
 function createMockVideoElement(overrides: Partial<VideoElementLike> = {}): {
   video: VideoElementLike;
@@ -99,10 +113,12 @@ describe("SharedVideoController", () => {
       .mockReturnValueOnce(tex2);
     const onStateChange = vi.fn();
 
+    const prefs = createTestPrefsStore(false);
     const controller = new SharedVideoController({
       createVideoElement: () => video,
       createVideoTexture: textureFactory,
       onStateChange,
+      preferencesStore: prefs,
     });
 
     const firstTex = await controller.playVideo("https://cdn.example.com/clip-1.mp4");
@@ -111,6 +127,7 @@ describe("SharedVideoController", () => {
     expect(playSpy).toHaveBeenCalledTimes(2);
     expect(video.muted).toBe(true);
     expect(controller.isMuted()).toBe(true);
+    expect(prefs.getPreferences().mediaMuted).toBe(true);
     expect(controller.isPlaying()).toBe(true);
     expect(controller.getCurrentUrl()).toBe("https://cdn.example.com/clip-1.mp4");
 
@@ -142,12 +159,15 @@ describe("SharedVideoController", () => {
 
   it("toggles pause/resume and mute state cleanly", async () => {
     const { video } = createMockVideoElement();
+    const prefs = createTestPrefsStore(true);
     const controller = new SharedVideoController({
       createVideoElement: () => video,
       createVideoTexture: () => createMockTexture(),
+      preferencesStore: prefs,
     });
 
     await controller.playVideo("https://cdn.example.com/clip-1.mp4");
+    expect(controller.isMuted()).toBe(true);
     expect(await controller.togglePause()).toBe(false);
     expect(controller.isPlaying()).toBe(false);
     expect(video.pause).toHaveBeenCalled();
@@ -155,9 +175,9 @@ describe("SharedVideoController", () => {
     expect(await controller.togglePause()).toBe(true);
     expect(controller.isPlaying()).toBe(true);
 
-    expect(controller.toggleMute()).toBe(true);
-    expect(video.muted).toBe(true);
     expect(controller.toggleMute()).toBe(false);
     expect(video.muted).toBe(false);
+    expect(controller.toggleMute()).toBe(true);
+    expect(video.muted).toBe(true);
   });
 });

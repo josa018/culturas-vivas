@@ -15,12 +15,29 @@ export type {
 } from "./admin-http-client";
 
 export {
+  ADMIN_AUDIO_ENDPOINTS,
+  ADMIN_AUDIO_LIMITS,
   ADMIN_MEDIA_ENDPOINTS,
   ADMIN_MEDIA_LIMITS,
   ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
   ADMIN_THRESHOLDS,
 } from "./constants";
+
+export {
+  AdminAudioStore,
+  createDefaultAudioDurationProbe,
+} from "./audio-store";
+export type {
+  AdminAudioListener,
+  AdminAudioPlaybackMode,
+  AdminAudioState,
+  AdminAudioStoreOptions,
+  AdminAudioTrackRecord,
+  AudioDurationProbe,
+  UpdateAudioTrackMetadataInput,
+  UploadAudioTrackInput,
+} from "./audio-store";
 
 export {
   AdminMediaProcessor,
@@ -59,6 +76,7 @@ export { AttendanceChartWidget } from "./views/attendance-chart";
 export { SurveysTableWidget } from "./views/surveys-table";
 
 export { MediaManagerWidget } from "./views/media-manager-widget";
+export { PlaylistManagerWidget } from "./views/playlist-manager-widget";
 
 export { AdminDashboardView } from "./views/admin-dashboard-view";
 export type {

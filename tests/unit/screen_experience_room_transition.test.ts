@@ -15,12 +15,15 @@ import {
   ExhibitMediaType,
   InspectionState,
   ROOM_DEFINITIONS,
+  ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
 import type { RoomMediaProvider } from "../../src/experience/media-types";
+import {
+  VR_HUD_RETURN_LOBBY_EVENT,
+} from "../../src/experience/components/vr-hologram-hud";
 import { StandId } from "../../src/shared/room-catalog";
 import { RoomAssetCache } from "../../src/experience/room-asset-cache";
-import { UI_TEXT } from "../../src/screens/constants";
 
 describe("ExperienceScreenView Room Transition", () => {
   let scene: HTMLElement;
@@ -52,7 +55,16 @@ describe("ExperienceScreenView Room Transition", () => {
     document.body.innerHTML = "";
   });
 
-  it("initializes in LOBBY, swaps rooms via portal and Return to Lobby button, and aborts active inspection", () => {
+  it("initializes in LOBBY, swaps rooms via portal and VR HUD Return to Lobby event, omits 2D topbar Return to Lobby button, and aborts active inspection", () => {
+    const setAccentColorSpy = vi.fn();
+    (
+      cursor as HTMLElement & {
+        components?: Record<string, { setAccentColor?: (color: string) => void }>;
+      }
+    ).components = {
+      "cv-gaze-reticle": { setAccentColor: setAccentColorSpy },
+    };
+
     const stateMachine = screen.getTransitionStateMachine();
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.LOBBY);
@@ -60,11 +72,7 @@ describe("ExperienceScreenView Room Transition", () => {
     screen.mount(container);
     screen.show();
 
-    const returnLobbyBtn = container.querySelector(
-      '[data-action="return-lobby"]',
-    ) as HTMLElement;
-    expect(returnLobbyBtn).toBeTruthy();
-    expect(returnLobbyBtn.style.display).toBe("none");
+    expect(container.querySelector('[data-action="return-lobby"]')).toBeNull();
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
@@ -86,22 +94,24 @@ describe("ExperienceScreenView Room Transition", () => {
     );
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(setAccentColorSpy).toHaveBeenCalledWith(
+      ROOM_PORTAL_ACCENTS[RoomId.WIXARIKA],
+    );
     expect(stateMachine.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     expect(stateMachine.getState()).toBe(RoomTransitionState.IDLE);
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       ROOM_DEFINITIONS[RoomId.WIXARIKA].title,
     );
-    expect(returnLobbyBtn.style.display).not.toBe("none");
-    expect(returnLobbyBtn.textContent).toContain(
-      UI_TEXT.EXPERIENCE_RETURN_LOBBY,
-    );
+    expect(container.querySelector('[data-action="return-lobby"]')).toBeNull();
     expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
 
     const inspectionController = getSharedInspectionController();
     inspectionController.focus("exhibit-wixarika-artifact");
     expect(inspectionController.getState()).toBe(InspectionState.FOCUSING);
 
-    returnLobbyBtn.click();
+    scene.dispatchEvent(
+      new CustomEvent(VR_HUD_RETURN_LOBBY_EVENT, { bubbles: true }),
+    );
 
     expect(inspectionController.getState()).toBe(InspectionState.IDLE);
     expect(inspectionController.getActiveExhibit()).toBeNull();
@@ -109,7 +119,6 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       ROOM_DEFINITIONS[RoomId.LOBBY].title,
     );
-    expect(returnLobbyBtn.style.display).toBe("none");
   });
 
   it("returns false when <a-scene> is absent from the document", () => {
@@ -179,6 +188,15 @@ describe("ExperienceScreenView Room Transition", () => {
       },
     };
 
+    const finishFadeOut_reticleSpy = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, { setAccentColor?: (hex: string) => void }>;
+    }).components = {
+      "cv-gaze-reticle": {
+        setAccentColor: finishFadeOut_reticleSpy,
+      },
+    };
+
     expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
     expect(cursor.getAttribute("raycaster")).toBe("objects: none");
     expect(screen.getTransitionStateMachine().getState()).toBe(
@@ -192,8 +210,8 @@ describe("ExperienceScreenView Room Transition", () => {
     await vi.waitFor(() => {
       expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
     });
+    expect(finishFadeOut_reticleSpy).toHaveBeenCalledWith("#D99B26");
     expect(loadedUrls).toEqual([
-      ROOM_DEFINITIONS[RoomId.WIXARIKA].skyboxUrl,
       "https://cdn.example.com/wix-stand-cover.jpg",
     ]);
     expect(screen.getTransitionStateMachine().getState()).toBe(
@@ -205,6 +223,64 @@ describe("ExperienceScreenView Room Transition", () => {
       RoomTransitionState.IDLE,
     );
     expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
+  });
+
+  it("preserves 2D pointer mode across transitionToRoom fadeIn without re-enabling gaze cursor", async () => {
+    screen.setViewMode("2d");
+    screen.mount(container);
+    screen.show();
+
+    const curtainEl = camera.querySelector(
+      `#${CAMERA_CURTAIN_ID}`,
+    ) as HTMLElement & {
+      components?: Record<
+        string,
+        {
+          fadeOut: (cb?: () => void) => void;
+          fadeIn: (cb?: () => void) => void;
+        }
+      >;
+    };
+    let finishFadeOut!: () => void;
+    let finishFadeIn!: () => void;
+    curtainEl.components = {
+      "cv-camera-curtain": {
+        fadeOut: (cb) => {
+          finishFadeOut = cb!;
+        },
+        fadeIn: (cb) => {
+          finishFadeIn = cb!;
+        },
+      },
+    };
+
+    const reticleSetViewMode = vi.fn();
+    (cursor as unknown as {
+      components?: Record<string, unknown>;
+    }).components = {
+      "cv-gaze-reticle": {
+        setAccentColor: vi.fn(),
+        setViewMode: reticleSetViewMode,
+      },
+    };
+
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
+    const touchEl = scene.querySelector("#cv-touch-raycaster");
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: false");
+
+    finishFadeOut();
+    await vi.waitFor(() => {
+      expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    });
+
+    finishFadeIn();
+    expect(screen.getTransitionStateMachine().getState()).toBe(
+      RoomTransitionState.IDLE,
+    );
+    expect(cursor.getAttribute("raycaster")).toBe("objects: none");
+    expect(cursor.getAttribute("fuse")).toBe("false");
+    expect(reticleSetViewMode).toHaveBeenLastCalledWith("2d");
+    expect(touchEl?.getAttribute("cv-touch-raycaster")).toBe("enabled: true");
   });
 
   it("ignores cv-portal-activated events missing targetRoomId", () => {
@@ -222,5 +298,61 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(screen.getTransitionStateMachine().getState()).toBe(
       RoomTransitionState.IDLE,
     );
+  });
+
+  it("orients #cv-camera-rig to 180 deg on first Lobby entry, faces 0 deg portals on return, and resets state on unmount", () => {
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    (rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: 0 },
+    };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
+
+    screen.mount(container);
+    screen.show();
+
+    // First entry into LOBBY faces 180 deg (+Z) toward Bienvenida / Nayarit welcome stands
+    expect(rig.getAttribute("rotation")).toBe("0 180 0");
+    expect((rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D?.rotation.y).toBeCloseTo(
+      Math.PI,
+      5,
+    );
+
+    // Traverse into WIXARIKA, simulate VR head yaw = +45 deg, then return to LOBBY
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
+    (camera as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: Math.PI / 4 },
+    };
+    expect(screen.transitionToRoom(RoomId.LOBBY)).toBe(true);
+    expect(rig.getAttribute("rotation")).toBe("0 -45 0");
+
+    // Unmount resets hasVisitedLobby so re-entry again faces 180 deg welcome stands
+    screen.unmount();
+    ExhibitRoomBuilder.teardownRoom(scene);
+    const screenReentered = new ExperienceScreenView(() => {}, "2d");
+    const lookControlsMock = {
+      touchStarted: false,
+      mouseDown: false,
+      data: { touchEnabled: true, enabled: true },
+      yawObject: { rotation: { y: 0.9 } },
+      pitchObject: { rotation: { x: -0.25 } },
+    };
+    (camera as HTMLElement & { components?: Record<string, unknown> }).components = {
+      "look-controls": lookControlsMock,
+    };
+
+    screenReentered.mount(container);
+    screenReentered.show();
+    expect(rig.getAttribute("rotation")).toBe("0 180 0");
+    expect(lookControlsMock.yawObject.rotation.y).toBe(0);
+    expect(lookControlsMock.pitchObject.rotation.x).toBe(0);
+
+    expect(screenReentered.transitionToRoom(RoomId.ODAM)).toBe(true);
+    lookControlsMock.yawObject.rotation.y = 1.1;
+    expect(screenReentered.transitionToRoom(RoomId.LOBBY)).toBe(true);
+    expect(rig.getAttribute("rotation")).toBe("0 0 0");
+    expect(lookControlsMock.yawObject.rotation.y).toBe(0);
+    screenReentered.unmount();
   });
 });

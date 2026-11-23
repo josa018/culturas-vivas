@@ -31,6 +31,7 @@ const TRANSITIONS: TransitionMap = {
   [ScreenId.EXIT_MODAL]: {
     [NavigationAction.RESUME_TOUR]: ScreenId.EXPERIENCE_3D,
     [NavigationAction.SWITCH_TO_TOUCH]: ScreenId.EXPERIENCE_3D,
+    [NavigationAction.SWITCH_TO_VR]: ScreenId.TUTORIAL,
     [NavigationAction.CONFIRM_EXIT]: ScreenId.SURVEY,
   },
   [ScreenId.SURVEY]: {
@@ -103,7 +104,10 @@ export class NavigationStateMachine {
       currentScreen: nextScreen,
     };
 
-    if (action === NavigationAction.SELECT_VR) {
+    if (
+      action === NavigationAction.SELECT_VR ||
+      action === NavigationAction.SWITCH_TO_VR
+    ) {
       updates.viewMode = ViewMode.VR;
     } else if (
       action === NavigationAction.SELECT_2D ||
