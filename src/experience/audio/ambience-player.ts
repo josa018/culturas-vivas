@@ -1,6 +1,7 @@
 import type { RoomEnvironmentId } from "../../shared/room-catalog";
 import { AMBIENT_MANIFEST, AUDIO_TOKENS } from "./audio-constants";
 import { AudioEngine, getSharedAudioEngine } from "./audio-engine";
+import { normalizeAudioBufferInPlace } from "./buffer-normalizer";
 import type {
   AmbiencePlayerPort,
   AudioBufferSourceNodeLike,
@@ -97,7 +98,10 @@ export class AmbiencePlayer implements AmbiencePlayerPort {
   constructor(options: AmbiencePlayerOptions = {}) {
     this.audioEngine = options.audioEngine ?? getSharedAudioEngine();
     this.fetchImpl =
-      options.fetchImpl ?? (typeof fetch === "function" ? fetch : null);
+      options.fetchImpl ??
+      (typeof globalThis.fetch === "function"
+        ? globalThis.fetch.bind(globalThis)
+        : null);
     this.scheduleTimeout =
       options.scheduleTimeout ??
       ((cb, ms) => globalThis.setTimeout(cb, ms));
@@ -246,6 +250,11 @@ export class AmbiencePlayer implements AmbiencePlayerPort {
         }
         const raw = await res.arrayBuffer();
         const decoded = await ctx.decodeAudioData(raw);
+        normalizeAudioBufferInPlace(
+          decoded,
+          AUDIO_TOKENS.AMBIENT_TARGET_PEAK,
+          AUDIO_TOKENS.MAX_NORMALIZE_GAIN,
+        );
         this.buffers.set(environmentId, decoded);
         return decoded;
       } catch {

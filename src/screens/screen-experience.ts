@@ -806,9 +806,16 @@ export class ExperienceScreenView implements ScreenView {
       event.stopPropagation();
       const next = this.audioPreferencesStore.toggleMaster();
       if (next.masterEnabled) {
-        void this.audioEngine.unlockFromUserGesture();
+        void this.audioEngine.unlockFromUserGesture().then((unlocked) => {
+          if (unlocked && this.audioPreferencesStore.getPreferences().masterEnabled) {
+            void getSharedSfxPlayer()
+              .preloadAll()
+              .then(() => {
+                getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+              });
+          }
+        });
       }
-      getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
     });
 
     const applyChannelVolume = (

@@ -1,5 +1,6 @@
-import { SFX_MANIFEST, type SfxId } from "./audio-constants";
+import { AUDIO_TOKENS, SFX_MANIFEST, type SfxId } from "./audio-constants";
 import { AudioEngine, getSharedAudioEngine } from "./audio-engine";
+import { normalizeAudioBufferInPlace } from "./buffer-normalizer";
 
 export interface SfxPlayerOptions {
   readonly audioEngine?: AudioEngine;
@@ -22,7 +23,10 @@ export class SfxPlayer {
   constructor(options: SfxPlayerOptions = {}) {
     this.audioEngine = options.audioEngine ?? getSharedAudioEngine();
     this.fetchImpl =
-      options.fetchImpl ?? (typeof fetch === "function" ? fetch : null);
+      options.fetchImpl ??
+      (typeof globalThis.fetch === "function"
+        ? globalThis.fetch.bind(globalThis)
+        : null);
     this.manifest = options.manifest ?? SFX_MANIFEST;
 
     this.unsubscribeUnlock =
@@ -103,6 +107,11 @@ export class SfxPlayer {
         }
         const rawBuffer = await res.arrayBuffer();
         const decoded = await ctx.decodeAudioData(rawBuffer);
+        normalizeAudioBufferInPlace(
+          decoded,
+          AUDIO_TOKENS.SFX_TARGET_PEAK,
+          AUDIO_TOKENS.MAX_NORMALIZE_GAIN,
+        );
         this.buffers.set(id, decoded);
       } catch {
         // Non-blocking fallback when audio asset fails to fetch/decode

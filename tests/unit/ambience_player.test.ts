@@ -243,4 +243,65 @@ describe("AmbiencePlayer Per-Biome Soundscapes & Gapless Crossfade", () => {
     );
     expect(restartedWixarika.stop).toHaveBeenCalledTimes(1);
   });
+
+  it("binds globalThis.fetch to avoid Illegal invocation and normalizes quiet decoded ambient buffers", async () => {
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+
+    const channelSamples = new Float32Array([0.0025, -0.005, 0.0025]);
+    const mockCtx = createMockCtx(8.0);
+    mockCtx.ctx.decodeAudioData = vi.fn(
+      async () =>
+        ({
+          duration: 8.0,
+          numberOfChannels: 1,
+          getChannelData: () => channelSamples,
+        }) as unknown as AudioBuffer,
+    );
+
+    const originalFetch = globalThis.fetch;
+    const strictFetch = function (
+      this: unknown,
+      url: string | URL | Request,
+    ) {
+      if (this !== globalThis) {
+        return Promise.reject(
+          new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation"),
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        url: String(url),
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as Response);
+    } as typeof fetch;
+
+    globalThis.fetch = strictFetch;
+    try {
+      const engine = new AudioEngine({
+        preferencesStore: prefs,
+        createAudioContext: () => mockCtx.ctx,
+      });
+      const ambience = new AmbiencePlayer({ audioEngine: engine });
+      engine.setAmbiencePlayer(ambience);
+
+      await engine.unlockFromUserGesture();
+      engine.activateExperience(RoomId.WIXARIKA);
+      prefs.activateSound();
+      await flushMicrotasks();
+
+      expect(mockCtx.sources).toHaveLength(1);
+      // Peak 0.005 boosted cleanly up to AMBIENT_TARGET_PEAK
+      expect(Math.max(...Array.from(channelSamples).map(Math.abs))).toBeCloseTo(
+        0.65,
+        2,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

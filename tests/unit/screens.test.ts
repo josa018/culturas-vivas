@@ -246,6 +246,10 @@ describe("Screen Views & Interactions", () => {
     expect(el.querySelector('[data-action="activate-sound"]')).toBeNull();
     expect(el.querySelector('[data-action="skip-sound"]')).toBeNull();
     expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_ACTIVATE);
+    expect(toggleBtn.classList.contains("cv-tutorial-sound-btn")).toBe(true);
+    expect(toggleBtn.classList.contains("cv-tutorial-sound-btn--active")).toBe(
+      false,
+    );
 
     // First click activates Master + unlocks AudioEngine & SharedVideoController and changes label to Desactivar
     toggleBtn.click();
@@ -254,6 +258,9 @@ describe("Screen Views & Interactions", () => {
     expect(unlockAudio).toHaveBeenCalledTimes(1);
     expect(unlockVideo).toHaveBeenCalledTimes(1);
     expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_DEACTIVATE);
+    expect(toggleBtn.classList.contains("cv-tutorial-sound-btn--active")).toBe(
+      true,
+    );
     expect(dispatched).toHaveLength(0);
 
     // Second click deactivates Master without calling unlock again and restores Activar
@@ -263,6 +270,9 @@ describe("Screen Views & Interactions", () => {
     expect(unlockAudio).toHaveBeenCalledTimes(1);
     expect(unlockVideo).toHaveBeenCalledTimes(1);
     expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_ACTIVATE);
+    expect(toggleBtn.classList.contains("cv-tutorial-sound-btn--active")).toBe(
+      false,
+    );
 
     // Third click enables again before confirming insertion
     toggleBtn.click();
@@ -271,6 +281,7 @@ describe("Screen Views & Interactions", () => {
     expect(unlockVideo).toHaveBeenCalledTimes(2);
 
     (el.querySelector('[data-action="confirm-insertion"]') as HTMLElement).click();
+    expect(unlockAudio).toHaveBeenCalledTimes(3);
     expect(dispatched.map((d) => d.action)).toEqual([
       NavigationAction.CONFIRM_INSERTION,
     ]);

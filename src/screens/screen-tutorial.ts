@@ -94,6 +94,7 @@ export class TutorialScreenView implements ScreenView {
     soundCard.className = UI_CLASSES.TUTORIAL_SOUND_CARD;
 
     const soundTitle = document.createElement("p");
+    soundTitle.className = UI_CLASSES.TUTORIAL_SOUND_TEXT;
     soundTitle.textContent = UI_TEXT.TUTORIAL_SOUND_TITLE;
 
     const soundActions = document.createElement("div");
@@ -101,7 +102,7 @@ export class TutorialScreenView implements ScreenView {
 
     const toggleSoundBtn = document.createElement("button");
     toggleSoundBtn.type = "button";
-    toggleSoundBtn.className = UI_CLASSES.BUTTON_SECONDARY;
+    toggleSoundBtn.className = `${UI_CLASSES.BUTTON_OUTLINE} ${UI_CLASSES.TUTORIAL_SOUND_BTN}`;
     toggleSoundBtn.setAttribute("data-action", "toggle-sound");
     this.toggleSoundBtnEl = toggleSoundBtn;
     this.syncSoundToggle();
@@ -130,6 +131,7 @@ export class TutorialScreenView implements ScreenView {
 
     startButton.addEventListener("click", (event) => {
       event.stopPropagation();
+      void this.audioEngine.unlockFromUserGesture();
       void this.videoController.unlockFromUserGesture();
       this.dispatch(NavigationAction.CONFIRM_INSERTION);
     });
@@ -166,6 +168,10 @@ export class TutorialScreenView implements ScreenView {
       ? UI_TEXT.TUTORIAL_SOUND_DEACTIVATE
       : UI_TEXT.TUTORIAL_SOUND_ACTIVATE;
     this.toggleSoundBtnEl.setAttribute("aria-pressed", String(enabled));
+    this.toggleSoundBtnEl.classList.toggle(
+      UI_CLASSES.TUTORIAL_SOUND_BTN_ACTIVE,
+      enabled,
+    );
   }
 
   public hide(): void {

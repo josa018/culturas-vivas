@@ -124,4 +124,56 @@ describe("SfxPlayer Preloading & Effects Gating", () => {
     expect(sfx.play(SfxId.PORTAL_WHOOSH)).toBe(false);
     expect(mock.createdSources).toHaveLength(1);
   });
+
+  it("binds globalThis.fetch to avoid Illegal invocation and normalizes quiet SFX buffers", async () => {
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    const samples = new Float32Array([0.004, -0.008, 0.002]);
+    const mock = createMockAudioCtx();
+    mock.ctx.decodeAudioData = vi.fn(
+      async () =>
+        ({
+          byteLength: 12,
+          numberOfChannels: 1,
+          getChannelData: () => samples,
+        }) as unknown as AudioBuffer,
+    );
+
+    const engine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => mock.ctx,
+    });
+    await engine.unlockFromUserGesture();
+    engine.activateExperience(RoomId.LOBBY);
+    prefs.activateSound();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = function (this: unknown) {
+      if (this !== globalThis) {
+        return Promise.reject(
+          new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation"),
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as Response);
+    } as typeof fetch;
+
+    try {
+      const sfx = new SfxPlayer({ audioEngine: engine });
+      await sfx.preloadAll();
+      expect(sfx.play(SfxId.PORTAL_WHOOSH)).toBe(true);
+      expect(Math.max(...Array.from(samples).map(Math.abs))).toBeCloseTo(
+        0.85,
+        2,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
