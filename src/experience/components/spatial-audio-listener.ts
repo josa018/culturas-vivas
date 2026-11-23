@@ -115,16 +115,16 @@ export function readCameraListenerPose(
   }
 
   const host = sceneEl as SceneCameraHost;
-  let cam: ThreeCameraLike | undefined;
+  // Prefer sceneEl.camera: parented under #cv-camera-rig and synced by WebXRManager.updateUserCamera,
+  // whereas xr.getCamera() is reset to raw view transform before renderer.render() on each XR frame.
+  let cam: ThreeCameraLike | undefined = host.camera;
   let usedObject3DFallback = false;
   if (
+    !cam &&
     host.renderer?.xr?.isPresenting &&
     typeof host.renderer.xr.getCamera === "function"
   ) {
     cam = host.renderer.xr.getCamera();
-  }
-  if (!cam) {
-    cam = host.camera;
   }
   if (!cam) {
     const camEl = sceneEl.querySelector("a-camera, [camera]") as
@@ -201,7 +201,9 @@ export interface SpatialAudioListenerDeps {
 
 export interface SpatialAudioListenerInstance {
   el: HTMLElement & { sceneEl?: HTMLElement | null };
+  hasTocked?: boolean;
   tick: () => void;
+  tock?: () => void;
 }
 
 export function createSpatialAudioListenerComponentDefinition(
@@ -210,11 +212,22 @@ export function createSpatialAudioListenerComponentDefinition(
   const resolveSpatial = () =>
     deps.getSpatialMediaAudio?.() ?? getSharedSpatialMediaAudio();
 
+  const syncPose = (instance: SpatialAudioListenerInstance): void => {
+    const sceneEl = instance.el.sceneEl ?? instance.el.parentElement ?? instance.el;
+    const pose = readCameraListenerPose(sceneEl);
+    resolveSpatial().updateListenerPose(pose);
+  };
+
   return {
     tick: function (this: SpatialAudioListenerInstance) {
-      const sceneEl = this.el.sceneEl ?? this.el.parentElement ?? this.el;
-      const pose = readCameraListenerPose(sceneEl);
-      resolveSpatial().updateListenerPose(pose);
+      if (this.hasTocked) {
+        return;
+      }
+      syncPose(this);
+    },
+    tock: function (this: SpatialAudioListenerInstance) {
+      this.hasTocked = true;
+      syncPose(this);
     },
   };
 }

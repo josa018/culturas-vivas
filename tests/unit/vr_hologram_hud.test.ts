@@ -1284,4 +1284,123 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(soundBtn?.classList.contains("clickable")).toBe(false);
     instance.remove();
   });
+
+  it("renders Music and Effects volume sliders in VR HUD, adjusts volumes without dismissing, and syncs .clickable and percentages", async () => {
+    const { AudioPreferencesStore } = await import(
+      "../../src/experience/audio/audio-preferences-store"
+    );
+    const { AudioEngine } = await import(
+      "../../src/experience/audio/audio-engine"
+    );
+    const { VR_HUD_VOLUME_CHANGE_EVENT } = await import(
+      "../../src/experience/components/vr-hologram-hud"
+    );
+
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    const audioEngine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => null,
+    });
+
+    const def = createVrHologramHudComponentDefinition({
+      audioPreferencesStore: prefs,
+      audioEngine,
+    });
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance: VrHologramHudComponentInstance = {
+      el,
+      isOpen: false,
+      enabled: true,
+      activeRoomId: DEFAULT_ROOM_ID,
+      callbacks: {},
+      roomChipEl: null,
+      init: function () {
+        def.init.call(this);
+      },
+      setCallbacks: function (c) {
+        def.setCallbacks.call(this, c);
+      },
+      setEnabled: function (e) {
+        def.setEnabled.call(this, e);
+      },
+      setRoomTitle: function (r) {
+        def.setRoomTitle.call(this, r);
+      },
+      summon: function (p) {
+        def.summon.call(this, p);
+      },
+      dismiss: function () {
+        def.dismiss.call(this);
+      },
+      remove: function () {
+        def.remove.call(this);
+      },
+    };
+    instance.init();
+
+    const musicGroup = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_GROUP}`,
+    );
+    const effectsGroup = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_GROUP}`,
+    );
+    const musicUpBtn = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_UP_BTN}`,
+    );
+    const musicDownBtn = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_DOWN_BTN}`,
+    );
+    const effectsDownBtn = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_DOWN_BTN}`,
+    );
+    const effectsUpBtn = el.querySelector(
+      `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_UP_BTN}`,
+    );
+
+    expect(musicGroup).toBeTruthy();
+    expect(effectsGroup).toBeTruthy();
+    expect(musicUpBtn?.classList.contains("clickable")).toBe(false);
+    expect(effectsDownBtn?.classList.contains("clickable")).toBe(false);
+
+    const events: Array<{ channel: string; volume: number }> = [];
+    el.addEventListener(VR_HUD_VOLUME_CHANGE_EVENT, (evt: Event) => {
+      events.push(
+        (evt as CustomEvent<{ channel: string; volume: number }>).detail,
+      );
+    });
+
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(musicUpBtn?.classList.contains("clickable")).toBe(true);
+    expect(musicDownBtn?.classList.contains("clickable")).toBe(true);
+    expect(effectsDownBtn?.classList.contains("clickable")).toBe(true);
+    expect(effectsUpBtn?.classList.contains("clickable")).toBe(true);
+
+    musicUpBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    effectsDownBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(prefs.getPreferences().musicVolume).toBeCloseTo(0.8);
+    expect(prefs.getPreferences().effectsVolume).toBeCloseTo(0.7);
+    expect(instance.isOpen).toBe(true);
+    expect(events).toEqual([
+      { channel: "music", volume: 0.8 },
+      { channel: "effects", volume: 0.7 },
+    ]);
+
+    const musicLabel = musicGroup?.querySelector("[cv-canvas-text]");
+    expect(musicLabel?.getAttribute("value")).toContain("80%");
+
+    // External update reflects immediately in VR HUD label
+    prefs.setMusicVolume(0.25);
+    expect(musicLabel?.getAttribute("value")).toContain("25%");
+
+    instance.dismiss();
+    expect(musicUpBtn?.classList.contains("clickable")).toBe(false);
+    expect(effectsDownBtn?.classList.contains("clickable")).toBe(false);
+    instance.remove();
+  });
 });

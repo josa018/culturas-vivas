@@ -368,4 +368,68 @@ describe("Spatial Listener Pose & Behind-Listener Occlusion", () => {
       z: 1,
     });
   });
+
+  it("prefers scene.camera over pre-render xr.getCamera() in WebXR mode so #cv-camera-rig rotation is never lost, and updates via tock post-render", () => {
+    const scene = document.createElement("a-scene") as HTMLElement & {
+      camera?: unknown;
+      renderer?: { xr?: { isPresenting?: boolean; getCamera?: () => unknown } };
+    };
+
+    // Simulate WebXRManager.onAnimationFrame resetting ArrayCamera before render()
+    // while scene.camera carries the rig-parented world gaze (+Z in Lobby).
+    scene.renderer = {
+      xr: {
+        isPresenting: true,
+        getCamera: () => ({
+          isCamera: true,
+          getWorldPosition: (out: { x: number; y: number; z: number }) => {
+            out.x = 0;
+            out.y = 0;
+            out.z = 0;
+            return out;
+          },
+          getWorldDirection: (out: { x: number; y: number; z: number }) => {
+            out.x = 0;
+            out.y = 0;
+            out.z = -1;
+            return out;
+          },
+        }),
+      },
+    };
+    scene.camera = {
+      isCamera: true,
+      getWorldPosition: (out: { x: number; y: number; z: number }) => {
+        out.x = 0;
+        out.y = 1.65;
+        out.z = 0;
+        return out;
+      },
+      getWorldDirection: (out: { x: number; y: number; z: number }) => {
+        out.x = 0;
+        out.y = 0;
+        out.z = 1;
+        return out;
+      },
+    };
+
+    const pose = readCameraListenerPose(scene);
+    expect(pose.position).toEqual({ x: 0, y: 1.65, z: 0 });
+    expect(pose.forward).toEqual({ x: 0, y: 0, z: 1 });
+
+    const updateSpy = vi.fn();
+    const def = createSpatialAudioListenerComponentDefinition({
+      getSpatialMediaAudio: () =>
+        ({ updateListenerPose: updateSpy }) as unknown as SpatialMediaAudio,
+    });
+    const inst = { el: ensureSpatialAudioListener(scene) };
+    expect(typeof def.tock).toBe("function");
+    def.tock?.call(inst);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenLastCalledWith(pose);
+
+    // Once tock has run in A-Frame's render loop, tick avoids redundant pre-render updates
+    def.tick.call(inst);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+  });
 });
