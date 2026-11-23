@@ -33,7 +33,7 @@ export class TutorialScreenView implements ScreenView {
     SharedVideoController,
     "unlockFromUserGesture"
   >;
-  private soundStatusEl: HTMLElement | null = null;
+  private toggleSoundBtnEl: HTMLButtonElement | null = null;
 
   constructor(
     dispatch: NavigationDispatcher,
@@ -81,6 +81,7 @@ export class TutorialScreenView implements ScreenView {
       UI_TEXT.TUTORIAL_STEP_1,
       UI_TEXT.TUTORIAL_STEP_2,
       UI_TEXT.TUTORIAL_STEP_3,
+      UI_TEXT.TUTORIAL_STEP_4,
     ];
 
     for (const stepText of steps) {
@@ -98,38 +99,25 @@ export class TutorialScreenView implements ScreenView {
     const soundActions = document.createElement("div");
     soundActions.className = UI_CLASSES.TUTORIAL_SOUND_ACTIONS;
 
-    const activateSoundBtn = document.createElement("button");
-    activateSoundBtn.type = "button";
-    activateSoundBtn.className = UI_CLASSES.BUTTON_SECONDARY;
-    activateSoundBtn.setAttribute("data-action", "activate-sound");
-    activateSoundBtn.textContent = UI_TEXT.TUTORIAL_SOUND_ACTIVATE;
+    const toggleSoundBtn = document.createElement("button");
+    toggleSoundBtn.type = "button";
+    toggleSoundBtn.className = UI_CLASSES.BUTTON_SECONDARY;
+    toggleSoundBtn.setAttribute("data-action", "toggle-sound");
+    this.toggleSoundBtnEl = toggleSoundBtn;
+    this.syncSoundToggle();
 
-    const skipSoundBtn = document.createElement("button");
-    skipSoundBtn.type = "button";
-    skipSoundBtn.className = UI_CLASSES.BUTTON_OUTLINE;
-    skipSoundBtn.setAttribute("data-action", "skip-sound");
-    skipSoundBtn.textContent = UI_TEXT.TUTORIAL_SOUND_SKIP;
-
-    const soundStatus = document.createElement("span");
-    soundStatus.className = UI_CLASSES.TUTORIAL_SOUND_STATUS;
-    this.soundStatusEl = soundStatus;
-    this.syncSoundStatus();
-
-    activateSoundBtn.addEventListener("click", (event) => {
+    toggleSoundBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      this.audioPreferencesStore.activateSound();
-      void this.audioEngine.unlockFromUserGesture();
-      void this.videoController.unlockFromUserGesture();
-      this.syncSoundStatus();
+      const next = this.audioPreferencesStore.toggleMaster();
+      if (next.masterEnabled) {
+        void this.audioEngine.unlockFromUserGesture();
+        void this.videoController.unlockFromUserGesture();
+      }
+      this.syncSoundToggle();
     });
 
-    skipSoundBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this.syncSoundStatus();
-    });
-
-    soundActions.append(activateSoundBtn, skipSoundBtn);
-    soundCard.append(soundTitle, soundActions, soundStatus);
+    soundActions.append(toggleSoundBtn);
+    soundCard.append(soundTitle, soundActions);
 
     const startButton = document.createElement("button");
     startButton.type = "button";
@@ -154,7 +142,7 @@ export class TutorialScreenView implements ScreenView {
   }
 
   public unmount(): void {
-    this.soundStatusEl = null;
+    this.toggleSoundBtnEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -162,21 +150,22 @@ export class TutorialScreenView implements ScreenView {
   }
 
   public show(): void {
-    this.syncSoundStatus();
+    this.syncSoundToggle();
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
   }
 
-  private syncSoundStatus(): void {
-    if (!this.soundStatusEl) {
+  private syncSoundToggle(): void {
+    if (!this.toggleSoundBtnEl) {
       return;
     }
     const enabled = this.audioPreferencesStore.getPreferences().masterEnabled;
-    this.soundStatusEl.textContent = enabled
-      ? UI_TEXT.TUTORIAL_SOUND_ACTIVE
-      : "";
+    this.toggleSoundBtnEl.textContent = enabled
+      ? UI_TEXT.TUTORIAL_SOUND_DEACTIVATE
+      : UI_TEXT.TUTORIAL_SOUND_ACTIVATE;
+    this.toggleSoundBtnEl.setAttribute("aria-pressed", String(enabled));
   }
 
   public hide(): void {

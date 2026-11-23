@@ -39,18 +39,18 @@ import {
 } from "../audio/audio-engine";
 import { AUDIO_TOKENS, SfxId } from "../audio/audio-constants";
 import { getSharedSfxPlayer } from "../audio/sfx-player";
+import {
+  computeVolumeBarState,
+  quantizeVolumeStep,
+} from "../audio/volume-bars";
 
-export const VR_HUD_SWITCH_2D_EVENT = "cv-vr-hud-switch-2d";
 export const VR_HUD_RETURN_LOBBY_EVENT = "cv-vr-hud-return-lobby";
-export const VR_HUD_EXIT_EVENT = "cv-vr-hud-exit";
 export const VR_HUD_DISMISS_EVENT = "cv-vr-hud-dismiss";
 export const VR_HUD_SOUND_TOGGLE_EVENT = "cv-vr-hud-sound-toggle";
 export const VR_HUD_VOLUME_CHANGE_EVENT = "cv-vr-hud-volume-change";
 
 export interface VrHudActionCallbacks {
-  readonly onSwitchTo2D?: () => void;
   readonly onReturnToLobby?: () => void;
-  readonly onRequestExit?: () => void;
   readonly onDismiss?: () => void;
   readonly onToggleSound?: () => void;
 }
@@ -548,16 +548,16 @@ function createHudButtonEntity(options: {
   return btn;
 }
 
-interface HudVolumeSliderHandle {
+interface HudVolumeBarsHandle {
   readonly groupEl: HTMLElement;
   readonly downBtn: HTMLElement;
   readonly upBtn: HTMLElement;
+  readonly barEls: readonly HTMLElement[];
   readonly updateVisual: (volume: number) => void;
 }
 
-function formatSliderLabelText(label: string, volume: number): string {
-  const pct = Math.round(volume * AUDIO_TOKENS.PERCENT_MULTIPLIER);
-  return `${label}: ${pct}${VR_HUD_DICTIONARY.SLIDER_PERCENT_SUFFIX}`;
+function formatVolumeGroupLabel(label: string, percent: number): string {
+  return `${label}: ${percent}${VR_HUD_DICTIONARY.SLIDER_PERCENT_SUFFIX}`;
 }
 
 function createHudStepButton(options: {
@@ -567,7 +567,7 @@ function createHudStepButton(options: {
   xPos: number;
   borderColor: string;
 }): HTMLElement {
-  const size = VR_HUD_GEOMETRY.SLIDER_STEP_BTN_SIZE_M;
+  const size = VR_HUD_GEOMETRY.VOLUME_STEP_BTN_SIZE_M;
   const depth = VR_HUD_GEOMETRY.BUTTON_DEPTH_M;
 
   const btn = document.createElement("a-entity");
@@ -614,25 +614,32 @@ function createHudStepButton(options: {
   return btn;
 }
 
-function createHudVolumeSliderEntity(options: {
+function createHudVolumeBarGroup(options: {
   groupId: string;
   downId: string;
   upId: string;
+  barIdPrefix: string;
   channel: "music" | "effects";
   label: string;
   position: string;
   rotation: string;
   accentColor: string;
   initialVolume: number;
+  onSelectVolume: (volume: number) => void;
   onStep: (delta: number) => void;
-}): HudVolumeSliderHandle {
+}): HudVolumeBarsHandle {
   const groupEl = document.createElement("a-entity");
   groupEl.setAttribute("id", options.groupId);
   groupEl.setAttribute("position", options.position);
   groupEl.setAttribute("rotation", options.rotation);
 
+  const initialState = computeVolumeBarState(
+    options.initialVolume,
+    VR_HUD_GEOMETRY.VOLUME_BAR_COUNT,
+  );
+
   const titleEl = createCanvasTextPlane({
-    value: formatSliderLabelText(options.label, options.initialVolume),
+    value: formatVolumeGroupLabel(options.label, initialState.percent),
     align: "center",
     baseline: "middle",
     color: VR_HUD_COLORS.TEXT_BONE,
@@ -643,73 +650,92 @@ function createHudVolumeSliderEntity(options: {
     canvasWidth: 512,
     canvasHeight: 96,
     maxLines: 1,
-    position: "0 0.072 0.008",
+    position: "0 0.095 0.008",
   });
 
-  const trackWidth = VR_HUD_GEOMETRY.SLIDER_TRACK_WIDTH_M;
-  const trackHeight = VR_HUD_GEOMETRY.SLIDER_TRACK_HEIGHT_M;
-  const trackBg = document.createElement("a-plane");
-  trackBg.setAttribute("width", String(trackWidth));
-  trackBg.setAttribute("height", String(trackHeight));
-  trackBg.setAttribute("position", "0 0 0.002");
-  trackBg.setAttribute("color", VR_HUD_COLORS.SLIDER_TRACK_SURFACE);
-  trackBg.setAttribute("material", "shader: flat");
+  const barCount = VR_HUD_GEOMETRY.VOLUME_BAR_COUNT;
+  const barWidth = VR_HUD_GEOMETRY.VOLUME_BAR_WIDTH_M;
+  const barHeight = VR_HUD_GEOMETRY.VOLUME_BAR_HEIGHT_M;
+  const barDepth = VR_HUD_GEOMETRY.VOLUME_BAR_DEPTH_M;
+  const barGap = VR_HUD_GEOMETRY.VOLUME_BAR_GAP_M;
+  const totalBarsWidth = barCount * barWidth + (barCount - 1) * barGap;
 
-  const trackFill = document.createElement("a-plane");
-  trackFill.setAttribute("height", String(trackHeight));
-  trackFill.setAttribute("color", options.accentColor);
-  trackFill.setAttribute("material", "shader: flat");
-
-  const knob = document.createElement("a-circle");
-  knob.setAttribute("radius", String(VR_HUD_GEOMETRY.SLIDER_KNOB_RADIUS_M));
-  knob.setAttribute("segments", "24");
-  knob.setAttribute("color", VR_HUD_COLORS.TEXT_BONE);
-  knob.setAttribute("material", "shader: flat");
+  const barEls: HTMLElement[] = [];
+  for (let idx = 0; idx < barCount; idx += 1) {
+    const barIndex = idx + 1;
+    const xPos = Number(
+      (-totalBarsWidth / 2 + barWidth / 2 + idx * (barWidth + barGap)).toFixed(
+        4,
+      ),
+    );
+    const barItem = initialState.bars[idx]!;
+    const barEl = document.createElement("a-entity");
+    barEl.setAttribute("id", `${options.barIdPrefix}${barIndex}`);
+    barEl.setAttribute("class", "cv-hud-control");
+    barEl.setAttribute("cv-interactive-feedback", "");
+    barEl.setAttribute("data-volume-bar", String(barIndex));
+    barEl.setAttribute("data-bar-channel", options.channel);
+    barEl.setAttribute("position", `${xPos} 0 0`);
+    barEl.setAttribute(
+      "geometry",
+      `primitive: box; width: ${barWidth}; height: ${barHeight}; depth: ${barDepth}`,
+    );
+    barEl.addEventListener?.("click", (evt) => {
+      evt?.stopPropagation?.();
+      options.onSelectVolume(barItem.targetVolume);
+    });
+    barEls.push(barEl);
+  }
 
   const stepOffset =
-    trackWidth / 2 + VR_HUD_GEOMETRY.SLIDER_STEP_BTN_SIZE_M / 2 + 0.025;
+    totalBarsWidth / 2 +
+    VR_HUD_GEOMETRY.VOLUME_STEP_BTN_SIZE_M / 2 +
+    VR_HUD_GEOMETRY.VOLUME_STEP_BTN_GAP_M;
 
   const downBtn = createHudStepButton({
     id: options.downId,
     action: `${options.channel}-volume-down`,
     glyph: VR_HUD_DICTIONARY.SLIDER_DECREASE_ICON,
-    xPos: -stepOffset,
+    xPos: -Number(stepOffset.toFixed(4)),
     borderColor: options.accentColor,
   });
   downBtn.addEventListener?.("click", (evt) => {
     evt?.stopPropagation?.();
-    options.onStep(-VR_HUD_GEOMETRY.SLIDER_VOLUME_STEP);
+    options.onStep(-VR_HUD_GEOMETRY.VOLUME_BAR_STEP);
   });
 
   const upBtn = createHudStepButton({
     id: options.upId,
     action: `${options.channel}-volume-up`,
     glyph: VR_HUD_DICTIONARY.SLIDER_INCREASE_ICON,
-    xPos: stepOffset,
+    xPos: Number(stepOffset.toFixed(4)),
     borderColor: options.accentColor,
   });
   upBtn.addEventListener?.("click", (evt) => {
     evt?.stopPropagation?.();
-    options.onStep(VR_HUD_GEOMETRY.SLIDER_VOLUME_STEP);
+    options.onStep(VR_HUD_GEOMETRY.VOLUME_BAR_STEP);
   });
 
   const updateVisual = (volume: number): void => {
-    const clamped = Math.max(
-      AUDIO_TOKENS.VOLUME_MIN,
-      Math.min(AUDIO_TOKENS.VOLUME_MAX, volume),
+    const state = computeVolumeBarState(
+      volume,
+      VR_HUD_GEOMETRY.VOLUME_BAR_COUNT,
     );
-    const fillWidth = Math.max(
-      VR_HUD_GEOMETRY.SLIDER_FILL_MIN_WIDTH_M,
-      trackWidth * clamped,
-    );
-    const fillX = -trackWidth / 2 + fillWidth / 2;
-    const knobX = -trackWidth / 2 + trackWidth * clamped;
+    for (let idx = 0; idx < barEls.length; idx += 1) {
+      const barEl = barEls[idx]!;
+      const barState = state.bars[idx]!;
+      barEl.setAttribute("data-bar-active", String(barState.active));
+      const color = barState.active
+        ? options.accentColor
+        : VR_HUD_COLORS.VOLUME_BAR_INACTIVE;
+      const opacity = barState.active ? "0.98" : "0.7";
+      barEl.setAttribute(
+        "material",
+        `shader: lambert; color: ${color}; opacity: ${opacity}`,
+      );
+    }
 
-    trackFill.setAttribute("width", String(Number(fillWidth.toFixed(4))));
-    trackFill.setAttribute("position", `${Number(fillX.toFixed(4))} 0 0.005`);
-    knob.setAttribute("position", `${Number(knobX.toFixed(4))} 0 0.008`);
-
-    const formatted = formatSliderLabelText(options.label, clamped);
+    const formatted = formatVolumeGroupLabel(options.label, state.percent);
     titleEl.setAttribute("value", formatted);
     setCanvasTextElement(titleEl, {
       mode: "label",
@@ -726,9 +752,9 @@ function createHudVolumeSliderEntity(options: {
   };
 
   updateVisual(options.initialVolume);
-  groupEl.append(titleEl, trackBg, trackFill, knob, downBtn, upBtn);
+  groupEl.append(titleEl, downBtn, ...barEls, upBtn);
 
-  return { groupEl, downBtn, upBtn, updateVisual };
+  return { groupEl, downBtn, upBtn, barEls, updateVisual };
 }
 
 function updateSoundButtonVisual(
@@ -891,23 +917,6 @@ export function createVrHologramHudComponentDefinition(
       const leftRail = createSideRail(-(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2));
       const rightRail = createSideRail(VR_HUD_GEOMETRY.TRIM_ARC_THETA_DEG / 2);
 
-      // Cultural eyebrow label
-      const eyebrowLabel = createCanvasTextPlane({
-        id: VR_HUD_ELEMENT_IDS.EYEBROW_LABEL,
-        value: VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
-        align: "center",
-        baseline: "middle",
-        color: VR_HUD_COLORS.TEXT_BONE,
-        width: 0.72,
-        height: 0.065,
-        fontSizePx: 28,
-        fontWeight: "700",
-        canvasWidth: 512,
-        canvasHeight: 64,
-        maxLines: 1,
-        position: "0 0.46 0.04",
-      });
-
       // Active room title chip
       const roomChip = createCanvasTextPlane({
         id: VR_HUD_ELEMENT_IDS.ROOM_CHIP,
@@ -922,34 +931,9 @@ export function createVrHologramHudComponentDefinition(
         canvasWidth: 1024,
         canvasHeight: 128,
         maxLines: 1,
-        position: "0 0.35 0.04",
+        position: "0 0.39 0.04",
       });
       this.roomChipEl = roomChip;
-
-      // Direct Switch to 2D Touch button
-      const switch2dBtn = createHudButtonEntity({
-        id: VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
-        action: "switch-to-touch",
-        iconId: "touch",
-        label: VR_HUD_DICTIONARY.SWITCH_TO_2D_LABEL,
-        position: "-0.44 0.11 0.06",
-        rotation: "0 12 0",
-        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
-        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
-        borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
-        ownedTextures: this.ownedTextures ?? [],
-      });
-
-      switch2dBtn.addEventListener?.("click", (evt) => {
-        evt?.stopPropagation?.();
-        this.dismiss();
-        if (this.callbacks.onSwitchTo2D) {
-          this.callbacks.onSwitchTo2D();
-        }
-        this.el.dispatchEvent?.(
-          new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }),
-        );
-      });
 
       // Center Master Sound toggle button (stays open so user sees feedback)
       const initialPrefs = resolveAudioPrefs().getPreferences();
@@ -961,8 +945,8 @@ export function createVrHologramHudComponentDefinition(
         label: initialSoundOn
           ? VR_HUD_DICTIONARY.SOUND_ON_LABEL
           : VR_HUD_DICTIONARY.SOUND_OFF_LABEL,
-        position: "0 0.11 0.05",
-        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
+        position: "0 0.14 0.05",
+        width: VR_HUD_GEOMETRY.BUTTON_WIDTH_M,
         backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
         ownedTextures: this.ownedTextures ?? [],
@@ -983,88 +967,72 @@ export function createVrHologramHudComponentDefinition(
         );
       });
 
-      // Exit Tour modal trigger button
-      const exitBtn = createHudButtonEntity({
-        id: VR_HUD_ELEMENT_IDS.EXIT_BTN,
-        action: "request-exit",
-        iconId: "exit",
-        label: VR_HUD_DICTIONARY.EXIT_TOUR_LABEL,
-        position: "0.44 0.11 0.06",
-        rotation: "0 -12 0",
-        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
-        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
-        borderColor: VR_HUD_COLORS.ACCENT_COCHINILLA,
-        ownedTextures: this.ownedTextures ?? [],
-      });
-
-      exitBtn.addEventListener?.("click", (evt) => {
-        evt?.stopPropagation?.();
-        this.dismiss();
-        if (this.callbacks.onRequestExit) {
-          this.callbacks.onRequestExit();
-        }
-        this.el.dispatchEvent?.(
-          new CustomEvent(VR_HUD_EXIT_EVENT, { bubbles: true }),
-        );
-      });
-
-      // Music & Effects Volume Sliders (stay open across step clicks)
-      const stepChannelVolume = (
+      // Music & Effects 5-bar Volume Controls (stay open across bar/step clicks)
+      const applyChannelVolume = (
         channel: "music" | "effects",
-        delta: number,
+        nextVolume: number,
       ): void => {
         const prefsStore = resolveAudioPrefs();
         const current = prefsStore.getPreferences();
-        const base =
-          channel === "music" ? current.musicVolume : current.effectsVolume;
-        const next = Math.max(
-          AUDIO_TOKENS.VOLUME_MIN,
-          Math.min(
-            AUDIO_TOKENS.VOLUME_MAX,
-            Math.round((base + delta) * AUDIO_TOKENS.PERCENT_MULTIPLIER) /
-              AUDIO_TOKENS.PERCENT_MULTIPLIER,
-          ),
-        );
         if (current.masterEnabled) {
           void resolveAudioEngine().unlockFromUserGesture();
         }
         if (channel === "music") {
-          prefsStore.setMusicVolume(next);
+          prefsStore.setMusicVolume(nextVolume);
         } else {
-          prefsStore.setEffectsVolume(next);
+          prefsStore.setEffectsVolume(nextVolume);
         }
         getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
         this.el.dispatchEvent?.(
           new CustomEvent(VR_HUD_VOLUME_CHANGE_EVENT, {
             bubbles: true,
-            detail: { channel, volume: next },
+            detail: { channel, volume: nextVolume },
           }),
         );
       };
 
-      const musicSlider = createHudVolumeSliderEntity({
+      const stepChannelVolume = (
+        channel: "music" | "effects",
+        delta: number,
+      ): void => {
+        const current = resolveAudioPrefs().getPreferences();
+        const base =
+          channel === "music" ? current.musicVolume : current.effectsVolume;
+        const next = quantizeVolumeStep(
+          base,
+          delta,
+          VR_HUD_GEOMETRY.VOLUME_BAR_STEP,
+        );
+        applyChannelVolume(channel, next);
+      };
+
+      const musicBars = createHudVolumeBarGroup({
         groupId: VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_GROUP,
         downId: VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_DOWN_BTN,
         upId: VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_UP_BTN,
+        barIdPrefix: VR_HUD_ELEMENT_IDS.MUSIC_BAR_PREFIX,
         channel: "music",
         label: VR_HUD_DICTIONARY.MUSIC_SLIDER_LABEL,
-        position: `${VR_HUD_GEOMETRY.SLIDER_MUSIC_X_M} ${VR_HUD_GEOMETRY.SLIDER_Y_M} ${VR_HUD_GEOMETRY.SLIDER_Z_M}`,
-        rotation: `0 ${VR_HUD_GEOMETRY.SLIDER_YAW_DEG} 0`,
+        position: `${VR_HUD_GEOMETRY.VOLUME_MUSIC_X_M} ${VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M} ${VR_HUD_GEOMETRY.VOLUME_Z_M}`,
+        rotation: `0 ${VR_HUD_GEOMETRY.VOLUME_YAW_DEG} 0`,
         accentColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
         initialVolume: initialPrefs.musicVolume,
+        onSelectVolume: (volume) => applyChannelVolume("music", volume),
         onStep: (delta) => stepChannelVolume("music", delta),
       });
 
-      const effectsSlider = createHudVolumeSliderEntity({
+      const effectsBars = createHudVolumeBarGroup({
         groupId: VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_GROUP,
         downId: VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_DOWN_BTN,
         upId: VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_UP_BTN,
+        barIdPrefix: VR_HUD_ELEMENT_IDS.EFFECTS_BAR_PREFIX,
         channel: "effects",
         label: VR_HUD_DICTIONARY.EFFECTS_SLIDER_LABEL,
-        position: `${VR_HUD_GEOMETRY.SLIDER_EFFECTS_X_M} ${VR_HUD_GEOMETRY.SLIDER_Y_M} ${VR_HUD_GEOMETRY.SLIDER_Z_M}`,
-        rotation: `0 -${VR_HUD_GEOMETRY.SLIDER_YAW_DEG} 0`,
+        position: `${VR_HUD_GEOMETRY.VOLUME_EFFECTS_X_M} ${VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M} ${VR_HUD_GEOMETRY.VOLUME_Z_M}`,
+        rotation: `0 -${VR_HUD_GEOMETRY.VOLUME_YAW_DEG} 0`,
         accentColor: VR_HUD_COLORS.ACCENT_TURQUESA,
         initialVolume: initialPrefs.effectsVolume,
+        onSelectVolume: (volume) => applyChannelVolume("effects", volume),
         onStep: (delta) => stepChannelVolume("effects", delta),
       });
 
@@ -1152,13 +1120,13 @@ export function createVrHologramHudComponentDefinition(
 
       this.interactiveEls = [
         backdrop,
-        switch2dBtn,
         soundToggleBtn,
-        exitBtn,
-        musicSlider.downBtn,
-        musicSlider.upBtn,
-        effectsSlider.downBtn,
-        effectsSlider.upBtn,
+        musicBars.downBtn,
+        ...musicBars.barEls,
+        musicBars.upBtn,
+        effectsBars.downBtn,
+        ...effectsBars.barEls,
+        effectsBars.upBtn,
         returnLobbyBtn,
         dismissBtn,
       ];
@@ -1168,13 +1136,10 @@ export function createVrHologramHudComponentDefinition(
         bottomFajaTrim,
         leftRail,
         rightRail,
-        eyebrowLabel,
         roomChip,
-        switch2dBtn,
         soundToggleBtn,
-        exitBtn,
-        musicSlider.groupEl,
-        effectsSlider.groupEl,
+        musicBars.groupEl,
+        effectsBars.groupEl,
         returnLobbyBtn,
         dismissBtn,
       );
@@ -1182,8 +1147,8 @@ export function createVrHologramHudComponentDefinition(
       this.unsubscribeAudioPrefs?.();
       this.unsubscribeAudioPrefs = resolveAudioPrefs().subscribe((prefs) => {
         updateSoundButtonVisual(this, prefs.masterEnabled);
-        musicSlider.updateVisual(prefs.musicVolume);
-        effectsSlider.updateVisual(prefs.effectsVolume);
+        musicBars.updateVisual(prefs.musicVolume);
+        effectsBars.updateVisual(prefs.effectsVolume);
       });
 
       this.unsubscribeInspection?.();

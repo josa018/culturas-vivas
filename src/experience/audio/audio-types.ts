@@ -63,7 +63,9 @@ export interface AudioListenerLike {
 export interface AudioBufferSourceNodeLike extends AudioNodeLike {
   buffer: AudioBuffer | null;
   loop?: boolean;
-  start(when?: number): void;
+  loopStart?: number;
+  loopEnd?: number;
+  start(when?: number, offset?: number, duration?: number): void;
   stop?(when?: number): void;
 }
 

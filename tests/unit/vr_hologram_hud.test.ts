@@ -16,9 +16,7 @@ import {
 } from "../../src/experience/faja-pattern-renderer";
 import { RoomId } from "../../src/experience/types";
 import {
-  VR_HUD_EXIT_EVENT,
   VR_HUD_RETURN_LOBBY_EVENT,
-  VR_HUD_SWITCH_2D_EVENT,
   calculateHudWorldTransform,
   computeCurvedHudStripTransform,
   createVrHologramHudComponentDefinition,
@@ -386,8 +384,7 @@ describe("VR Hologram HUD Component", () => {
 
     const interactiveIds = [
       VR_HUD_ELEMENT_IDS.PANEL_BACKDROP,
-      VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
-      VR_HUD_ELEMENT_IDS.EXIT_BTN,
+      VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN,
       VR_HUD_ELEMENT_IDS.DISMISS_BTN,
     ];
     for (const id of interactiveIds) {
@@ -488,44 +485,28 @@ describe("VR Hologram HUD Component", () => {
     expect(returnLobbyCount).toBe(1);
   });
 
-  it("wires 3D HUD action buttons to NavigationStateMachine (SWITCH_TO_TOUCH and REQUEST_EXIT)", () => {
-    const storeMap = new Map<string, string>();
-    const memoryStorage: StorageAdapter = {
-      getItem: (k) => storeMap.get(k) ?? null,
-      setItem: (k, v) => {
-        storeMap.set(k, v);
-      },
-      removeItem: (k) => {
-        storeMap.delete(k);
-      },
-    };
-    const fsm = new NavigationStateMachine(new SessionStore(memoryStorage));
-    fsm.dispatch(NavigationAction.FINISH_LOADING);
-    fsm.dispatch(NavigationAction.SELECT_VR);
-    fsm.dispatch(NavigationAction.CONFIRM_INSERTION);
+  it("omits in-HUD switch-to-2D and exit buttons while keeping native exit-vr wired to REQUEST_EXIT", () => {
+    const dispatched: NavigationAction[] = [];
+    const scene = document.createElement("a-scene");
+    const appRoot = document.createElement("div");
+    document.body.append(scene, appRoot);
 
-    const el = document.createElement("a-entity") as VrHologramHudEntity;
-    const hud = createMockHudInstance(el);
-    hud.init();
-    hud.setCallbacks({
-      onSwitchTo2D: () => fsm.dispatch(NavigationAction.SWITCH_TO_TOUCH),
-      onRequestExit: () => fsm.dispatch(NavigationAction.REQUEST_EXIT),
-    });
+    const screen = new ExperienceScreenView((action) => {
+      dispatched.push(action);
+    }, ViewMode.VR);
+    screen.mount(appRoot);
+    screen.show();
 
-    hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
-    el.querySelector(`#${VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN}`)?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
-    expect(hud.isOpen).toBe(false);
-    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
-    expect(fsm.getSession().viewMode).toBe(ViewMode.TOUCH_2D);
+    const hudEl = scene.querySelector(`#${VR_HUD_ELEMENT_IDS.HUD_ROOT}`)!;
+    expect(hudEl.querySelector("#cv-vr-hud-switch-2d")).toBeNull();
+    expect(hudEl.querySelector("#cv-vr-hud-exit")).toBeNull();
+    expect(hudEl.querySelector('[data-action="switch-to-touch"]')).toBeNull();
+    expect(hudEl.querySelector('[data-action="request-exit"]')).toBeNull();
 
-    hud.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
-    el.querySelector(`#${VR_HUD_ELEMENT_IDS.EXIT_BTN}`)?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
-    expect(hud.isOpen).toBe(false);
-    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
+    scene.dispatchEvent(new Event("exit-vr"));
+    expect(dispatched).toEqual([NavigationAction.REQUEST_EXIT]);
+
+    screen.unmount();
   });
 });
 
@@ -915,12 +896,8 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
       hudEl.querySelector(`#${VR_HUD_ELEMENT_IDS.ROOM_CHIP}`)?.getAttribute("value"),
     ).toBe(ROOM_DEFINITIONS[RoomId.LOBBY].title);
 
-    hudEl.dispatchEvent(new CustomEvent(VR_HUD_SWITCH_2D_EVENT, { bubbles: true }));
-    hudEl.dispatchEvent(new CustomEvent(VR_HUD_EXIT_EVENT, { bubbles: true }));
-    expect(dispatched).toEqual([
-      NavigationAction.SWITCH_TO_TOUCH,
-      NavigationAction.REQUEST_EXIT,
-    ]);
+    scene.dispatchEvent(new Event("exit-vr"));
+    expect(dispatched).toEqual([NavigationAction.REQUEST_EXIT]);
 
     screen.setViewMode(ViewMode.TOUCH_2D);
     screen.show();
@@ -1137,18 +1114,12 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
       expect(strip.getAttribute("open-ended")).toBe("true");
     }
 
-    const eyebrow = el.querySelector(`#${VR_HUD_ELEMENT_IDS.EYEBROW_LABEL}`);
-    expect(eyebrow?.getAttribute("value")).toBe(
-      VR_HUD_DICTIONARY.MENU_EYEBROW_LABEL,
-    );
-    expect(eyebrow?.getAttribute("value")).toBe("MENÚ DE SALA");
+    expect(el.querySelector("#cv-vr-hud-eyebrow")).toBeNull();
 
     // 3D beveled lit button boxes (depth: 0.024, shader: lambert) + flat icon & label
     for (const id of [
-      VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
       VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN,
       VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
-      VR_HUD_ELEMENT_IDS.EXIT_BTN,
     ]) {
       const btn = el.querySelector(`#${id}`);
       expect(btn?.getAttribute("geometry")).toContain("primitive: box");
@@ -1285,7 +1256,7 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     instance.remove();
   });
 
-  it("renders Music and Effects volume sliders in VR HUD, adjusts volumes without dismissing, and syncs .clickable and percentages", async () => {
+  it("renders 5 uniform vertical clickable volume bars per channel in VR HUD, adjusts volumes on bar or +/- clicks, and gates .clickable", async () => {
     const { AudioPreferencesStore } = await import(
       "../../src/experience/audio/audio-preferences-store"
     );
@@ -1345,27 +1316,47 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
 
     const musicGroup = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_GROUP}`,
-    );
+    )!;
     const effectsGroup = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_GROUP}`,
-    );
+    )!;
     const musicUpBtn = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_UP_BTN}`,
-    );
+    )!;
     const musicDownBtn = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_DOWN_BTN}`,
-    );
+    )!;
     const effectsDownBtn = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_DOWN_BTN}`,
-    );
+    )!;
     const effectsUpBtn = el.querySelector(
       `#${VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_UP_BTN}`,
-    );
+    )!;
 
-    expect(musicGroup).toBeTruthy();
-    expect(effectsGroup).toBeTruthy();
-    expect(musicUpBtn?.classList.contains("clickable")).toBe(false);
-    expect(effectsDownBtn?.classList.contains("clickable")).toBe(false);
+    const musicBars = Array.from(
+      musicGroup.querySelectorAll('[data-volume-bar]'),
+    );
+    const effectsBars = Array.from(
+      effectsGroup.querySelectorAll('[data-volume-bar]'),
+    );
+    expect(musicBars).toHaveLength(5);
+    expect(effectsBars).toHaveLength(5);
+
+    // Uniform vertical height across all 5 bars arranged horizontally
+    const heights = musicBars.map((bar) => bar.getAttribute("geometry"));
+    expect(new Set(heights).size).toBe(1);
+
+    // Hidden HUD gates .clickable off all 14 volume entities
+    for (const ctrl of [
+      musicUpBtn,
+      musicDownBtn,
+      effectsUpBtn,
+      effectsDownBtn,
+      ...musicBars,
+      ...effectsBars,
+    ]) {
+      expect(ctrl.classList.contains("clickable")).toBe(false);
+    }
 
     const events: Array<{ channel: string; volume: number }> = [];
     el.addEventListener(VR_HUD_VOLUME_CHANGE_EVENT, (evt: Event) => {
@@ -1375,32 +1366,54 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     });
 
     instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
-    expect(musicUpBtn?.classList.contains("clickable")).toBe(true);
-    expect(musicDownBtn?.classList.contains("clickable")).toBe(true);
-    expect(effectsDownBtn?.classList.contains("clickable")).toBe(true);
-    expect(effectsUpBtn?.classList.contains("clickable")).toBe(true);
+    for (const ctrl of [
+      musicUpBtn,
+      musicDownBtn,
+      effectsUpBtn,
+      effectsDownBtn,
+      ...musicBars,
+      ...effectsBars,
+    ]) {
+      expect(ctrl.classList.contains("clickable")).toBe(true);
+    }
 
-    musicUpBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    effectsDownBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Click Music bar 5 -> 1.0 (100%), Effects '-' -> 0.6 (60%), Music bar 1 -> 0.2 (20%), Music '-' -> 0 (0%)
+    musicBars[4].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    effectsDownBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    musicBars[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    musicDownBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    expect(prefs.getPreferences().musicVolume).toBeCloseTo(0.8);
-    expect(prefs.getPreferences().effectsVolume).toBeCloseTo(0.7);
+    expect(prefs.getPreferences().musicVolume).toBeCloseTo(0);
+    expect(prefs.getPreferences().effectsVolume).toBeCloseTo(0.6);
     expect(instance.isOpen).toBe(true);
     expect(events).toEqual([
-      { channel: "music", volume: 0.8 },
-      { channel: "effects", volume: 0.7 },
+      { channel: "music", volume: 1 },
+      { channel: "effects", volume: 0.6 },
+      { channel: "music", volume: 0.2 },
+      { channel: "music", volume: 0 },
     ]);
 
-    const musicLabel = musicGroup?.querySelector("[cv-canvas-text]");
-    expect(musicLabel?.getAttribute("value")).toContain("80%");
+    const musicLabel = musicGroup.querySelector("[cv-canvas-text]");
+    expect(musicLabel?.getAttribute("value")).toContain("0%");
 
-    // External update reflects immediately in VR HUD label
-    prefs.setMusicVolume(0.25);
-    expect(musicLabel?.getAttribute("value")).toContain("25%");
+    // External update reflects immediately in VR HUD label and active bar states
+    prefs.setMusicVolume(0.6);
+    expect(musicLabel?.getAttribute("value")).toContain("60%");
+    expect(
+      musicBars.map((bar) => bar.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "true", "false", "false"]);
 
     instance.dismiss();
-    expect(musicUpBtn?.classList.contains("clickable")).toBe(false);
-    expect(effectsDownBtn?.classList.contains("clickable")).toBe(false);
+    for (const ctrl of [
+      musicUpBtn,
+      musicDownBtn,
+      effectsUpBtn,
+      effectsDownBtn,
+      ...musicBars,
+      ...effectsBars,
+    ]) {
+      expect(ctrl.classList.contains("clickable")).toBe(false);
+    }
     instance.remove();
   });
 });

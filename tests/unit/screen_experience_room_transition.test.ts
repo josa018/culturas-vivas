@@ -19,9 +19,11 @@ import {
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
 import type { RoomMediaProvider } from "../../src/experience/media-types";
+import {
+  VR_HUD_RETURN_LOBBY_EVENT,
+} from "../../src/experience/components/vr-hologram-hud";
 import { StandId } from "../../src/shared/room-catalog";
 import { RoomAssetCache } from "../../src/experience/room-asset-cache";
-import { UI_TEXT } from "../../src/screens/constants";
 
 describe("ExperienceScreenView Room Transition", () => {
   let scene: HTMLElement;
@@ -53,7 +55,7 @@ describe("ExperienceScreenView Room Transition", () => {
     document.body.innerHTML = "";
   });
 
-  it("initializes in LOBBY, swaps rooms via portal and Return to Lobby button, and aborts active inspection", () => {
+  it("initializes in LOBBY, swaps rooms via portal and VR HUD Return to Lobby event, omits 2D topbar Return to Lobby button, and aborts active inspection", () => {
     const setAccentColorSpy = vi.fn();
     (
       cursor as HTMLElement & {
@@ -70,11 +72,7 @@ describe("ExperienceScreenView Room Transition", () => {
     screen.mount(container);
     screen.show();
 
-    const returnLobbyBtn = container.querySelector(
-      '[data-action="return-lobby"]',
-    ) as HTMLElement;
-    expect(returnLobbyBtn).toBeTruthy();
-    expect(returnLobbyBtn.style.display).toBe("none");
+    expect(container.querySelector('[data-action="return-lobby"]')).toBeNull();
 
     expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.LOBBY);
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
@@ -104,17 +102,16 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       ROOM_DEFINITIONS[RoomId.WIXARIKA].title,
     );
-    expect(returnLobbyBtn.style.display).not.toBe("none");
-    expect(returnLobbyBtn.textContent).toContain(
-      UI_TEXT.EXPERIENCE_RETURN_LOBBY,
-    );
+    expect(container.querySelector('[data-action="return-lobby"]')).toBeNull();
     expect(cursor.getAttribute("raycaster")).toBe("objects: .clickable");
 
     const inspectionController = getSharedInspectionController();
     inspectionController.focus("exhibit-wixarika-artifact");
     expect(inspectionController.getState()).toBe(InspectionState.FOCUSING);
 
-    returnLobbyBtn.click();
+    scene.dispatchEvent(
+      new CustomEvent(VR_HUD_RETURN_LOBBY_EVENT, { bubbles: true }),
+    );
 
     expect(inspectionController.getState()).toBe(InspectionState.IDLE);
     expect(inspectionController.getActiveExhibit()).toBeNull();
@@ -122,7 +119,6 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(container.querySelector(".cv-badge")?.textContent).toBe(
       ROOM_DEFINITIONS[RoomId.LOBBY].title,
     );
-    expect(returnLobbyBtn.style.display).toBe("none");
   });
 
   it("returns false when <a-scene> is absent from the document", () => {

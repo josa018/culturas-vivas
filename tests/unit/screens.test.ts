@@ -213,9 +213,8 @@ describe("Screen Views & Interactions", () => {
     ]);
   });
 
-  it("TutorialScreenView sound opt-in activates Master + unlocks AudioEngine & SharedVideoController, or preserves default-off when skipped", async () => {
+  it("TutorialScreenView renders emoji-free sound prompt, permission instructions, and single Activar/Desactivar toggle", async () => {
     const { AudioPreferencesStore } = await import("../../src/experience/audio/audio-preferences-store");
-    const { DEFAULT_AUDIO_PREFERENCES } = await import("../../src/experience/audio/audio-constants");
     const prefs = new AudioPreferencesStore({
       getItem: () => null,
       setItem: () => {},
@@ -234,21 +233,42 @@ describe("Screen Views & Interactions", () => {
 
     const card = el.querySelector(`.${UI_CLASSES.TUTORIAL_SOUND_CARD}`) as HTMLElement;
     expect(card).toBeTruthy();
+    expect(UI_TEXT.TUTORIAL_SOUND_TITLE).toBe(
+      "Activa sonido si cuentas con audífonos",
+    );
     expect(card.textContent).toContain(UI_TEXT.TUTORIAL_SOUND_TITLE);
+    expect(el.textContent).toMatch(/permiso/i);
 
-    // Skipping keeps default-off and does not navigate
-    (el.querySelector('[data-action="skip-sound"]') as HTMLElement).click();
-    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
-    expect(dispatched).toHaveLength(0);
+    const toggleBtn = el.querySelector(
+      '[data-action="toggle-sound"]',
+    ) as HTMLButtonElement;
+    expect(toggleBtn).toBeTruthy();
+    expect(el.querySelector('[data-action="activate-sound"]')).toBeNull();
+    expect(el.querySelector('[data-action="skip-sound"]')).toBeNull();
+    expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_ACTIVATE);
 
-    // Activating sound unlocks both AudioEngine & SharedVideoController, sets Master ON + mediaMuted false, and does not navigate until confirm-insertion
-    (el.querySelector('[data-action="activate-sound"]') as HTMLElement).click();
+    // First click activates Master + unlocks AudioEngine & SharedVideoController and changes label to Desactivar
+    toggleBtn.click();
     expect(prefs.getPreferences().masterEnabled).toBe(true);
     expect(prefs.getPreferences().mediaMuted).toBe(false);
     expect(unlockAudio).toHaveBeenCalledTimes(1);
     expect(unlockVideo).toHaveBeenCalledTimes(1);
-    expect(card.textContent).toContain(UI_TEXT.TUTORIAL_SOUND_ACTIVE);
+    expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_DEACTIVATE);
     expect(dispatched).toHaveLength(0);
+
+    // Second click deactivates Master without calling unlock again and restores Activar
+    toggleBtn.click();
+    expect(prefs.getPreferences().masterEnabled).toBe(false);
+    expect(prefs.getPreferences().mediaMuted).toBe(true);
+    expect(unlockAudio).toHaveBeenCalledTimes(1);
+    expect(unlockVideo).toHaveBeenCalledTimes(1);
+    expect(toggleBtn.textContent).toBe(UI_TEXT.TUTORIAL_SOUND_ACTIVATE);
+
+    // Third click enables again before confirming insertion
+    toggleBtn.click();
+    expect(prefs.getPreferences().masterEnabled).toBe(true);
+    expect(unlockAudio).toHaveBeenCalledTimes(2);
+    expect(unlockVideo).toHaveBeenCalledTimes(2);
 
     (el.querySelector('[data-action="confirm-insertion"]') as HTMLElement).click();
     expect(dispatched.map((d) => d.action)).toEqual([
@@ -381,20 +401,33 @@ describe("Screen Views & Interactions", () => {
     experience.unmount();
   });
 
-  it("ExitModalScreenView dispatches RESUME_TOUR, SWITCH_TO_TOUCH, and CONFIRM_EXIT", () => {
+  it("ExitModalScreenView dispatches RESUME_TOUR, contextual SWITCH_TO_TOUCH / SWITCH_TO_VR, and CONFIRM_EXIT", () => {
     const modal = new ExitModalScreenView(dispatch);
     expect(modal.id).toBe(ScreenId.EXIT_MODAL);
     modal.mount(root);
     const el = modal.getElement()!;
 
+    // Default VR mode shows switch-to-touch
+    expect(
+      el.querySelector('[data-action="switch-to-touch"]')?.textContent,
+    ).toBe(UI_TEXT.EXIT_MODAL_BTN_SWITCH_TOUCH);
+
     (el.querySelector('[data-action="resume-tour"]') as HTMLElement).click();
     (el.querySelector('[data-action="switch-to-touch"]') as HTMLElement).click();
     (el.querySelector('[data-action="confirm-exit"]') as HTMLElement).click();
+
+    // Switching to 2D Touch mode updates the button to switch-to-vr
+    modal.setViewMode("2d");
+    const vrBtn = el.querySelector('[data-action="switch-to-vr"]') as HTMLElement;
+    expect(vrBtn).toBeTruthy();
+    expect(vrBtn.textContent).toBe(UI_TEXT.EXIT_MODAL_BTN_SWITCH_VR);
+    vrBtn.click();
 
     expect(dispatched.map((d) => d.action)).toEqual([
       NavigationAction.RESUME_TOUR,
       NavigationAction.SWITCH_TO_TOUCH,
       NavigationAction.CONFIRM_EXIT,
+      NavigationAction.SWITCH_TO_VR,
     ]);
   });
 

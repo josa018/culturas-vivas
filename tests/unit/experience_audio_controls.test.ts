@@ -35,7 +35,7 @@ function createMockScene(): HTMLElement {
   return scene;
 }
 
-describe("ExperienceScreenView 2D Topbar Sound Popover", () => {
+describe("ExperienceScreenView 2D Topbar & Nierika Settings Modal", () => {
   let root: HTMLElement;
 
   beforeEach(() => {
@@ -50,7 +50,7 @@ describe("ExperienceScreenView 2D Topbar Sound Popover", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens sound popover in 2D Touch mode, toggles Music/Effects/Master, unlocks AudioEngine, and closes on outside click", async () => {
+  it("renders strictly 2 buttons in 2D topbar (Ajustes + Salir), opens centered Settings modal with 5 vertical bars, and syncs AudioPreferencesStore", async () => {
     const prefs = createInMemoryStore();
     const audioEngine = new AudioEngine({
       preferencesStore: prefs,
@@ -77,62 +77,76 @@ describe("ExperienceScreenView 2D Topbar Sound Popover", () => {
     expect(activateSpy).toHaveBeenCalledWith(RoomId.LOBBY);
 
     const el = view.getElement()!;
-    const triggerBtn = el.querySelector(
-      '[data-action="toggle-sound-menu"]',
+    const topbarActions = el.querySelectorAll(".cv-hud-topbar-actions button");
+    expect(topbarActions).toHaveLength(2);
+    expect(el.querySelector('[data-action="return-lobby"]')).toBeNull();
+
+    const settingsBtn = el.querySelector(
+      '[data-action="open-settings"]',
     ) as HTMLButtonElement;
-    const popover = el.querySelector(
-      `[data-sound-popover="true"]`,
+    const exitBtn = el.querySelector(
+      '[data-action="request-exit"]',
+    ) as HTMLButtonElement;
+    const settingsModal = el.querySelector(
+      '[data-settings-modal="true"]',
     ) as HTMLElement;
-    expect(triggerBtn).toBeTruthy();
-    expect(popover).toBeTruthy();
-    expect(popover.hidden).toBe(true);
+    expect(settingsBtn).toBeTruthy();
+    expect(exitBtn).toBeTruthy();
+    expect(settingsBtn.textContent).toContain("Ajustes");
+    expect(settingsModal).toBeTruthy();
+    expect(settingsModal.hidden).toBe(true);
+    expect(settingsModal.querySelector(`.${UI_CLASSES.NIERIKA_DIALOG}`)).toBeTruthy();
 
-    // Open popover
-    triggerBtn.click();
-    expect(popover.hidden).toBe(false);
-    expect(popover.classList.contains(UI_CLASSES.HUD_SOUND_POPOVER_OPEN)).toBe(
-      true,
-    );
+    // Open Settings modal
+    settingsBtn.click();
+    expect(settingsModal.hidden).toBe(false);
 
-    const checkboxes = popover.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(1);
+    const checkboxes = settingsModal.querySelectorAll('input[type="checkbox"]');
+    expect(checkboxes).toHaveLength(0);
 
-    const masterInput = popover.querySelector(
+    const masterBtn = settingsModal.querySelector(
       '[data-sound-toggle="master"]',
-    ) as HTMLInputElement;
-    const musicSlider = popover.querySelector(
-      '[data-sound-slider="music"]',
-    ) as HTMLInputElement;
-    const effectsSlider = popover.querySelector(
-      '[data-sound-slider="effects"]',
-    ) as HTMLInputElement;
-    const musicValue = popover.querySelector(
+    ) as HTMLButtonElement;
+    const musicChannel = settingsModal.querySelector(
+      '[data-volume-channel="music"]',
+    ) as HTMLElement;
+    const effectsChannel = settingsModal.querySelector(
+      '[data-volume-channel="effects"]',
+    ) as HTMLElement;
+    const musicBars = Array.from(
+      musicChannel.querySelectorAll('[data-volume-bar]'),
+    ) as HTMLButtonElement[];
+    const effectsBars = Array.from(
+      effectsChannel.querySelectorAll('[data-volume-bar]'),
+    ) as HTMLButtonElement[];
+    const musicValue = settingsModal.querySelector(
       '[data-sound-value="music"]',
     ) as HTMLElement;
-    const effectsValue = popover.querySelector(
+    const effectsValue = settingsModal.querySelector(
       '[data-sound-value="effects"]',
     ) as HTMLElement;
 
-    expect(masterInput).toBeTruthy();
-    expect(musicSlider?.type).toBe("range");
-    expect(effectsSlider?.type).toBe("range");
-    expect(popover.textContent).toContain(UI_TEXT.EXPERIENCE_SOUND_MASTER);
-    expect(popover.textContent).toContain(UI_TEXT.EXPERIENCE_SOUND_MUSIC);
-    expect(popover.textContent).toContain(UI_TEXT.EXPERIENCE_SOUND_EFFECTS);
+    expect(masterBtn).toBeTruthy();
+    expect(masterBtn.tagName).toBe("BUTTON");
+    expect(musicBars).toHaveLength(5);
+    expect(effectsBars).toHaveLength(5);
+    expect(masterBtn.textContent).toBe("Sonido: Desactivado");
+    expect(masterBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(settingsModal.textContent).toContain(UI_TEXT.EXPERIENCE_SOUND_MUSIC);
+    expect(settingsModal.textContent).toContain(UI_TEXT.EXPERIENCE_SOUND_EFFECTS);
 
-    // Defaults: Master OFF, Music & Effects sliders at default volume
-    expect(masterInput.checked).toBe(false);
-    expect(Number(musicSlider.value)).toBeCloseTo(
-      AUDIO_TOKENS.DEFAULT_MUSIC_VOLUME,
-    );
-    expect(Number(effectsSlider.value)).toBeCloseTo(
-      AUDIO_TOKENS.DEFAULT_EFFECTS_VOLUME,
-    );
+    // Defaults: Master OFF, 4 active bars for 0.7 (70%) and 0.8 (80%)
+    expect(
+      musicBars.map((b) => b.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "true", "true", "false"]);
+    expect(
+      effectsBars.map((b) => b.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "true", "true", "false"]);
     expect(musicValue.textContent).toBe("70%");
     expect(effectsValue.textContent).toBe("80%");
 
     // Toggle Master ON -> unlocks AudioEngine & unmutes media
-    masterInput.click();
+    masterBtn.click();
     expect(prefs.getPreferences()).toEqual({
       masterEnabled: true,
       musicVolume: AUDIO_TOKENS.DEFAULT_MUSIC_VOLUME,
@@ -140,47 +154,52 @@ describe("ExperienceScreenView 2D Topbar Sound Popover", () => {
       mediaMuted: false,
     });
     expect(unlockSpy).toHaveBeenCalledTimes(1);
-    expect(masterInput.checked).toBe(true);
+    expect(masterBtn.textContent).toBe("Sonido: Activado");
+    expect(masterBtn.getAttribute("aria-pressed")).toBe("true");
 
-    // Drag Music slider up to 100% -> updates musicVolume & percentage label without touching effectsVolume
-    musicSlider.value = "1";
-    musicSlider.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(prefs.getPreferences()).toEqual({
-      masterEnabled: true,
-      musicVolume: 1,
-      effectsVolume: AUDIO_TOKENS.DEFAULT_EFFECTS_VOLUME,
-      mediaMuted: false,
-    });
+    // Click Music bar 5 -> 100% (5 active bars); click Effects '-' -> 60% (3 active bars)
+    musicBars[4].click();
+    expect(prefs.getPreferences().musicVolume).toBe(1);
     expect(musicValue.textContent).toBe("100%");
+    expect(
+      musicBars.map((b) => b.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "true", "true", "true"]);
 
-    // External update (e.g. store mutation) reflects immediately in slider & percentage
-    prefs.setEffectsVolume(0.35);
-    expect(Number(effectsSlider.value)).toBeCloseTo(0.35);
-    expect(effectsValue.textContent).toBe("35%");
+    const effectsDownBtn = effectsChannel.querySelector(
+      '[data-volume-step="down"]',
+    ) as HTMLButtonElement;
+    effectsDownBtn.click();
+    expect(prefs.getPreferences().effectsVolume).toBeCloseTo(0.6);
+    expect(effectsValue.textContent).toBe("60%");
+    expect(
+      effectsBars.map((b) => b.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "true", "false", "false"]);
 
-    // Toggling Master OFF preserves slider positions while muting audio
-    masterInput.click();
-    expect(prefs.getPreferences()).toEqual({
-      masterEnabled: false,
-      musicVolume: 1,
-      effectsVolume: 0.35,
-      mediaMuted: true,
-    });
-    expect(Number(musicSlider.value)).toBeCloseTo(1);
-    expect(Number(effectsSlider.value)).toBeCloseTo(0.35);
+    // External update reflects immediately
+    prefs.setEffectsVolume(0.4);
+    expect(effectsValue.textContent).toBe("40%");
+    expect(
+      effectsBars.map((b) => b.getAttribute("data-bar-active")),
+    ).toEqual(["true", "true", "false", "false", "false"]);
 
-    // Outside click dismisses popover
-    document.body.click();
-    expect(popover.hidden).toBe(true);
-    expect(popover.classList.contains(UI_CLASSES.HUD_SOUND_POPOVER_OPEN)).toBe(
-      false,
-    );
+    // Close button dismisses modal; backdrop click also dismisses modal
+    const closeBtn = settingsModal.querySelector(
+      '[data-action="close-settings"]',
+    ) as HTMLButtonElement;
+    expect(closeBtn).toBeTruthy();
+    closeBtn.click();
+    expect(settingsModal.hidden).toBe(true);
 
-    // Switching to VR closes popover & hides topbar; hide() deactivates AudioEngine
-    triggerBtn.click();
-    expect(popover.hidden).toBe(false);
+    settingsBtn.click();
+    expect(settingsModal.hidden).toBe(false);
+    settingsModal.click();
+    expect(settingsModal.hidden).toBe(true);
+
+    // Switching to VR closes modal & hides topbar; hide() deactivates AudioEngine
+    settingsBtn.click();
+    expect(settingsModal.hidden).toBe(false);
     view.setViewMode("vr");
-    expect(popover.hidden).toBe(true);
+    expect(settingsModal.hidden).toBe(true);
     expect(
       el.querySelector(".cv-hud-topbar")?.classList.contains("cv-hud-topbar--hidden"),
     ).toBe(true);
@@ -188,5 +207,39 @@ describe("ExperienceScreenView 2D Topbar Sound Popover", () => {
     view.hide();
     expect(deactivateSpy).toHaveBeenCalledTimes(1);
     view.unmount();
+  });
+});
+
+describe("Volume Bar Pure Seams", () => {
+  it("maps volumes to 5 uniform bars and quantizes 0.2 steps within [0, 1]", async () => {
+    const { computeVolumeBarState, quantizeVolumeStep } = await import(
+      "../../src/experience/audio/volume-bars"
+    );
+
+    const musicDefault = computeVolumeBarState(0.7, 5);
+    expect(musicDefault.activeCount).toBe(4);
+    expect(musicDefault.percent).toBe(70);
+    expect(musicDefault.bars).toHaveLength(5);
+    expect(musicDefault.bars.map((b: { active: boolean }) => b.active)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(
+      musicDefault.bars.map((b: { targetVolume: number }) => b.targetVolume),
+    ).toEqual([0.2, 0.4, 0.6, 0.8, 1]);
+
+    expect(computeVolumeBarState(0, 5).activeCount).toBe(0);
+    expect(computeVolumeBarState(1, 5).activeCount).toBe(5);
+
+    expect(quantizeVolumeStep(0.8, -0.2, 0.2)).toBeCloseTo(0.6);
+    expect(quantizeVolumeStep(0.2, -0.2, 0.2)).toBeCloseTo(0);
+    expect(quantizeVolumeStep(0, -0.2, 0.2)).toBeCloseTo(0);
+    expect(quantizeVolumeStep(0.8, 0.2, 0.2)).toBeCloseTo(1);
+    expect(quantizeVolumeStep(1, 0.2, 0.2)).toBeCloseTo(1);
+    expect(quantizeVolumeStep(0.7, 0.2, 0.2)).toBeCloseTo(1);
+    expect(quantizeVolumeStep(0.7, -0.2, 0.2)).toBeCloseTo(0.6);
   });
 });

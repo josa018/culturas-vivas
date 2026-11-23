@@ -63,7 +63,8 @@ export class AppRouter {
       if (
         action === NavigationAction.SELECT_VR ||
         action === NavigationAction.SELECT_2D ||
-        action === NavigationAction.SWITCH_TO_TOUCH
+        action === NavigationAction.SWITCH_TO_TOUCH ||
+        action === NavigationAction.SWITCH_TO_VR
       ) {
         const mode = this.stateMachine.getSession().viewMode;
         if (mode) {
@@ -112,6 +113,15 @@ export class AppRouter {
             typeof experienceScreen.setViewMode === "function"
           ) {
             experienceScreen.setViewMode(session.viewMode);
+          }
+          const exitModalScreen = this.screens.get(ScreenId.EXIT_MODAL) as
+            | ExitModalScreenView
+            | undefined;
+          if (
+            exitModalScreen &&
+            typeof exitModalScreen.setViewMode === "function"
+          ) {
+            exitModalScreen.setViewMode(session.viewMode);
           }
         }
         this.updateScreenVisibility(activeScreenId);

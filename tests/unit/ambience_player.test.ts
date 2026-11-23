@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   AMBIENT_MANIFEST,
   AUDIO_TOKENS,
@@ -7,9 +7,10 @@ import { AudioPreferencesStore } from "../../src/experience/audio/audio-preferen
 import { AudioEngine } from "../../src/experience/audio/audio-engine";
 import {
   AmbiencePlayer,
-  type AmbientAudioElementLike,
+  computeGaplessLoopBounds,
 } from "../../src/experience/audio/ambience-player";
 import type {
+  AudioBufferSourceNodeLike,
   AudioContextLike,
   AudioNodeLike,
   AudioParamLike,
@@ -28,7 +29,13 @@ function createParam(initial = 0): AudioParamLike & {
   return param;
 }
 
-function createMockCtx() {
+interface MockBufferSource extends AudioBufferSourceNodeLike {
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+}
+
+function createMockCtx(bufferDuration = 8.0) {
   const makeNode = (label: string) => ({
     label,
     connect: vi.fn((d: AudioNodeLike) => d),
@@ -37,6 +44,7 @@ function createMockCtx() {
   const gains: Array<
     ReturnType<typeof makeNode> & { gain: ReturnType<typeof createParam> }
   > = [];
+  const sources: MockBufferSource[] = [];
 
   const ctx: AudioContextLike = {
     state: "running",
@@ -71,57 +79,72 @@ function createMockCtx() {
       rolloffFactor: 0,
     })),
     createMediaElementSource: vi.fn(() => makeNode("mediaSource")),
-    createBufferSource: vi.fn(() => ({
-      ...makeNode("buf"),
-      buffer: null,
-      start: vi.fn(),
-    })),
-    decodeAudioData: vi.fn(async () => ({}) as AudioBuffer),
+    createBufferSource: vi.fn(() => {
+      const src: MockBufferSource = {
+        ...makeNode("buf"),
+        buffer: null,
+        loop: false,
+        loopStart: 0,
+        loopEnd: 0,
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+      sources.push(src);
+      return src;
+    }),
+    decodeAudioData: vi.fn(
+      async () => ({ duration: bufferDuration }) as unknown as AudioBuffer,
+    ),
   };
-  return { ctx, gains };
+  return { ctx, gains, sources };
 }
 
-function createMockAudioElements() {
-  const elements: Array<
-    AmbientAudioElementLike & {
-      play: ReturnType<typeof vi.fn>;
-      pause: ReturnType<typeof vi.fn>;
-    }
-  > = [];
-  const createAudioElement = () => {
-    const el: AmbientAudioElementLike & {
-      play: ReturnType<typeof vi.fn>;
-      pause: ReturnType<typeof vi.fn>;
-    } = {
-      src: "",
-      loop: false,
-      crossOrigin: null,
-      preload: "auto",
-      volume: 1,
-      paused: true,
-      play: vi.fn(async () => {
-        el.paused = false;
-      }),
-      pause: vi.fn(() => {
-        el.paused = true;
-      }),
-    };
-    elements.push(el);
-    return el;
-  };
-  return { elements, createAudioElement };
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve();
+  }
 }
 
-describe("AmbiencePlayer Per-Biome Soundscapes & Crossfade", () => {
-  it("crossfades per-biome ambient loops through sfxGain and pauses when Effects or Master toggle OFF", async () => {
+describe("computeGaplessLoopBounds", () => {
+  it("trims leading and trailing MP3 padding for standard ambient buffers and clamps short durations", () => {
+    expect(computeGaplessLoopBounds(8.0)).toEqual({
+      loopStartSec: 0.03,
+      loopEndSec: 7.97,
+    });
+    expect(computeGaplessLoopBounds(0.05)).toEqual({
+      loopStartSec: 0,
+      loopEndSec: 0.05,
+    });
+    expect(computeGaplessLoopBounds(0)).toEqual({
+      loopStartSec: 0,
+      loopEndSec: 0,
+    });
+  });
+});
+
+describe("AmbiencePlayer Per-Biome Soundscapes & Gapless Crossfade", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("decodes each ambient MP3 once, plays gapless looping AudioBufferSourceNodes, and defers stop until crossfade completes", async () => {
     const map = new Map<string, string>();
     const prefs = new AudioPreferencesStore({
       getItem: (k) => map.get(k) ?? null,
       setItem: (k, v) => map.set(k, v),
       removeItem: (k) => map.delete(k),
     });
-    const mockCtx = createMockCtx();
-    const audioEls = createMockAudioElements();
+    const mockCtx = createMockCtx(8.0);
+    const fetchSpy = vi.fn(async (url: string | URL | Request) => ({
+      ok: true,
+      url: String(url),
+      arrayBuffer: async () => new ArrayBuffer(16),
+    })) as unknown as typeof fetch;
 
     const engine = new AudioEngine({
       preferencesStore: prefs,
@@ -129,59 +152,95 @@ describe("AmbiencePlayer Per-Biome Soundscapes & Crossfade", () => {
     });
     const ambience = new AmbiencePlayer({
       audioEngine: engine,
-      createAudioElement: audioEls.createAudioElement,
+      fetchImpl: fetchSpy,
     });
     engine.setAmbiencePlayer(ambience);
 
     await engine.unlockFromUserGesture();
     engine.activateExperience(RoomId.LOBBY);
+    await flushMicrotasks();
 
-    // Master is OFF -> stays silent
-    expect(audioEls.elements).toHaveLength(0);
+    // Master is OFF -> stays silent without fetching or starting sources
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockCtx.sources).toHaveLength(0);
 
-    // Master ON + Effects ON -> starts LOBBY ambience
+    // Master ON + Effects ON -> fetches/decodes LOBBY once and starts gapless loop
     prefs.activateSound();
-    expect(audioEls.elements).toHaveLength(1);
-    const lobbyEl = audioEls.elements[0];
-    expect(lobbyEl.src).toBe(AMBIENT_MANIFEST[RoomEnvironmentId.LOBBY]);
-    expect(lobbyEl.loop).toBe(true);
-    expect(lobbyEl.crossOrigin).toBe("anonymous");
-    expect(lobbyEl.play).toHaveBeenCalledTimes(1);
+    await flushMicrotasks();
 
-    // Crossfade to WIXARIKA biome
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      AMBIENT_MANIFEST[RoomEnvironmentId.LOBBY],
+    );
+    expect(mockCtx.sources).toHaveLength(1);
+    const lobbySource = mockCtx.sources[0];
+    expect(lobbySource.loop).toBe(true);
+    expect(lobbySource.loopStart).toBeCloseTo(
+      AUDIO_TOKENS.AMBIENT_LOOP_TRIM_START_S,
+      4,
+    );
+    expect(lobbySource.loopEnd).toBeCloseTo(
+      8.0 - AUDIO_TOKENS.AMBIENT_LOOP_TRIM_END_S,
+      4,
+    );
+    expect(lobbySource.start).toHaveBeenCalledTimes(1);
+
+    // Crossfade to WIXARIKA biome -> outgoing LOBBY ramps to 0 but is NOT stopped immediately
     ambience.transitionToEnvironment(RoomEnvironmentId.WIXARIKA);
-    expect(audioEls.elements).toHaveLength(2);
-    const wixarikaEl = audioEls.elements[1];
-    expect(wixarikaEl.src).toBe(AMBIENT_MANIFEST[RoomEnvironmentId.WIXARIKA]);
-    expect(wixarikaEl.play).toHaveBeenCalledTimes(1);
+    await flushMicrotasks();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      AMBIENT_MANIFEST[RoomEnvironmentId.WIXARIKA],
+    );
+    expect(mockCtx.sources).toHaveLength(2);
+    const wixarikaSource = mockCtx.sources[1];
+    expect(wixarikaSource.loop).toBe(true);
+    expect(wixarikaSource.start).toHaveBeenCalledTimes(1);
+    expect(lobbySource.stop).not.toHaveBeenCalled();
 
     const expectedTau =
       AUDIO_TOKENS.AMBIENT_CROSSFADE_MS /
       AUDIO_TOKENS.MS_PER_SECOND /
       AUDIO_TOKENS.DUCK_TAU_SETTLE_DIVISOR;
-    // Outgoing LOBBY slot gain ramps to 0; incoming WIXARIKA slot gain ramps to AMBIENCE_GAIN
-    const lobbySlotGain = mockCtx.gains[4];
-    const wixarikaSlotGain = mockCtx.gains[5];
-    expect(lobbySlotGain.gain.setTargetAtTime).toHaveBeenCalledWith(
+    const lobbyGain = mockCtx.gains[4];
+    const wixarikaGain = mockCtx.gains[5];
+    expect(lobbyGain.gain.setTargetAtTime).toHaveBeenCalledWith(
       0,
       mockCtx.ctx.currentTime,
       expectedTau,
     );
-    expect(wixarikaSlotGain.gain.setTargetAtTime).toHaveBeenCalledWith(
+    expect(wixarikaGain.gain.setTargetAtTime).toHaveBeenCalledWith(
       AUDIO_TOKENS.AMBIENCE_GAIN,
       mockCtx.ctx.currentTime,
       expectedTau,
     );
 
-    // Effects slider 0 -> pauses active loop; slider > 0 -> resumes WIXARIKA loop
+    // Outgoing source stops only after crossfade + buffer elapses
+    vi.advanceTimersByTime(
+      AUDIO_TOKENS.AMBIENT_CROSSFADE_MS + AUDIO_TOKENS.AMBIENT_STOP_BUFFER_MS,
+    );
+    expect(lobbySource.stop).toHaveBeenCalledTimes(1);
+
+    // Effects slider 0 -> stops active loop; slider > 0 -> restarts WIXARIKA from cached buffer (no extra fetch)
     prefs.setEffectsVolume(0);
-    expect(wixarikaEl.pause).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(
+      AUDIO_TOKENS.AMBIENT_CROSSFADE_MS + AUDIO_TOKENS.AMBIENT_STOP_BUFFER_MS,
+    );
+    expect(wixarikaSource.stop).toHaveBeenCalledTimes(1);
 
     prefs.setEffectsVolume(0.9);
-    expect(wixarikaEl.play).toHaveBeenCalledTimes(2);
+    await flushMicrotasks();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(mockCtx.sources).toHaveLength(3);
+    const restartedWixarika = mockCtx.sources[2];
+    expect(restartedWixarika.start).toHaveBeenCalledTimes(1);
 
     // Leaving experience stops active loops
     engine.deactivateExperience();
-    expect(wixarikaEl.pause).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(
+      AUDIO_TOKENS.AMBIENT_CROSSFADE_MS + AUDIO_TOKENS.AMBIENT_STOP_BUFFER_MS,
+    );
+    expect(restartedWixarika.stop).toHaveBeenCalledTimes(1);
   });
 });
