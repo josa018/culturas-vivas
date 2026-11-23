@@ -19,6 +19,10 @@ import {
 import { getSharedInspectionController } from "./inspectable";
 import { SfxId } from "../audio/audio-constants";
 import { getSharedSfxPlayer } from "../audio/sfx-player";
+import { StereoTextureMapper } from "../stereo-mapper";
+
+const RAYCASTER_COMPONENT_NAME = "raycaster";
+const COMPONENT_CHANGED_EVENT = "componentchanged";
 
 export interface GazeReticleDependencies {
   readonly nowMs?: () => number;
@@ -36,6 +40,9 @@ export interface GazeReticleComponentData {
 interface RaycasterComponentLike {
   intersections?: Array<{ distance?: number }>;
   raycaster?: {
+    layers?: {
+      enable?: (channel: number) => void;
+    };
     intersectObjects?: (
       objects: unknown[],
       recursive?: boolean,
@@ -75,6 +82,15 @@ export interface GazeReticleComponentInstance {
   setAccentColor: (color: string) => void;
   resetFuse: () => void;
   remove: () => void;
+}
+
+/**
+ * Ensures the VR gaze raycaster tests left-eye stereo meshes placed on WebXR layer 1.
+ */
+function syncRaycasterStereoLayer(el: GazeReticleEntity): void {
+  el.components?.raycaster?.raycaster?.layers?.enable?.(
+    StereoTextureMapper.THREE_LAYER_LEFT,
+  );
 }
 
 function applyRenderOrderToEntity(el: GazeReticleEntity): void {
@@ -272,6 +288,7 @@ export function createGazeReticleComponentDefinition(
         applyRenderOrderToEntity(idleDot);
         applyRenderOrderToEntity(progressRing);
         applyRenderOrderToEntity(confirmRing);
+        syncRaycasterStereoLayer(this.el);
       };
       enforceOrder();
 
@@ -288,6 +305,12 @@ export function createGazeReticleComponentDefinition(
 
       bind(this.el, "object3dset", enforceOrder);
       bind(container, "object3dset", enforceOrder);
+      bind(this.el, COMPONENT_CHANGED_EVENT, (evt: Event) => {
+        const changedName = (evt as CustomEvent<{ name?: string }>).detail?.name;
+        if (changedName === RAYCASTER_COMPONENT_NAME) {
+          syncRaycasterStereoLayer(this.el);
+        }
+      });
 
       bind(this.el, "fusing", () => {
         this.reticleState = startGazeReticleFuse(resolveNowMs());
@@ -375,6 +398,7 @@ export function createGazeReticleComponentDefinition(
     },
 
     tick: function (this: GazeReticleComponentInstance) {
+      syncRaycasterStereoLayer(this.el);
       const now = resolveNowMs();
       const activeViewMode = deps.getViewMode ? deps.getViewMode() : this.viewMode;
       const isInspecting =

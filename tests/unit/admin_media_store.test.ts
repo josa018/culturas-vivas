@@ -110,7 +110,16 @@ describe("AdminMediaStore", () => {
       }),
       { Authorization: "Bearer jwt-token" },
     );
-    expect(fetcher.putBinary).toHaveBeenCalledTimes(2);
+    expect(fetcher.putBinary).toHaveBeenCalledWith(
+      "https://r2.example.com/v1-poster.webp",
+      expect.any(Blob),
+      expect.any(Object),
+    );
+    expect(processor.extractVideoPoster).toHaveBeenCalledWith(
+      videoFile,
+      undefined,
+      { cropHalfSbsLeft: true },
+    );
     expect(fetcher.post).toHaveBeenNthCalledWith(
       2,
       ADMIN_MEDIA_ENDPOINTS.MEDIA,
@@ -377,6 +386,46 @@ describe("AdminMediaStore", () => {
     store.setSelection(RoomId.WIXARIKA, StandId.COSMOVISION);
     expect(store.getSelectedItems()[0]?.posterUrl).toContain(
       "canto-new-poster.webp",
+    );
+  });
+
+  it("forwards cropHalfSbsLeft option in previewVideoPoster()", async () => {
+    const store = new AdminMediaStore({
+      fetcher,
+      getToken: () => "jwt-token",
+      onUnauthorized,
+      processor,
+    });
+    const videoFile = new File(["mp4"], "sbs.mp4", { type: "video/mp4" });
+
+    await (
+      store as unknown as {
+        previewVideoPoster: (
+          file: Blob,
+          seek?: number,
+          isHalfSbs?: boolean,
+        ) => Promise<Blob | null>;
+      }
+    ).previewVideoPoster(videoFile, 2.0, false);
+    expect(processor.extractVideoPoster).toHaveBeenLastCalledWith(
+      videoFile,
+      2.0,
+      { cropHalfSbsLeft: false },
+    );
+
+    await (
+      store as unknown as {
+        previewVideoPoster: (
+          file: Blob,
+          seek?: number,
+          isHalfSbs?: boolean,
+        ) => Promise<Blob | null>;
+      }
+    ).previewVideoPoster(videoFile, 2.0, true);
+    expect(processor.extractVideoPoster).toHaveBeenLastCalledWith(
+      videoFile,
+      2.0,
+      { cropHalfSbsLeft: true },
     );
   });
 });

@@ -143,4 +143,66 @@ describe("AdminMediaProcessor", () => {
       /no es un video MP4 válido/i,
     );
   });
+
+  it("crops only the left eye (0..videoWidth/2) when extracting Half-SBS video posters", async () => {
+    const drawImageSpy = vi.fn();
+    const posterBlob = new Blob(["sbs-poster-webp"], { type: "image/webp" });
+
+    const processor = new AdminMediaProcessor({
+      extractVideoFrame: async () => ({
+        source: {} as CanvasImageSource,
+        videoWidth: 1920,
+        videoHeight: 1080,
+        cleanup: vi.fn(),
+      }),
+      createCanvas: (width, height) => ({
+        width,
+        height,
+        drawImage: drawImageSpy,
+        toBlob: async () => posterBlob,
+      }),
+    });
+
+    const mp4File = new File(["mp4-data"], "danza-sbs.mp4", { type: "video/mp4" });
+    await (
+      processor as unknown as {
+        extractVideoPoster: (
+          file: Blob,
+          seek?: number,
+          opts?: { cropHalfSbsLeft?: boolean },
+        ) => Promise<unknown>;
+      }
+    ).extractVideoPoster(mp4File, 1.5, { cropHalfSbsLeft: true });
+
+    expect(drawImageSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      0,
+      960,
+      1080,
+      0,
+      0,
+      1024,
+      576,
+    );
+
+    drawImageSpy.mockClear();
+    await (
+      processor as unknown as {
+        extractVideoPoster: (
+          file: Blob,
+          seek?: number,
+          opts?: { cropHalfSbsLeft?: boolean },
+        ) => Promise<unknown>;
+      }
+    ).extractVideoPoster(mp4File, 1.5, { cropHalfSbsLeft: false });
+
+    expect(drawImageSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      0,
+      1024,
+      576,
+    );
+  });
 });
