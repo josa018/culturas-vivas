@@ -27,6 +27,7 @@ import {
   ensureTouchRaycaster,
   type TouchRaycasterComponentInstance,
 } from "../experience/components/touch-raycaster";
+import { ensureSpatialAudioListener } from "../experience/components/spatial-audio-listener";
 import { getSharedInspectionController } from "../experience/components/inspectable";
 import {
   ensureVrHologramHud,
@@ -44,6 +45,18 @@ import {
 import { RoomAssetCache } from "../experience/room-asset-cache";
 import { getSharedMediaCatalogClient } from "../experience/media-catalog-client";
 import type { RoomMediaProvider } from "../experience/media-types";
+import {
+  AudioPreferencesStore,
+  getSharedAudioPreferencesStore,
+} from "../experience/audio/audio-preferences-store";
+import {
+  AudioEngine,
+  getSharedAudioEngine,
+} from "../experience/audio/audio-engine";
+import { SfxId } from "../experience/audio/audio-constants";
+import { getSharedSfxPlayer } from "../experience/audio/sfx-player";
+import { getSharedAmbiencePlayer } from "../experience/audio/ambience-player";
+import { STAND_DICTIONARY } from "../experience/constants";
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -86,6 +99,16 @@ export class ExperienceScreenView implements ScreenView {
   private readonly transitionStateMachine: RoomTransitionStateMachine;
   private readonly roomAssetCache: RoomAssetCache;
   private readonly mediaProvider: RoomMediaProvider;
+  private readonly audioPreferencesStore: AudioPreferencesStore;
+  private readonly audioEngine: AudioEngine;
+  private soundWrapperEl: HTMLElement | null = null;
+  private soundMenuBtnEl: HTMLButtonElement | null = null;
+  private soundPopoverEl: HTMLElement | null = null;
+  private soundMusicInputEl: HTMLInputElement | null = null;
+  private soundEffectsInputEl: HTMLInputElement | null = null;
+  private soundMasterInputEl: HTMLInputElement | null = null;
+  private unsubscribeAudioPrefs: (() => void) | null = null;
+  private outsideSoundClickHandler: ((evt: Event) => void) | null = null;
 
   constructor(
     dispatch: NavigationDispatcher,
@@ -93,6 +116,8 @@ export class ExperienceScreenView implements ScreenView {
     transitionStateMachine?: RoomTransitionStateMachine,
     roomAssetCache?: RoomAssetCache,
     mediaProvider?: RoomMediaProvider,
+    audioPreferencesStore?: AudioPreferencesStore,
+    audioEngine?: AudioEngine,
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
@@ -100,6 +125,9 @@ export class ExperienceScreenView implements ScreenView {
       transitionStateMachine ?? new RoomTransitionStateMachine();
     this.roomAssetCache = roomAssetCache ?? new RoomAssetCache();
     this.mediaProvider = mediaProvider ?? getSharedMediaCatalogClient();
+    this.audioPreferencesStore =
+      audioPreferencesStore ?? getSharedAudioPreferencesStore();
+    this.audioEngine = audioEngine ?? getSharedAudioEngine();
   }
 
   public getTransitionStateMachine(): RoomTransitionStateMachine {
@@ -188,6 +216,8 @@ export class ExperienceScreenView implements ScreenView {
     const actionsGroup = document.createElement("div");
     actionsGroup.className = "cv-hud-topbar-actions";
 
+    const soundControl = this.buildSoundControl();
+
     const returnLobbyButton = document.createElement("button");
     returnLobbyButton.type = "button";
     returnLobbyButton.className = `${UI_CLASSES.BUTTON_OUTLINE} cv-hud-lobby-btn`;
@@ -217,7 +247,7 @@ export class ExperienceScreenView implements ScreenView {
       this.dispatch(NavigationAction.REQUEST_EXIT);
     });
 
-    actionsGroup.append(returnLobbyButton, exitButton);
+    actionsGroup.append(soundControl, returnLobbyButton, exitButton);
     topBar.append(badge, actionsGroup);
     hudOverlay.appendChild(topBar);
 
@@ -230,6 +260,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public unmount(): void {
     this.teardownSceneListeners();
+    this.teardownSoundControl();
     this.hasVisitedLobby = false;
     this.topBarEl = null;
     this.roomBadgeEl = null;
@@ -246,21 +277,29 @@ export class ExperienceScreenView implements ScreenView {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
-    this.updateRoomBadge(
-      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID,
-    );
+    const activeRoomId =
+      ExhibitRoomBuilder.getActiveRoomId() ?? DEFAULT_ROOM_ID;
+    this.updateRoomBadge(activeRoomId);
     this.synchronizeDomHud();
     this.setupSceneListeners();
     this.toggleSceneLifecycle(true);
+    if (this.audioEngine === getSharedAudioEngine()) {
+      getSharedAmbiencePlayer();
+    }
+    this.audioEngine.activateExperience(activeRoomId);
+    void getSharedSfxPlayer().preloadAll();
     if (typeof document !== "undefined") {
       const scene = document.querySelector<AFrameSceneElement>("a-scene");
       if (scene) {
+        ensureSpatialAudioListener(scene);
         this.synchronizeSpatialHud(scene);
       }
     }
   }
 
   public retainBackground(): void {
+    this.closeSoundPopover();
+    this.audioEngine.deactivateExperience();
     if (this.container) {
       this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
@@ -288,6 +327,8 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   public hide(): void {
+    this.closeSoundPopover();
+    this.audioEngine.deactivateExperience();
     if (this.container) {
       this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
@@ -319,6 +360,7 @@ export class ExperienceScreenView implements ScreenView {
     if (!started) {
       return false;
     }
+    getSharedSfxPlayer().play(SfxId.PORTAL_WHOOSH);
 
     // 1. Abort any active exhibit inspection and dismiss any open 3D HUD
     getSharedInspectionController().abortActiveInspection();
@@ -365,9 +407,11 @@ export class ExperienceScreenView implements ScreenView {
     const curtain = aframeCurtain?.components?.["cv-camera-curtain"];
 
     if (curtain && typeof curtain.fadeOut === "function") {
+      this.audioEngine.notifyCurtainFadeOut();
       const finishSwap = () => {
         this.updateRoomBadge(targetRoomId);
         this.transitionStateMachine.notifyRoomReady();
+        this.audioEngine.notifyCurtainFadeIn(targetRoomId);
 
         // 5. Fade curtain back in to reveal target room
         curtain.fadeIn(() => {
@@ -414,6 +458,7 @@ export class ExperienceScreenView implements ScreenView {
       });
     } else {
       // Direct synchronous execution fallback (headless or no animation support)
+      this.audioEngine.notifyCurtainFadeOut();
       this.transitionStateMachine.notifyFadeOutComplete();
       ExhibitRoomBuilder.mountRoom(
         scene,
@@ -424,6 +469,7 @@ export class ExperienceScreenView implements ScreenView {
       this.applyContextualCameraOrientation(scene, targetRoomId, sourceRoomId);
       this.updateRoomBadge(targetRoomId);
       this.transitionStateMachine.notifyRoomReady();
+      this.audioEngine.notifyCurtainFadeIn(targetRoomId);
       this.transitionStateMachine.notifyFadeInComplete();
       tapComp?.setTransitionIdle(true);
       this.synchronizePointerMode(scene);
@@ -741,12 +787,157 @@ export class ExperienceScreenView implements ScreenView {
       return;
     }
     if (this.viewMode === "vr") {
+      this.closeSoundPopover();
       this.topBarEl.classList.add("cv-hud-topbar--hidden");
       this.topBarEl.setAttribute("aria-hidden", "true");
     } else {
       this.topBarEl.classList.remove("cv-hud-topbar--hidden");
       this.topBarEl.removeAttribute("aria-hidden");
     }
+  }
+
+  private buildSoundControl(): HTMLElement {
+    const wrapper = document.createElement("div");
+    wrapper.className = UI_CLASSES.HUD_SOUND_WRAPPER;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `${UI_CLASSES.BUTTON_OUTLINE} ${UI_CLASSES.HUD_SOUND_BTN}`;
+    btn.setAttribute("data-action", "toggle-sound-menu");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-label", UI_TEXT.EXPERIENCE_SOUND_BTN_ARIA);
+
+    const popover = document.createElement("div");
+    popover.className = UI_CLASSES.HUD_SOUND_POPOVER;
+    popover.setAttribute("data-sound-popover", "true");
+    popover.hidden = true;
+
+    const makeToggleRow = (
+      key: "music" | "effects" | "master",
+      labelText: string,
+      onChange: () => void,
+    ): { row: HTMLElement; input: HTMLInputElement } => {
+      const row = document.createElement("label");
+      row.className = UI_CLASSES.HUD_SOUND_ROW;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.setAttribute("data-sound-toggle", key);
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        void this.audioEngine.unlockFromUserGesture();
+        onChange();
+        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+      });
+      const text = document.createElement("span");
+      text.textContent = labelText;
+      row.append(input, text);
+      return { row, input };
+    };
+
+    const musicRow = makeToggleRow(
+      "music",
+      UI_TEXT.EXPERIENCE_SOUND_MUSIC,
+      () => this.audioPreferencesStore.toggleMusic(),
+    );
+    const effectsRow = makeToggleRow(
+      "effects",
+      UI_TEXT.EXPERIENCE_SOUND_EFFECTS,
+      () => this.audioPreferencesStore.toggleEffects(),
+    );
+    const masterRow = makeToggleRow(
+      "master",
+      UI_TEXT.EXPERIENCE_SOUND_MASTER,
+      () => this.audioPreferencesStore.toggleMaster(),
+    );
+
+    popover.append(musicRow.row, effectsRow.row, masterRow.row);
+    popover.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const nextOpen = popover.hidden;
+      popover.hidden = !nextOpen;
+      popover.classList.toggle(UI_CLASSES.HUD_SOUND_POPOVER_OPEN, nextOpen);
+      btn.setAttribute("aria-expanded", String(nextOpen));
+    });
+
+    wrapper.append(btn, popover);
+
+    this.soundWrapperEl = wrapper;
+    this.soundMenuBtnEl = btn;
+    this.soundPopoverEl = popover;
+    this.soundMusicInputEl = musicRow.input;
+    this.soundEffectsInputEl = effectsRow.input;
+    this.soundMasterInputEl = masterRow.input;
+
+    this.unsubscribeAudioPrefs = this.audioPreferencesStore.subscribe(
+      (prefs) => {
+        if (this.soundMusicInputEl) {
+          this.soundMusicInputEl.checked = prefs.musicEnabled;
+        }
+        if (this.soundEffectsInputEl) {
+          this.soundEffectsInputEl.checked = prefs.effectsEnabled;
+        }
+        if (this.soundMasterInputEl) {
+          this.soundMasterInputEl.checked = prefs.masterEnabled;
+        }
+        if (this.soundMenuBtnEl) {
+          const icon = prefs.masterEnabled
+            ? STAND_DICTIONARY.UNMUTE_ICON
+            : STAND_DICTIONARY.MUTE_ICON;
+          this.soundMenuBtnEl.textContent = `${icon} ${UI_TEXT.EXPERIENCE_SOUND_BTN}`;
+          this.soundMenuBtnEl.setAttribute(
+            "data-sound-active",
+            String(prefs.masterEnabled),
+          );
+        }
+      },
+    );
+
+    if (typeof document !== "undefined") {
+      this.outsideSoundClickHandler = (evt: Event) => {
+        const target = evt.target as Node | null;
+        if (
+          this.soundPopoverEl &&
+          !this.soundPopoverEl.hidden &&
+          this.soundWrapperEl &&
+          target &&
+          !this.soundWrapperEl.contains(target)
+        ) {
+          this.closeSoundPopover();
+        }
+      };
+      document.addEventListener("click", this.outsideSoundClickHandler);
+    }
+
+    return wrapper;
+  }
+
+  private closeSoundPopover(): void {
+    if (this.soundPopoverEl) {
+      this.soundPopoverEl.hidden = true;
+      this.soundPopoverEl.classList.remove(UI_CLASSES.HUD_SOUND_POPOVER_OPEN);
+    }
+    if (this.soundMenuBtnEl) {
+      this.soundMenuBtnEl.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  private teardownSoundControl(): void {
+    this.unsubscribeAudioPrefs?.();
+    this.unsubscribeAudioPrefs = null;
+    if (typeof document !== "undefined" && this.outsideSoundClickHandler) {
+      document.removeEventListener("click", this.outsideSoundClickHandler);
+      this.outsideSoundClickHandler = null;
+    }
+    this.soundWrapperEl = null;
+    this.soundMenuBtnEl = null;
+    this.soundPopoverEl = null;
+    this.soundMusicInputEl = null;
+    this.soundEffectsInputEl = null;
+    this.soundMasterInputEl = null;
   }
 
   private synchronizeSpatialHud(scene: AFrameSceneElement): void {
@@ -767,6 +958,16 @@ export class ExperienceScreenView implements ScreenView {
     if (hudComp) {
       hudComp.setEnabled(isVr);
       hudComp.setRoomTitle(activeRoomId);
+      hudComp.setCallbacks({
+        ...(hudComp.callbacks ?? {}),
+        onToggleSound: () => {
+          void this.audioEngine.unlockFromUserGesture();
+          this.audioPreferencesStore.toggleMaster();
+        },
+      });
+      hudComp.setSoundEnabled?.(
+        this.audioPreferencesStore.getPreferences().masterEnabled,
+      );
     } else if (!isVr) {
       hudEl.setAttribute("visible", "false");
     }

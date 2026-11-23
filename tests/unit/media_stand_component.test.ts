@@ -727,4 +727,120 @@ describe("cv-media-stand A-Frame Component", () => {
     expect(wakeBand?.getAttribute("material")).toContain("opacity: 0");
     instance.remove();
   });
+
+  it("positions SpatialMediaAudio at stand coordinates and syncs mute button icon when Master toggles OFF", async () => {
+    const { AudioPreferencesStore } = await import(
+      "../../src/experience/audio/audio-preferences-store"
+    );
+    const { AudioEngine } = await import(
+      "../../src/experience/audio/audio-engine"
+    );
+    const { SpatialMediaAudio } = await import(
+      "../../src/experience/audio/spatial-media-audio"
+    );
+
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    const engine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => null,
+    });
+    const spatial = new SpatialMediaAudio({ audioEngine: engine });
+    const posSpy = vi.spyOn(spatial, "setStandWorldPosition");
+
+    const videoEl = {
+      id: "",
+      src: "",
+      muted: true,
+      paused: true,
+      loop: false,
+      playsInline: true,
+      crossOrigin: null,
+      preload: "metadata",
+      style: {},
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      play: vi.fn(async () => {}),
+      pause: vi.fn(),
+      load: vi.fn(),
+    };
+    const videoController = new SharedVideoController({
+      createVideoElement: () => videoEl,
+      createVideoTexture: () => ({ needsUpdate: false, dispose: vi.fn() }),
+      preferencesStore: prefs,
+      audioEngine: engine,
+      spatialMediaAudio: spatial,
+    });
+
+    const items: StandMediaItem[] = [
+      {
+        id: "vid-spatial",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Danza",
+        creatorName: "",
+        description: "Desc",
+        mediaUrl: "https://cdn.example.com/dance.mp4",
+        posterUrl: "https://cdn.example.com/dance-poster.jpg",
+        sortOrder: 0,
+      },
+    ];
+
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Desc",
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        galleryPosition: { x: -3.2, y: 1.76, z: 0 },
+        galleryRotation: { x: 0, y: 90, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const def = createMediaStandComponentDefinition({
+      getInspectionController: () => inspectionController,
+      getVideoController: () => videoController,
+      getSpatialMediaAudio: () => spatial,
+    });
+    const el = document.createElement("a-entity") as unknown as MediaStandEntity;
+    el.standItems = items;
+    el.setAttribute("position", "-3.2 1.76 0");
+
+    const instance: MediaStandComponentInstance = Object.create(def);
+    instance.el = el;
+    instance.data = {
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      label: "Arte y Artesanías",
+      accentColor: "#D99B26",
+      viewMode: "vr",
+      galleryPosition: { x: -3.2, y: 1.76, z: 0 },
+      galleryRotation: { x: 0, y: 90, z: 0 },
+      itemsJson: "[]",
+    };
+    instance.init();
+
+    await instance.inspect();
+    expect(posSpy).toHaveBeenCalledWith({ x: -1.45, y: 1.65, z: 0 });
+
+    const muteBtn = el.querySelector(".cv-stand-mute-btn");
+    const muteBtnText = () =>
+      muteBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value") ??
+      muteBtn?.getAttribute("value");
+
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.MUTE_ICON);
+    prefs.activateSound();
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.UNMUTE_ICON);
+    prefs.toggleMaster(); // OFF
+    expect(muteBtnText()).toBe(STAND_DICTIONARY.MUTE_ICON);
+
+    instance.remove();
+  });
 });

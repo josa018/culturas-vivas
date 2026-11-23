@@ -1109,6 +1109,8 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     renderHudIconGlyph(mockCtx, "touch", "#008F85", 64);
     renderHudIconGlyph(mockCtx, "lobby", "#D99B26", 64);
     renderHudIconGlyph(mockCtx, "exit", "#B83A2C", 64);
+    renderHudIconGlyph(mockCtx, "sound_on", "#D99B26", 64);
+    renderHudIconGlyph(mockCtx, "sound_off", "#D99B26", 64);
     expect(mockCtx.arc).toHaveBeenCalled();
     expect(mockCtx.stroke).toHaveBeenCalled();
 
@@ -1144,6 +1146,7 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     // 3D beveled lit button boxes (depth: 0.024, shader: lambert) + flat icon & label
     for (const id of [
       VR_HUD_ELEMENT_IDS.SWITCH_2D_BTN,
+      VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN,
       VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN,
       VR_HUD_ELEMENT_IDS.EXIT_BTN,
     ]) {
@@ -1189,6 +1192,96 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     );
     expect(el.getAttribute("animation__hud_sink")).toContain("to: 0 1.4 -1.5");
 
+    instance.remove();
+  });
+
+  it("renders SOUND_TOGGLE_BTN, toggles Master sound without dismissing HUD, and syncs .clickable and labels", async () => {
+    const { AudioPreferencesStore } = await import(
+      "../../src/experience/audio/audio-preferences-store"
+    );
+    const { AudioEngine } = await import(
+      "../../src/experience/audio/audio-engine"
+    );
+    const { VR_HUD_SOUND_TOGGLE_EVENT } = await import(
+      "../../src/experience/components/vr-hologram-hud"
+    );
+
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    const audioEngine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => null,
+    });
+    const unlockSpy = vi
+      .spyOn(audioEngine, "unlockFromUserGesture")
+      .mockResolvedValue(true);
+
+    const def = createVrHologramHudComponentDefinition({
+      audioPreferencesStore: prefs,
+      audioEngine,
+    });
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance: VrHologramHudComponentInstance = {
+      el,
+      isOpen: false,
+      enabled: true,
+      activeRoomId: DEFAULT_ROOM_ID,
+      callbacks: {},
+      roomChipEl: null,
+      init: function () {
+        def.init.call(this);
+      },
+      setCallbacks: function (c) {
+        def.setCallbacks.call(this, c);
+      },
+      setEnabled: function (e) {
+        def.setEnabled.call(this, e);
+      },
+      setRoomTitle: function (r) {
+        def.setRoomTitle.call(this, r);
+      },
+      summon: function (p) {
+        def.summon.call(this, p);
+      },
+      dismiss: function () {
+        def.dismiss.call(this);
+      },
+      remove: function () {
+        def.remove.call(this);
+      },
+    };
+    instance.init();
+
+    const soundBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN}`);
+    expect(soundBtn).toBeTruthy();
+    expect(soundBtn?.classList.contains("clickable")).toBe(false);
+
+    const emitted: string[] = [];
+    el.addEventListener(VR_HUD_SOUND_TOGGLE_EVENT, () => {
+      emitted.push(VR_HUD_SOUND_TOGGLE_EVENT);
+    });
+
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(soundBtn?.classList.contains("clickable")).toBe(true);
+    expect(
+      soundBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
+    ).toBe(VR_HUD_DICTIONARY.SOUND_OFF_LABEL);
+
+    soundBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(emitted).toEqual([VR_HUD_SOUND_TOGGLE_EVENT]);
+    expect(prefs.getPreferences().masterEnabled).toBe(true);
+    expect(unlockSpy).toHaveBeenCalledTimes(1);
+    expect(instance.isOpen).toBe(true);
+    expect(
+      soundBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
+    ).toBe(VR_HUD_DICTIONARY.SOUND_ON_LABEL);
+
+    instance.dismiss();
+    expect(soundBtn?.classList.contains("clickable")).toBe(false);
     instance.remove();
   });
 });

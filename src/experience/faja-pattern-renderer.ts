@@ -1,6 +1,6 @@
 import { RENDERER_QUALITY_TOKENS, VR_HUD_COLORS } from "./constants";
 
-export type HudIconId = "touch" | "lobby" | "exit";
+export type HudIconId = "touch" | "lobby" | "exit" | "sound_on" | "sound_off";
 
 export interface FajaCanvasContextLike {
   fillStyle: string;
@@ -136,6 +136,36 @@ export function renderHudIconGlyph(
     ctx.lineTo(c - r * 0.72, c);
     ctx.closePath();
     ctx.stroke();
+    return;
+  }
+
+  if (iconId === "sound_on" || iconId === "sound_off") {
+    // Speaker cone
+    ctx.beginPath();
+    ctx.moveTo(c - r * 0.85, c - r * 0.35);
+    ctx.lineTo(c - r * 0.4, c - r * 0.35);
+    ctx.lineTo(c + r * 0.05, c - r * 0.78);
+    ctx.lineTo(c + r * 0.05, c + r * 0.78);
+    ctx.lineTo(c - r * 0.4, c + r * 0.35);
+    ctx.lineTo(c - r * 0.85, c + r * 0.35);
+    ctx.closePath();
+    ctx.stroke();
+
+    if (iconId === "sound_on") {
+      ctx.beginPath();
+      ctx.arc(c + r * 0.15, c, r * 0.45, -Math.PI / 3, Math.PI / 3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c + r * 0.15, c, r * 0.78, -Math.PI / 3, Math.PI / 3);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(c + r * 0.3, c - r * 0.35);
+      ctx.lineTo(c + r * 0.85, c + r * 0.35);
+      ctx.moveTo(c + r * 0.85, c - r * 0.35);
+      ctx.lineTo(c + r * 0.3, c + r * 0.35);
+      ctx.stroke();
+    }
     return;
   }
 

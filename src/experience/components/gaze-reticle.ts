@@ -17,6 +17,8 @@ import {
   type ReticleVisibilityMode,
 } from "../gaze-reticle-state";
 import { getSharedInspectionController } from "./inspectable";
+import { SfxId } from "../audio/audio-constants";
+import { getSharedSfxPlayer } from "../audio/sfx-player";
 
 export interface GazeReticleDependencies {
   readonly nowMs?: () => number;
@@ -291,6 +293,7 @@ export function createGazeReticleComponentDefinition(
         this.reticleState = startGazeReticleFuse(resolveNowMs());
         this.progressRingEl?.setAttribute("geometry", buildProgressGeometryAttr(0));
         this.progressRingEl?.setAttribute("visible", "true");
+        getSharedSfxPlayer().play(SfxId.RETICLE_HOVER);
       });
 
       bind(this.el, "mouseleave", () => {
@@ -307,6 +310,7 @@ export function createGazeReticleComponentDefinition(
       });
 
       bind(this.el, "click", () => {
+        getSharedSfxPlayer().play(SfxId.RETICLE_FUSE);
         this.resetFuse();
         if (this.confirmResetTimer !== null) {
           clearTimeout(this.confirmResetTimer);

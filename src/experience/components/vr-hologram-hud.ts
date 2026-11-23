@@ -29,17 +29,34 @@ import {
   setCanvasTextElement,
 } from "./canvas-text";
 import { getSharedInspectionController } from "./inspectable";
+import {
+  AudioPreferencesStore,
+  getSharedAudioPreferencesStore,
+} from "../audio/audio-preferences-store";
+import {
+  AudioEngine,
+  getSharedAudioEngine,
+} from "../audio/audio-engine";
+import { SfxId } from "../audio/audio-constants";
+import { getSharedSfxPlayer } from "../audio/sfx-player";
 
 export const VR_HUD_SWITCH_2D_EVENT = "cv-vr-hud-switch-2d";
 export const VR_HUD_RETURN_LOBBY_EVENT = "cv-vr-hud-return-lobby";
 export const VR_HUD_EXIT_EVENT = "cv-vr-hud-exit";
 export const VR_HUD_DISMISS_EVENT = "cv-vr-hud-dismiss";
+export const VR_HUD_SOUND_TOGGLE_EVENT = "cv-vr-hud-sound-toggle";
 
 export interface VrHudActionCallbacks {
   readonly onSwitchTo2D?: () => void;
   readonly onReturnToLobby?: () => void;
   readonly onRequestExit?: () => void;
   readonly onDismiss?: () => void;
+  readonly onToggleSound?: () => void;
+}
+
+export interface VrHologramHudDeps {
+  readonly audioPreferencesStore?: AudioPreferencesStore;
+  readonly audioEngine?: Pick<AudioEngine, "unlockFromUserGesture">;
 }
 
 export interface VrHudCameraPose {
@@ -73,6 +90,7 @@ export interface VrHologramHudComponentInstance {
   callbacks: VrHudActionCallbacks;
   roomChipEl: HTMLElement | null;
   returnLobbyBtnEl?: HTMLElement | null;
+  soundBtnEl?: HTMLElement | null;
   hudEpoch?: number;
   dismissTimer?: ReturnType<typeof setTimeout> | null;
   hudOutCompleteHandler?: (() => void) | null;
@@ -80,10 +98,12 @@ export interface VrHologramHudComponentInstance {
   ownedTextures?: ProceduralHudTexture[];
   lastTransform?: VrHudWorldTransform | null;
   unsubscribeInspection?: (() => void) | null;
+  unsubscribeAudioPrefs?: (() => void) | null;
   init: () => void;
   setCallbacks: (callbacks: VrHudActionCallbacks) => void;
   setEnabled: (enabled: boolean) => void;
   setRoomTitle: (roomId: RoomId) => void;
+  setSoundEnabled?: (enabled: boolean) => void;
   summon: (pose?: VrHudCameraPose) => void;
   dismiss: () => void;
   remove: () => void;
@@ -527,7 +547,57 @@ function createHudButtonEntity(options: {
   return btn;
 }
 
-export function createVrHologramHudComponentDefinition() {
+function updateSoundButtonVisual(
+  instance: VrHologramHudComponentInstance,
+  enabled: boolean,
+): void {
+  if (!instance.soundBtnEl) {
+    return;
+  }
+  const nextLabel = enabled
+    ? VR_HUD_DICTIONARY.SOUND_ON_LABEL
+    : VR_HUD_DICTIONARY.SOUND_OFF_LABEL;
+  const labelEl = instance.soundBtnEl.querySelector("[cv-canvas-text]") as
+    | HTMLElement
+    | null;
+  if (labelEl) {
+    labelEl.setAttribute("value", nextLabel);
+    setCanvasTextElement(labelEl, {
+      mode: "label",
+      value: nextLabel,
+      align: "center",
+      baseline: "middle",
+      color: VR_HUD_COLORS.TEXT_BONE,
+      fontSizePx: 42,
+      fontWeight: "600",
+      canvasWidth: 512,
+      canvasHeight: 128,
+      maxLines: 1,
+    });
+  }
+  const iconEl = instance.soundBtnEl.querySelector(".cv-hud-btn-icon") as
+    | HTMLElement
+    | null;
+  if (iconEl) {
+    const nextTex = createCanvasTextureFromDrawer(96, 96, (ctx) =>
+      renderHudIconGlyph(
+        ctx,
+        enabled ? "sound_on" : "sound_off",
+        VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+        96,
+      ),
+    );
+    bindProceduralTexture(iconEl, nextTex, instance.ownedTextures ?? []);
+  }
+}
+
+export function createVrHologramHudComponentDefinition(
+  deps: VrHologramHudDeps = {},
+) {
+  const resolveAudioPrefs = () =>
+    deps.audioPreferencesStore ?? getSharedAudioPreferencesStore();
+  const resolveAudioEngine = () => deps.audioEngine ?? getSharedAudioEngine();
+
   return {
     schema: {
       enabled: { type: "boolean", default: true },
@@ -678,8 +748,9 @@ export function createVrHologramHudComponentDefinition() {
         action: "switch-to-touch",
         iconId: "touch",
         label: VR_HUD_DICTIONARY.SWITCH_TO_2D_LABEL,
-        position: "-0.34 -0.02 0.06",
-        rotation: "0 10 0",
+        position: "-0.44 -0.02 0.06",
+        rotation: "0 12 0",
+        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
         backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
         ownedTextures: this.ownedTextures ?? [],
@@ -696,14 +767,46 @@ export function createVrHologramHudComponentDefinition() {
         );
       });
 
+      // Center Master Sound toggle button (stays open so user sees feedback)
+      const initialSoundOn = resolveAudioPrefs().getPreferences().masterEnabled;
+      const soundToggleBtn = createHudButtonEntity({
+        id: VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN,
+        action: "toggle-sound",
+        iconId: initialSoundOn ? "sound_on" : "sound_off",
+        label: initialSoundOn
+          ? VR_HUD_DICTIONARY.SOUND_ON_LABEL
+          : VR_HUD_DICTIONARY.SOUND_OFF_LABEL,
+        position: "0 -0.02 0.05",
+        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
+        backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
+        borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+        ownedTextures: this.ownedTextures ?? [],
+      });
+      this.soundBtnEl = soundToggleBtn;
+
+      soundToggleBtn.addEventListener?.("click", (evt) => {
+        evt?.stopPropagation?.();
+        if (this.callbacks.onToggleSound) {
+          this.callbacks.onToggleSound();
+        } else {
+          void resolveAudioEngine().unlockFromUserGesture();
+          resolveAudioPrefs().toggleMaster();
+        }
+        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+        this.el.dispatchEvent?.(
+          new CustomEvent(VR_HUD_SOUND_TOGGLE_EVENT, { bubbles: true }),
+        );
+      });
+
       // Exit Tour modal trigger button
       const exitBtn = createHudButtonEntity({
         id: VR_HUD_ELEMENT_IDS.EXIT_BTN,
         action: "request-exit",
         iconId: "exit",
         label: VR_HUD_DICTIONARY.EXIT_TOUR_LABEL,
-        position: "0.34 -0.02 0.06",
-        rotation: "0 -10 0",
+        position: "0.44 -0.02 0.06",
+        rotation: "0 -12 0",
+        width: VR_HUD_GEOMETRY.ROW_BUTTON_WIDTH_M,
         backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_COCHINILLA,
         ownedTextures: this.ownedTextures ?? [],
@@ -805,6 +908,7 @@ export function createVrHologramHudComponentDefinition() {
       this.interactiveEls = [
         backdrop,
         switch2dBtn,
+        soundToggleBtn,
         exitBtn,
         returnLobbyBtn,
         dismissBtn,
@@ -818,10 +922,16 @@ export function createVrHologramHudComponentDefinition() {
         eyebrowLabel,
         roomChip,
         switch2dBtn,
+        soundToggleBtn,
         exitBtn,
         returnLobbyBtn,
         dismissBtn,
       );
+
+      this.unsubscribeAudioPrefs?.();
+      this.unsubscribeAudioPrefs = resolveAudioPrefs().subscribe((prefs) => {
+        updateSoundButtonVisual(this, prefs.masterEnabled);
+      });
 
       this.unsubscribeInspection?.();
       this.unsubscribeInspection = getSharedInspectionController().subscribe(
@@ -890,6 +1000,13 @@ export function createVrHologramHudComponentDefinition() {
       }
     },
 
+    setSoundEnabled: function (
+      this: VrHologramHudComponentInstance,
+      enabled: boolean,
+    ) {
+      updateSoundButtonVisual(this, enabled);
+    },
+
     summon: function (
       this: VrHologramHudComponentInstance,
       pose?: VrHudCameraPose,
@@ -939,6 +1056,7 @@ export function createVrHologramHudComponentDefinition() {
       }
       this.isOpen = true;
       setHudInteractiveClickable(this, true);
+      getSharedSfxPlayer().play(SfxId.HUD_OPEN);
 
       const hasAFrame =
         typeof globalThis !== "undefined" &&
@@ -977,6 +1095,7 @@ export function createVrHologramHudComponentDefinition() {
       const epoch = (this.hudEpoch ?? 0) + 1;
       this.hudEpoch = epoch;
       this.isOpen = false;
+      getSharedSfxPlayer().play(SfxId.HUD_CLOSE);
       this.el.removeAttribute("animation__hud_in");
       this.el.removeAttribute("animation__hud_rise");
 
@@ -1040,6 +1159,8 @@ export function createVrHologramHudComponentDefinition() {
       clearPendingHudDismiss(this);
       this.unsubscribeInspection?.();
       this.unsubscribeInspection = null;
+      this.unsubscribeAudioPrefs?.();
+      this.unsubscribeAudioPrefs = null;
       setHudInteractiveClickable(this, false);
       if (this.ownedTextures) {
         for (const tex of this.ownedTextures) {
@@ -1051,6 +1172,7 @@ export function createVrHologramHudComponentDefinition() {
       this.isOpen = false;
       this.roomChipEl = null;
       this.returnLobbyBtnEl = null;
+      this.soundBtnEl = null;
       this.interactiveEls = [];
     },
   };

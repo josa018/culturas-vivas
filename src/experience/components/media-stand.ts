@@ -22,6 +22,12 @@ import {
   type DisposableVideoTexture,
   type SharedVideoController,
 } from "../shared-video-controller";
+import {
+  getSharedSpatialMediaAudio,
+  type SpatialMediaAudio,
+} from "../audio/spatial-media-audio";
+import { SfxId } from "../audio/audio-constants";
+import { getSharedSfxPlayer } from "../audio/sfx-player";
 import { createCanvasTextPlane, setCanvasTextElement } from "./canvas-text";
 import { getSharedInspectionController } from "./inspectable";
 import { createContactShadowDecal } from "../shadow-baker";
@@ -68,6 +74,7 @@ export interface MediaStandEntity extends HTMLElement {
 export interface MediaStandDependencies {
   readonly getInspectionController?: () => ExhibitInspectionController;
   readonly getVideoController?: () => SharedVideoController;
+  readonly getSpatialMediaAudio?: () => SpatialMediaAudio;
   readonly prefetchImage?: (url: string) => void;
 }
 
@@ -651,7 +658,37 @@ export function createMediaStandComponentDefinition(
     deps.getInspectionController?.() ?? getSharedInspectionController();
   const resolveVideoController = () =>
     deps.getVideoController?.() ?? getSharedVideoController();
+  const resolveSpatialMediaAudio = () =>
+    deps.getSpatialMediaAudio?.() ?? getSharedSpatialMediaAudio();
   const prefetchImage = deps.prefetchImage ?? defaultPrefetchImage;
+
+  function resolveStandWorldPosition(el: HTMLElement): {
+    x: number;
+    y: number;
+    z: number;
+  } {
+    const objPos = (
+      el as unknown as {
+        object3D?: { position?: { x: number; y: number; z: number } };
+      }
+    ).object3D?.position;
+    if (
+      objPos &&
+      Number.isFinite(objPos.x) &&
+      Number.isFinite(objPos.y) &&
+      Number.isFinite(objPos.z)
+    ) {
+      return { x: objPos.x, y: objPos.y, z: objPos.z };
+    }
+    const rawPos = el.getAttribute("position");
+    if (typeof rawPos === "string") {
+      const parts = rawPos.trim().split(/\s+/).map(Number);
+      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        return { x: parts[0], y: parts[1], z: parts[2] };
+      }
+    }
+    return { x: 0, y: ROOM_LAYOUT_TOKENS.STAND_ELEVATION_M, z: -ROOM_LAYOUT_TOKENS.RING_RADIUS_M };
+  }
 
   function renderCarouselSlide(instance: MediaStandComponentInstance): void {
     const els = instance.elements;
@@ -913,6 +950,9 @@ export function createMediaStandComponentDefinition(
 
     const activeSlideId = item.id;
     instance.ownsActiveVideo = true;
+    resolveSpatialMediaAudio().setStandWorldPosition(
+      resolveStandWorldPosition(instance.el),
+    );
     const texture = await videoController.playVideo(item.mediaUrl);
 
     if (
@@ -1294,6 +1334,20 @@ export function createMediaStandComponentDefinition(
         }
       });
 
+      const videoCtrl = resolveVideoController();
+      const unsubscribeVideoState = videoCtrl.subscribeStateChange?.(() => {
+        if (
+          this.localState === InspectionState.INSPECTING &&
+          this.carousel.isCurrentVideo()
+        ) {
+          this.carousel.setMuted(videoCtrl.isMuted());
+          renderCarouselSlide(this);
+        }
+      });
+      if (unsubscribeVideoState) {
+        this.cleanupListeners.push(unsubscribeVideoState);
+      }
+
       renderCarouselSlide(this);
     },
 
@@ -1346,6 +1400,7 @@ export function createMediaStandComponentDefinition(
       const epoch = ++this.transitionEpoch;
       this.localState = InspectionState.INSPECTING;
       controller.completeFocus();
+      getSharedSfxPlayer().play(SfxId.STAND_OPEN);
       moveStandToInspectionCenter(this, controller);
       renderCarouselSlide(this);
       animatePanelsEntrance(this, epoch);
@@ -1371,6 +1426,7 @@ export function createMediaStandComponentDefinition(
 
       this.carousel.reset();
       this.localState = InspectionState.IDLE;
+      getSharedSfxPlayer().play(SfxId.STAND_CLOSE);
       restoreGalleryTransform(this);
       renderCarouselSlide(this);
       animatePanelsExit(this, epoch);
@@ -1381,6 +1437,7 @@ export function createMediaStandComponentDefinition(
         return;
       }
       this.carousel.next();
+      getSharedSfxPlayer().play(SfxId.CAROUSEL_STEP);
       renderCarouselSlide(this);
       triggerSlidePulse(this);
       prefetchNextSlideAsset(this);
@@ -1392,6 +1449,7 @@ export function createMediaStandComponentDefinition(
         return;
       }
       this.carousel.prev();
+      getSharedSfxPlayer().play(SfxId.CAROUSEL_STEP);
       renderCarouselSlide(this);
       triggerSlidePulse(this);
       prefetchNextSlideAsset(this);

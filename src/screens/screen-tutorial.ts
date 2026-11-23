@@ -1,15 +1,49 @@
 import { ScreenId, NavigationAction } from "../navigation/index";
 import type { ScreenView, NavigationDispatcher } from "./base-screen";
 import { UI_CLASSES, UI_TEXT } from "./constants";
-import { getSharedVideoController } from "../experience/shared-video-controller";
+import {
+  getSharedVideoController,
+  type SharedVideoController,
+} from "../experience/shared-video-controller";
+import {
+  AudioPreferencesStore,
+  getSharedAudioPreferencesStore,
+} from "../experience/audio/audio-preferences-store";
+import {
+  AudioEngine,
+  getSharedAudioEngine,
+} from "../experience/audio/audio-engine";
+
+export interface TutorialScreenOptions {
+  readonly audioPreferencesStore?: AudioPreferencesStore;
+  readonly audioEngine?: Pick<AudioEngine, "unlockFromUserGesture">;
+  readonly videoController?: Pick<
+    SharedVideoController,
+    "unlockFromUserGesture"
+  >;
+}
 
 export class TutorialScreenView implements ScreenView {
   public readonly id = ScreenId.TUTORIAL;
   private container: HTMLElement | null = null;
   private readonly dispatch: NavigationDispatcher;
+  private readonly audioPreferencesStore: AudioPreferencesStore;
+  private readonly audioEngine: Pick<AudioEngine, "unlockFromUserGesture">;
+  private readonly videoController: Pick<
+    SharedVideoController,
+    "unlockFromUserGesture"
+  >;
+  private soundStatusEl: HTMLElement | null = null;
 
-  constructor(dispatch: NavigationDispatcher) {
+  constructor(
+    dispatch: NavigationDispatcher,
+    options: TutorialScreenOptions = {},
+  ) {
     this.dispatch = dispatch;
+    this.audioPreferencesStore =
+      options.audioPreferencesStore ?? getSharedAudioPreferencesStore();
+    this.audioEngine = options.audioEngine ?? getSharedAudioEngine();
+    this.videoController = options.videoController ?? getSharedVideoController();
   }
 
   public mount(parent: HTMLElement): void {
@@ -55,6 +89,48 @@ export class TutorialScreenView implements ScreenView {
       list.appendChild(item);
     }
 
+    const soundCard = document.createElement("div");
+    soundCard.className = UI_CLASSES.TUTORIAL_SOUND_CARD;
+
+    const soundTitle = document.createElement("p");
+    soundTitle.textContent = UI_TEXT.TUTORIAL_SOUND_TITLE;
+
+    const soundActions = document.createElement("div");
+    soundActions.className = UI_CLASSES.TUTORIAL_SOUND_ACTIONS;
+
+    const activateSoundBtn = document.createElement("button");
+    activateSoundBtn.type = "button";
+    activateSoundBtn.className = UI_CLASSES.BUTTON_SECONDARY;
+    activateSoundBtn.setAttribute("data-action", "activate-sound");
+    activateSoundBtn.textContent = UI_TEXT.TUTORIAL_SOUND_ACTIVATE;
+
+    const skipSoundBtn = document.createElement("button");
+    skipSoundBtn.type = "button";
+    skipSoundBtn.className = UI_CLASSES.BUTTON_OUTLINE;
+    skipSoundBtn.setAttribute("data-action", "skip-sound");
+    skipSoundBtn.textContent = UI_TEXT.TUTORIAL_SOUND_SKIP;
+
+    const soundStatus = document.createElement("span");
+    soundStatus.className = UI_CLASSES.TUTORIAL_SOUND_STATUS;
+    this.soundStatusEl = soundStatus;
+    this.syncSoundStatus();
+
+    activateSoundBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.audioPreferencesStore.activateSound();
+      void this.audioEngine.unlockFromUserGesture();
+      void this.videoController.unlockFromUserGesture();
+      this.syncSoundStatus();
+    });
+
+    skipSoundBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.syncSoundStatus();
+    });
+
+    soundActions.append(activateSoundBtn, skipSoundBtn);
+    soundCard.append(soundTitle, soundActions, soundStatus);
+
     const startButton = document.createElement("button");
     startButton.type = "button";
     startButton.className = UI_CLASSES.BUTTON_PRIMARY;
@@ -66,11 +142,11 @@ export class TutorialScreenView implements ScreenView {
 
     startButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      void getSharedVideoController().unlockFromUserGesture();
+      void this.videoController.unlockFromUserGesture();
       this.dispatch(NavigationAction.CONFIRM_INSERTION);
     });
 
-    card.append(title, illustration, list, startButton);
+    card.append(title, illustration, list, soundCard, startButton);
     element.appendChild(card);
 
     parent.appendChild(element);
@@ -78,6 +154,7 @@ export class TutorialScreenView implements ScreenView {
   }
 
   public unmount(): void {
+    this.soundStatusEl = null;
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -85,10 +162,21 @@ export class TutorialScreenView implements ScreenView {
   }
 
   public show(): void {
+    this.syncSoundStatus();
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
     }
+  }
+
+  private syncSoundStatus(): void {
+    if (!this.soundStatusEl) {
+      return;
+    }
+    const enabled = this.audioPreferencesStore.getPreferences().masterEnabled;
+    this.soundStatusEl.textContent = enabled
+      ? UI_TEXT.TUTORIAL_SOUND_ACTIVE
+      : "";
   }
 
   public hide(): void {

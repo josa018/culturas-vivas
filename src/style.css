@@ -845,6 +845,36 @@ body {
   gap: 8px;
 }
 
+.cv-tutorial-sound-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--cv-radius-medium);
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--cv-color-border-faja);
+  font-size: 14px;
+}
+
+.cv-tutorial-sound-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cv-tutorial-sound-actions > .cv-btn {
+  width: auto;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.cv-tutorial-sound-status {
+  font-size: 12px;
+  color: var(--cv-color-accent-turquesa);
+  font-weight: 600;
+}
+
 /* Experience Screen HUD (Screen 4) */
 .cv-screen--experience {
   background-color: transparent !important;
@@ -883,13 +913,47 @@ body {
 }
 
 .cv-hud-lobby-btn,
-.cv-hud-exit-btn {
+.cv-hud-exit-btn,
+.cv-hud-sound-btn {
   width: auto !important;
   min-height: 40px !important;
   padding: 8px 18px !important;
   font-size: 13px !important;
   background-color: rgba(18, 18, 18, 0.85) !important;
   backdrop-filter: blur(8px);
+}
+
+.cv-hud-sound-wrapper {
+  position: relative;
+}
+
+.cv-hud-sound-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 170px;
+  padding: 10px 12px;
+  border-radius: var(--cv-radius-medium);
+  background-color: rgba(11, 15, 23, 0.94);
+  border: 1px solid var(--cv-color-border-faja);
+  backdrop-filter: blur(10px);
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 250;
+}
+
+.cv-hud-sound-popover--open {
+  display: flex;
+}
+
+.cv-hud-sound-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface);
+  cursor: pointer;
 }
 
 /* Modal Backdrop (Screen 5) */

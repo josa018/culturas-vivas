@@ -63,6 +63,14 @@ export const UI_CLASSES = {
   SPLASH_CREDITS_LABEL: "cv-splash-credits-label",
   SPLASH_CREDITS_LIST: "cv-splash-credits-list",
   SPLASH_CREDITS_ITEM: "cv-splash-credits-item",
+  TUTORIAL_SOUND_CARD: "cv-tutorial-sound-card",
+  TUTORIAL_SOUND_ACTIONS: "cv-tutorial-sound-actions",
+  TUTORIAL_SOUND_STATUS: "cv-tutorial-sound-status",
+  HUD_SOUND_WRAPPER: "cv-hud-sound-wrapper",
+  HUD_SOUND_BTN: "cv-hud-sound-btn",
+  HUD_SOUND_POPOVER: "cv-hud-sound-popover",
+  HUD_SOUND_POPOVER_OPEN: "cv-hud-sound-popover--open",
+  HUD_SOUND_ROW: "cv-hud-sound-row",
 } as const;
 
 export type PartnerLogoVariant = "wide" | "horizontal" | "emblem";
@@ -130,9 +138,18 @@ export const UI_TEXT = {
     "Introduce el smartphone al visor. Aparecerá una linea blanca que debe quedar abajo y ajustada al centro del visor.",
   TUTORIAL_STEP_3: "Cierra la bandeja y colocate el visor.",
   TUTORIAL_BTN_START: "Comenzar",
+  TUTORIAL_SOUND_TITLE: "🎧 Activa el sonido — recomendado con audífonos",
+  TUTORIAL_SOUND_ACTIVATE: "Activar",
+  TUTORIAL_SOUND_SKIP: "Ahora no",
+  TUTORIAL_SOUND_ACTIVE: "Sonido activado ✓",
 
   EXPERIENCE_RETURN_LOBBY: "Volver al Lobby",
   EXPERIENCE_EXIT_HUD: "Salir de la experiencia",
+  EXPERIENCE_SOUND_BTN: "Sonido",
+  EXPERIENCE_SOUND_BTN_ARIA: "Configurar sonido",
+  EXPERIENCE_SOUND_MUSIC: "Música",
+  EXPERIENCE_SOUND_EFFECTS: "Efectos",
+  EXPERIENCE_SOUND_MASTER: "Todo",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",
   EXIT_MODAL_BTN_RESUME: "Regresar a la experiencia",

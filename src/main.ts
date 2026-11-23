@@ -8,6 +8,7 @@ import "./experience/components/interactive-feedback";
 import "./experience/components/media-stand";
 import "./experience/components/renderer-quality";
 import "./experience/components/room-environment";
+import "./experience/components/spatial-audio-listener";
 import "./experience/components/stereo-media";
 import "./experience/components/touch-raycaster";
 import "./experience/components/vr-hologram-hud";

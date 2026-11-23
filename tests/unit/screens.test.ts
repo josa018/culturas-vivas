@@ -213,6 +213,49 @@ describe("Screen Views & Interactions", () => {
     ]);
   });
 
+  it("TutorialScreenView sound opt-in activates Master + unlocks AudioEngine & SharedVideoController, or preserves default-off when skipped", async () => {
+    const { AudioPreferencesStore } = await import("../../src/experience/audio/audio-preferences-store");
+    const { DEFAULT_AUDIO_PREFERENCES } = await import("../../src/experience/audio/audio-constants");
+    const prefs = new AudioPreferencesStore({
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    const unlockAudio = vi.fn(async () => true);
+    const unlockVideo = vi.fn(async () => {});
+
+    const tutorial = new TutorialScreenView(dispatch, {
+      audioPreferencesStore: prefs,
+      audioEngine: { unlockFromUserGesture: unlockAudio },
+      videoController: { unlockFromUserGesture: unlockVideo },
+    });
+    tutorial.mount(root);
+    const el = tutorial.getElement()!;
+
+    const card = el.querySelector(`.${UI_CLASSES.TUTORIAL_SOUND_CARD}`) as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain(UI_TEXT.TUTORIAL_SOUND_TITLE);
+
+    // Skipping keeps default-off and does not navigate
+    (el.querySelector('[data-action="skip-sound"]') as HTMLElement).click();
+    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
+    expect(dispatched).toHaveLength(0);
+
+    // Activating sound unlocks both AudioEngine & SharedVideoController, sets Master ON + mediaMuted false, and does not navigate until confirm-insertion
+    (el.querySelector('[data-action="activate-sound"]') as HTMLElement).click();
+    expect(prefs.getPreferences().masterEnabled).toBe(true);
+    expect(prefs.getPreferences().mediaMuted).toBe(false);
+    expect(unlockAudio).toHaveBeenCalledTimes(1);
+    expect(unlockVideo).toHaveBeenCalledTimes(1);
+    expect(card.textContent).toContain(UI_TEXT.TUTORIAL_SOUND_ACTIVE);
+    expect(dispatched).toHaveLength(0);
+
+    (el.querySelector('[data-action="confirm-insertion"]') as HTMLElement).click();
+    expect(dispatched.map((d) => d.action)).toEqual([
+      NavigationAction.CONFIRM_INSERTION,
+    ]);
+  });
+
   it("ExperienceScreenView enters VR on show() and exits VR on hide()", () => {
     const mockScene = createMockScene();
     document.body.appendChild(mockScene);
