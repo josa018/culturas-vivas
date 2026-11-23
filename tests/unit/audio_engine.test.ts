@@ -172,7 +172,7 @@ describe("AudioEngine Core Graph & Experience Lifecycle", () => {
     });
   });
 
-  it("applies MUSIC_DEFAULT_GAIN when musicAudible=true and silences sfxGain when effectsEnabled=false", async () => {
+  it("scales musicGain and sfxGain proportionally to slider volumes and silences sfxGain at 0", async () => {
     const storage = new InMemoryStorage();
     const prefs = new AudioPreferencesStore(storage);
     const mock = createMockAudioContext("running");
@@ -185,18 +185,26 @@ describe("AudioEngine Core Graph & Experience Lifecycle", () => {
     await engine.unlockFromUserGesture();
     engine.activateExperience(RoomId.LOBBY);
 
-    prefs.toggleMaster(); // master=true, music=true, effects=true
-    prefs.toggleEffects(); // master=true, music=true, effects=false
+    prefs.toggleMaster(); // master=true, defaults musicVolume & effectsVolume
+    prefs.setMusicVolume(0.5);
+    prefs.setEffectsVolume(0);
 
     const musicGain = mock.gains[0];
     const sfxGain = mock.gains[1];
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
       mock.ctx.currentTime,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );
     expect(sfxGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
       0,
+      mock.ctx.currentTime,
+      AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
+    );
+
+    prefs.setEffectsVolume(1);
+    expect(sfxGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      AUDIO_TOKENS.SFX_GAIN,
       mock.ctx.currentTime,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );

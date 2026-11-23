@@ -20,6 +20,7 @@ interface MutableVec3 {
 }
 
 interface ThreeCameraLike {
+  isCamera?: boolean;
   getWorldPosition?: (target: MutableVec3) => MutableVec3;
   getWorldDirection?: (target: MutableVec3) => MutableVec3;
   getWorldQuaternion?: (target: { x: number; y: number; z: number; w: number }) => unknown;
@@ -115,6 +116,7 @@ export function readCameraListenerPose(
 
   const host = sceneEl as SceneCameraHost;
   let cam: ThreeCameraLike | undefined;
+  let usedObject3DFallback = false;
   if (
     host.renderer?.xr?.isPresenting &&
     typeof host.renderer.xr.getCamera === "function"
@@ -126,9 +128,19 @@ export function readCameraListenerPose(
   }
   if (!cam) {
     const camEl = sceneEl.querySelector("a-camera, [camera]") as
-      | (HTMLElement & { object3D?: ThreeCameraLike })
+      | (HTMLElement & {
+          object3D?: ThreeCameraLike;
+          getObject3D?: (type: string) => ThreeCameraLike | undefined;
+        })
       | null;
-    cam = camEl?.object3D;
+    const cameraObj = camEl?.getObject3D?.("camera");
+    if (cameraObj) {
+      cam = cameraObj;
+    } else if (camEl?.object3D) {
+      cam = camEl.object3D;
+      // THREE.Object3D.getWorldDirection returns local +Z (backward); THREE.Camera overrides to -Z (gaze forward).
+      usedObject3DFallback = !cam.isCamera;
+    }
   }
 
   if (!cam) {
@@ -151,6 +163,11 @@ export function readCameraListenerPose(
   );
   if (typeof cam.getWorldDirection === "function") {
     cam.getWorldDirection(fwdOut);
+    if (usedObject3DFallback) {
+      fwdOut.x = -fwdOut.x || 0;
+      fwdOut.y = -fwdOut.y || 0;
+      fwdOut.z = -fwdOut.z || 0;
+    }
   }
 
   let upVec = DEFAULT_LISTENER_POSE.up;

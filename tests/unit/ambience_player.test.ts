@@ -173,11 +173,11 @@ describe("AmbiencePlayer Per-Biome Soundscapes & Crossfade", () => {
       expectedTau,
     );
 
-    // Effects OFF -> pauses active loop; Effects ON -> resumes WIXARIKA loop
-    prefs.toggleEffects();
+    // Effects slider 0 -> pauses active loop; slider > 0 -> resumes WIXARIKA loop
+    prefs.setEffectsVolume(0);
     expect(wixarikaEl.pause).toHaveBeenCalledTimes(1);
 
-    prefs.toggleEffects();
+    prefs.setEffectsVolume(0.9);
     expect(wixarikaEl.play).toHaveBeenCalledTimes(2);
 
     // Leaving experience stops active loops

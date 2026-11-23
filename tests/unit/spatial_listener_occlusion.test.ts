@@ -311,4 +311,61 @@ describe("Spatial Listener Pose & Behind-Listener Occlusion", () => {
       delete (globalThis as unknown as { AFRAME?: unknown }).AFRAME;
     }
   });
+
+  it("never inverts gaze forward when falling back to a non-camera a-camera Object3D", () => {
+    const scene = document.createElement("a-scene");
+    const camEl = document.createElement("a-camera") as HTMLElement & {
+      object3D?: unknown;
+      getObject3D?: (type: string) => unknown;
+    };
+
+    // Simulate THREE.Object3D (isCamera undefined) whose getWorldDirection returns +Z backward column
+    camEl.object3D = {
+      getWorldPosition: (out: { x: number; y: number; z: number }) => {
+        out.x = 0;
+        out.y = 1.65;
+        out.z = 0;
+        return out;
+      },
+      getWorldDirection: (out: { x: number; y: number; z: number }) => {
+        // Object3D +Z when rig is rotated 180 deg points to -Z (opposite of camera gaze +Z)
+        out.x = 0;
+        out.y = 0;
+        out.z = -1;
+        return out;
+      },
+      getWorldQuaternion: () => ({ x: 0, y: 1, z: 0, w: 0 }),
+      up: { x: 0, y: 1, z: 0 },
+    };
+    scene.appendChild(camEl);
+
+    const pose = readCameraListenerPose(scene);
+    expect(pose.forward).toEqual({ x: 0, y: 0, z: 1 });
+
+    // When getObject3D('camera') is available on a-camera, prefer its Camera.getWorldDirection directly
+    camEl.getObject3D = (type: string) =>
+      type === "camera"
+        ? {
+            isCamera: true,
+            getWorldPosition: (out: { x: number; y: number; z: number }) => {
+              out.x = 0;
+              out.y = 1.65;
+              out.z = 0;
+              return out;
+            },
+            getWorldDirection: (out: { x: number; y: number; z: number }) => {
+              out.x = 0;
+              out.y = 0;
+              out.z = 1;
+              return out;
+            },
+          }
+        : null;
+
+    expect(readCameraListenerPose(scene).forward).toEqual({
+      x: 0,
+      y: 0,
+      z: 1,
+    });
+  });
 });

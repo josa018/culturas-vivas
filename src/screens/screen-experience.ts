@@ -53,7 +53,10 @@ import {
   AudioEngine,
   getSharedAudioEngine,
 } from "../experience/audio/audio-engine";
-import { SfxId } from "../experience/audio/audio-constants";
+import {
+  AUDIO_TOKENS,
+  SfxId,
+} from "../experience/audio/audio-constants";
 import { getSharedSfxPlayer } from "../experience/audio/sfx-player";
 import { getSharedAmbiencePlayer } from "../experience/audio/ambience-player";
 import { STAND_DICTIONARY } from "../experience/constants";
@@ -105,7 +108,9 @@ export class ExperienceScreenView implements ScreenView {
   private soundMenuBtnEl: HTMLButtonElement | null = null;
   private soundPopoverEl: HTMLElement | null = null;
   private soundMusicInputEl: HTMLInputElement | null = null;
+  private soundMusicValueEl: HTMLElement | null = null;
   private soundEffectsInputEl: HTMLInputElement | null = null;
+  private soundEffectsValueEl: HTMLElement | null = null;
   private soundMasterInputEl: HTMLInputElement | null = null;
   private unsubscribeAudioPrefs: (() => void) | null = null;
   private outsideSoundClickHandler: ((evt: Event) => void) | null = null;
@@ -812,45 +817,73 @@ export class ExperienceScreenView implements ScreenView {
     popover.setAttribute("data-sound-popover", "true");
     popover.hidden = true;
 
-    const makeToggleRow = (
-      key: "music" | "effects" | "master",
+    const masterRow = document.createElement("label");
+    masterRow.className = UI_CLASSES.HUD_SOUND_ROW;
+    const masterInput = document.createElement("input");
+    masterInput.type = "checkbox";
+    masterInput.setAttribute("data-sound-toggle", "master");
+    masterInput.addEventListener("change", (event) => {
+      event.stopPropagation();
+      void this.audioEngine.unlockFromUserGesture();
+      this.audioPreferencesStore.toggleMaster();
+      getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+    });
+    const masterText = document.createElement("span");
+    masterText.textContent = UI_TEXT.EXPERIENCE_SOUND_MASTER;
+    masterRow.append(masterInput, masterText);
+
+    const makeSliderRow = (
+      key: "music" | "effects",
       labelText: string,
-      onChange: () => void,
-    ): { row: HTMLElement; input: HTMLInputElement } => {
+      onInput: (volume: number) => void,
+    ): { row: HTMLElement; input: HTMLInputElement; valueEl: HTMLElement } => {
       const row = document.createElement("label");
-      row.className = UI_CLASSES.HUD_SOUND_ROW;
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.setAttribute("data-sound-toggle", key);
-      input.addEventListener("change", (event) => {
-        event.stopPropagation();
-        void this.audioEngine.unlockFromUserGesture();
-        onChange();
-        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
-      });
+      row.className = UI_CLASSES.HUD_SOUND_SLIDER_ROW;
+
+      const header = document.createElement("div");
+      header.className = UI_CLASSES.HUD_SOUND_SLIDER_HEADER;
+
       const text = document.createElement("span");
       text.textContent = labelText;
-      row.append(input, text);
-      return { row, input };
+
+      const valueEl = document.createElement("span");
+      valueEl.className = UI_CLASSES.HUD_SOUND_SLIDER_VALUE;
+      valueEl.setAttribute("data-sound-value", key);
+
+      header.append(text, valueEl);
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.className = UI_CLASSES.HUD_SOUND_SLIDER;
+      input.min = String(AUDIO_TOKENS.VOLUME_MIN);
+      input.max = String(AUDIO_TOKENS.VOLUME_MAX);
+      input.step = String(AUDIO_TOKENS.VOLUME_STEP);
+      input.setAttribute("data-sound-slider", key);
+      input.setAttribute("aria-label", labelText);
+      input.addEventListener("input", (event) => {
+        event.stopPropagation();
+        if (this.audioPreferencesStore.getPreferences().masterEnabled) {
+          void this.audioEngine.unlockFromUserGesture();
+        }
+        onInput(Number(input.value));
+      });
+
+      row.append(header, input);
+      return { row, input, valueEl };
     };
 
-    const musicRow = makeToggleRow(
+    const musicRow = makeSliderRow(
       "music",
       UI_TEXT.EXPERIENCE_SOUND_MUSIC,
-      () => this.audioPreferencesStore.toggleMusic(),
+      (volume) => this.audioPreferencesStore.setMusicVolume(volume),
     );
-    const effectsRow = makeToggleRow(
+    const effectsRow = makeSliderRow(
       "effects",
       UI_TEXT.EXPERIENCE_SOUND_EFFECTS,
-      () => this.audioPreferencesStore.toggleEffects(),
-    );
-    const masterRow = makeToggleRow(
-      "master",
-      UI_TEXT.EXPERIENCE_SOUND_MASTER,
-      () => this.audioPreferencesStore.toggleMaster(),
+      (volume) => this.audioPreferencesStore.setEffectsVolume(volume),
     );
 
-    popover.append(musicRow.row, effectsRow.row, masterRow.row);
+    popover.append(masterRow, musicRow.row, effectsRow.row);
     popover.addEventListener("click", (event) => {
       event.stopPropagation();
     });
@@ -869,16 +902,29 @@ export class ExperienceScreenView implements ScreenView {
     this.soundMenuBtnEl = btn;
     this.soundPopoverEl = popover;
     this.soundMusicInputEl = musicRow.input;
+    this.soundMusicValueEl = musicRow.valueEl;
     this.soundEffectsInputEl = effectsRow.input;
-    this.soundMasterInputEl = masterRow.input;
+    this.soundEffectsValueEl = effectsRow.valueEl;
+    this.soundMasterInputEl = masterInput;
+
+    const formatPercent = (volume: number): string =>
+      `${Math.round(volume * AUDIO_TOKENS.PERCENT_MULTIPLIER)}${UI_TEXT.EXPERIENCE_SOUND_PERCENT_SUFFIX}`;
 
     this.unsubscribeAudioPrefs = this.audioPreferencesStore.subscribe(
       (prefs) => {
         if (this.soundMusicInputEl) {
-          this.soundMusicInputEl.checked = prefs.musicEnabled;
+          this.soundMusicInputEl.value = String(prefs.musicVolume);
+        }
+        if (this.soundMusicValueEl) {
+          this.soundMusicValueEl.textContent = formatPercent(prefs.musicVolume);
         }
         if (this.soundEffectsInputEl) {
-          this.soundEffectsInputEl.checked = prefs.effectsEnabled;
+          this.soundEffectsInputEl.value = String(prefs.effectsVolume);
+        }
+        if (this.soundEffectsValueEl) {
+          this.soundEffectsValueEl.textContent = formatPercent(
+            prefs.effectsVolume,
+          );
         }
         if (this.soundMasterInputEl) {
           this.soundMasterInputEl.checked = prefs.masterEnabled;
@@ -936,7 +982,9 @@ export class ExperienceScreenView implements ScreenView {
     this.soundMenuBtnEl = null;
     this.soundPopoverEl = null;
     this.soundMusicInputEl = null;
+    this.soundMusicValueEl = null;
     this.soundEffectsInputEl = null;
+    this.soundEffectsValueEl = null;
     this.soundMasterInputEl = null;
   }
 

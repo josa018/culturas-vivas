@@ -931,15 +931,15 @@ body {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 170px;
-  padding: 10px 12px;
+  min-width: 210px;
+  padding: 12px 14px;
   border-radius: var(--cv-radius-medium);
   background-color: rgba(11, 15, 23, 0.94);
   border: 1px solid var(--cv-color-border-faja);
   backdrop-filter: blur(10px);
   display: none;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   z-index: 250;
 }
 
@@ -952,7 +952,35 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+  font-weight: 600;
   color: var(--md-sys-color-on-surface);
+  cursor: pointer;
+}
+
+.cv-hud-sound-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.cv-hud-sound-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-hud-sound-slider-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cv-color-accent-turquesa);
+}
+
+.cv-hud-sound-slider {
+  width: 100%;
+  accent-color: var(--cv-color-accent-cempasuchil);
   cursor: pointer;
 }
 

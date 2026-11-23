@@ -90,30 +90,31 @@ describe("Automatic Music Bus Ducking", () => {
     await engine.unlockFromUserGesture();
     engine.activateExperience(RoomId.WIXARIKA);
     prefs.activateSound();
+    prefs.setMusicVolume(0.5);
 
     const musicGain = mock.gains[0];
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
       mock.ctx.currentTime,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );
 
-    // Unmuted video starts playing -> duck music
+    // Unmuted video starts playing -> duck music proportionally to slider volume
     engine.setMediaPlaybackActive(true);
     const expectedTau =
       AUDIO_TOKENS.DUCK_RAMP_MS /
       AUDIO_TOKENS.MS_PER_SECOND /
       AUDIO_TOKENS.DUCK_TAU_SETTLE_DIVISOR;
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DUCK_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DUCK_GAIN,
       mock.ctx.currentTime,
       expectedTau,
     );
 
-    // Muting stand video restores music gain
+    // Muting stand video restores scaled music gain
     prefs.toggleStandMedia();
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
       mock.ctx.currentTime,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );
@@ -121,14 +122,14 @@ describe("Automatic Music Bus Ducking", () => {
     // Unmuting stand video re-ducks, stopping video restores
     prefs.toggleStandMedia();
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DUCK_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DUCK_GAIN,
       mock.ctx.currentTime,
       expectedTau,
     );
 
     engine.setMediaPlaybackActive(false);
     expect(musicGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
+      0.5 * AUDIO_TOKENS.MUSIC_DEFAULT_GAIN,
       mock.ctx.currentTime,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );

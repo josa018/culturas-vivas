@@ -6,27 +6,26 @@ export const AUDIO_STORAGE_KEYS = {
 
 export interface AudioPreferences {
   readonly masterEnabled: boolean;
-  readonly musicEnabled: boolean;
-  readonly effectsEnabled: boolean;
+  readonly musicVolume: number;
+  readonly effectsVolume: number;
   readonly mediaMuted: boolean;
 }
 
-export const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
-  masterEnabled: false,
-  musicEnabled: true,
-  effectsEnabled: true,
-  mediaMuted: true,
-} as const;
-
 export const AUDIO_TOKENS = {
-  MUSIC_DEFAULT_GAIN: 0.65,
-  MUSIC_DUCK_GAIN: 0.2,
+  VOLUME_MIN: 0,
+  VOLUME_MAX: 1,
+  VOLUME_STEP: 0.05,
+  DEFAULT_MUSIC_VOLUME: 0.7,
+  DEFAULT_EFFECTS_VOLUME: 0.8,
+  PERCENT_MULTIPLIER: 100,
+  MUSIC_DEFAULT_GAIN: 0.75,
+  MUSIC_DUCK_GAIN: 0.22,
   DUCK_RAMP_MS: 400,
   DUCK_TAU_SETTLE_DIVISOR: 3,
   MS_PER_SECOND: 1000,
   GAIN_RAMP_TIME_CONSTANT_S: 0.04,
-  SFX_GAIN: 0.8,
-  AMBIENCE_GAIN: 0.28,
+  SFX_GAIN: 0.9,
+  AMBIENCE_GAIN: 0.3,
   AMBIENT_CROSSFADE_MS: 600,
   OCCLUSION_ANGLE_DEG: 70,
   OCCLUSION_LOWPASS_HZ: 800,
@@ -41,6 +40,13 @@ export const AUDIO_TOKENS = {
   PANNER_REF_DISTANCE_M: 1,
   PANNER_ROLLOFF_FACTOR: 0,
   IOS_AUDIO_SESSION_TYPE: "playback",
+} as const;
+
+export const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
+  masterEnabled: false,
+  musicVolume: AUDIO_TOKENS.DEFAULT_MUSIC_VOLUME,
+  effectsVolume: AUDIO_TOKENS.DEFAULT_EFFECTS_VOLUME,
+  mediaMuted: true,
 } as const;
 
 export const SfxId = {

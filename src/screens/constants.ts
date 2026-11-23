@@ -71,6 +71,10 @@ export const UI_CLASSES = {
   HUD_SOUND_POPOVER: "cv-hud-sound-popover",
   HUD_SOUND_POPOVER_OPEN: "cv-hud-sound-popover--open",
   HUD_SOUND_ROW: "cv-hud-sound-row",
+  HUD_SOUND_SLIDER_ROW: "cv-hud-sound-slider-row",
+  HUD_SOUND_SLIDER_HEADER: "cv-hud-sound-slider-header",
+  HUD_SOUND_SLIDER_VALUE: "cv-hud-sound-slider-value",
+  HUD_SOUND_SLIDER: "cv-hud-sound-slider",
 } as const;
 
 export type PartnerLogoVariant = "wide" | "horizontal" | "emblem";
@@ -150,6 +154,7 @@ export const UI_TEXT = {
   EXPERIENCE_SOUND_MUSIC: "Música",
   EXPERIENCE_SOUND_EFFECTS: "Efectos",
   EXPERIENCE_SOUND_MASTER: "Todo",
+  EXPERIENCE_SOUND_PERCENT_SUFFIX: "%",
 
   EXIT_MODAL_TITLE: "¿Deseas salir?",
   EXIT_MODAL_BTN_RESUME: "Regresar a la experiencia",

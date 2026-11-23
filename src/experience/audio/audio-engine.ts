@@ -350,6 +350,7 @@ export class AudioEngine {
   }
 
   private syncBuses(): void {
+    const prefs = this.preferencesStore.getPreferences();
     const channels = this.preferencesStore.getDerivedChannels();
     const musicAudible =
       this.experienceActive &&
@@ -369,11 +370,13 @@ export class AudioEngine {
 
     const now = this.context.currentTime;
     const isDucked = this.mediaPlaybackActive && !channels.mediaMuted;
-    const targetMusicGain = !musicAudible
+    const musicCeiling = isDucked
+      ? AUDIO_TOKENS.MUSIC_DUCK_GAIN
+      : AUDIO_TOKENS.MUSIC_DEFAULT_GAIN;
+    const targetMusicGain = !musicAudible ? 0 : prefs.musicVolume * musicCeiling;
+    const targetSfxGain = !effectsAudible
       ? 0
-      : isDucked
-        ? AUDIO_TOKENS.MUSIC_DUCK_GAIN
-        : AUDIO_TOKENS.MUSIC_DEFAULT_GAIN;
+      : prefs.effectsVolume * AUDIO_TOKENS.SFX_GAIN;
 
     const musicTau = isDucked
       ? AUDIO_TOKENS.DUCK_RAMP_MS /
@@ -383,7 +386,7 @@ export class AudioEngine {
 
     this.musicGain.gain.setTargetAtTime(targetMusicGain, now, musicTau);
     this.sfxGain.gain.setTargetAtTime(
-      effectsAudible ? AUDIO_TOKENS.SFX_GAIN : 0,
+      targetSfxGain,
       now,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );

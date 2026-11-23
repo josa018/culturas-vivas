@@ -85,6 +85,7 @@ export interface MediaStandComponentInstance {
   carousel: MediaCarouselController;
   localState: InspectionState;
   ownsActiveVideo: boolean;
+  inspectionTargetPosition?: Vector3D | null;
   unsubscribeInspection: (() => void) | null;
   cleanupListeners: Array<() => void>;
   elements: StandDomElements | null;
@@ -667,11 +668,37 @@ export function createMediaStandComponentDefinition(
     y: number;
     z: number;
   } {
-    const objPos = (
+    const obj3d = (
       el as unknown as {
-        object3D?: { position?: { x: number; y: number; z: number } };
+        object3D?: {
+          position?: { x: number; y: number; z: number };
+          getWorldPosition?: (target: { x: number; y: number; z: number }) => unknown;
+        };
       }
-    ).object3D?.position;
+    ).object3D;
+    const threeVecCtor = (
+      globalThis as unknown as {
+        AFRAME?: { THREE?: { Vector3?: new () => { x: number; y: number; z: number } } };
+        THREE?: { Vector3?: new () => { x: number; y: number; z: number } };
+      }
+    ).AFRAME?.THREE?.Vector3 ??
+      (
+        globalThis as unknown as {
+          THREE?: { Vector3?: new () => { x: number; y: number; z: number } };
+        }
+      ).THREE?.Vector3;
+    if (obj3d && typeof obj3d.getWorldPosition === "function" && threeVecCtor) {
+      const worldOut = new threeVecCtor();
+      obj3d.getWorldPosition(worldOut);
+      if (
+        Number.isFinite(worldOut.x) &&
+        Number.isFinite(worldOut.y) &&
+        Number.isFinite(worldOut.z)
+      ) {
+        return { x: worldOut.x, y: worldOut.y, z: worldOut.z };
+      }
+    }
+    const objPos = obj3d?.position;
     if (
       objPos &&
       Number.isFinite(objPos.x) &&
@@ -951,7 +978,7 @@ export function createMediaStandComponentDefinition(
     const activeSlideId = item.id;
     instance.ownsActiveVideo = true;
     resolveSpatialMediaAudio().setStandWorldPosition(
-      resolveStandWorldPosition(instance.el),
+      instance.inspectionTargetPosition ?? resolveStandWorldPosition(instance.el),
     );
     const texture = await videoController.playVideo(item.mediaUrl);
 
@@ -1030,13 +1057,14 @@ export function createMediaStandComponentDefinition(
   function moveStandToInspectionCenter(
     instance: MediaStandComponentInstance,
     controller: ExhibitInspectionController,
-  ): void {
+  ): Vector3D {
     const target = controller.calculateErgonomicInspectionTarget(
       instance.data.galleryPosition,
       ROOM_CENTER_COORDINATE,
       INSPECTION_TARGET_TOKENS.STAND_FOCAL_DISTANCE_M,
       INSPECTION_TARGET_TOKENS.STAND_INSPECTION_Y_M,
     );
+    instance.inspectionTargetPosition = target;
     const dx = -target.x;
     const dz = -target.z;
     const yawDeg = Number(
@@ -1046,7 +1074,7 @@ export function createMediaStandComponentDefinition(
 
     if (!isAFrameActive()) {
       applyTransform(instance.el, target, targetRot);
-      return;
+      return target;
     }
 
     const fromPos = `${instance.data.galleryPosition.x} ${instance.data.galleryPosition.y} ${instance.data.galleryPosition.z}`;
@@ -1064,6 +1092,7 @@ export function createMediaStandComponentDefinition(
       "animation__stand_rot_inspect",
       `property: rotation; from: ${fromRot}; to: ${toRot}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
     );
+    return target;
   }
 
   function restoreGalleryTransform(instance: MediaStandComponentInstance): void {
@@ -1425,6 +1454,7 @@ export function createMediaStandComponentDefinition(
       }
 
       this.carousel.reset();
+      this.inspectionTargetPosition = null;
       this.localState = InspectionState.IDLE;
       getSharedSfxPlayer().play(SfxId.STAND_CLOSE);
       restoreGalleryTransform(this);

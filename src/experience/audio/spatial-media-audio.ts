@@ -78,6 +78,7 @@ export class SpatialMediaAudio {
   private standPosition: Vector3D = { x: 0, y: 0, z: -1 };
   private listenerPosition: Vector3D = { x: 0, y: 0, z: 0 };
   private listenerForward: Vector3D = { x: 0, y: 0, z: -1 };
+  private lastOccluded: boolean | null = null;
   private unsubscribeUnlock: (() => void) | null = null;
 
   constructor(options: SpatialMediaAudioOptions = {}) {
@@ -140,6 +141,7 @@ export class SpatialMediaAudio {
     this.pannerNode = panner;
     this.occlusionFilter = filter;
     this.occlusionGain = occlusionGain;
+    this.lastOccluded = null;
 
     this.applyStandPositionToPanner();
     this.applyOcclusion();
@@ -235,6 +237,10 @@ export class SpatialMediaAudio {
       this.listenerForward,
       standDir,
     );
+    if (this.lastOccluded === params.occluded) {
+      return;
+    }
+    this.lastOccluded = params.occluded;
     const now = ctx.currentTime;
     this.occlusionFilter.frequency.setTargetAtTime(
       params.cutoffHz,

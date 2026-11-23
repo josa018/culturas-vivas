@@ -119,8 +119,8 @@ describe("SfxPlayer Preloading & Effects Gating", () => {
     );
     expect(mock.createdSources[0].start).toHaveBeenCalledTimes(1);
 
-    // Effects OFF -> muted again
-    prefs.toggleEffects();
+    // Effects slider 0 -> muted again
+    prefs.setEffectsVolume(0);
     expect(sfx.play(SfxId.PORTAL_WHOOSH)).toBe(false);
     expect(mock.createdSources).toHaveLength(1);
   });

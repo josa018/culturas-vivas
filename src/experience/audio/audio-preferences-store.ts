@@ -1,17 +1,28 @@
 import type { StorageAdapter } from "../../navigation/session-store";
 import {
   AUDIO_STORAGE_KEYS,
+  AUDIO_TOKENS,
   DEFAULT_AUDIO_PREFERENCES,
   type AudioPreferences,
 } from "./audio-constants";
 
 export type AudioMixerAction =
   | { readonly type: "MASTER_TOGGLED" }
-  | { readonly type: "MUSIC_TOGGLED" }
-  | { readonly type: "EFFECTS_TOGGLED" }
+  | { readonly type: "SET_MUSIC_VOLUME"; readonly volume: number }
+  | { readonly type: "SET_EFFECTS_VOLUME"; readonly volume: number }
   | { readonly type: "STAND_MEDIA_TOGGLED" }
   | { readonly type: "ACTIVATE_SOUND" }
   | { readonly type: "SYNC_MEDIA_MUTED"; readonly muted: boolean };
+
+function clampVolume(volume: number, fallback: number): number {
+  if (!Number.isFinite(volume)) {
+    return fallback;
+  }
+  return Math.max(
+    AUDIO_TOKENS.VOLUME_MIN,
+    Math.min(AUDIO_TOKENS.VOLUME_MAX, volume),
+  );
+}
 
 export interface DerivedAudioChannelState {
   readonly musicAudible: boolean;
@@ -70,15 +81,15 @@ export function reduceAudioMixerState(
         mediaMuted: !nextMaster,
       };
     }
-    case "MUSIC_TOGGLED":
+    case "SET_MUSIC_VOLUME":
       return {
         ...state,
-        musicEnabled: !state.musicEnabled,
+        musicVolume: clampVolume(action.volume, state.musicVolume),
       };
-    case "EFFECTS_TOGGLED":
+    case "SET_EFFECTS_VOLUME":
       return {
         ...state,
-        effectsEnabled: !state.effectsEnabled,
+        effectsVolume: clampVolume(action.volume, state.effectsVolume),
       };
     case "STAND_MEDIA_TOGGLED":
       return {
@@ -103,10 +114,16 @@ export function deriveAudioChannelState(
   prefs: AudioPreferences,
 ): DerivedAudioChannelState {
   return {
-    musicAudible: prefs.masterEnabled && prefs.musicEnabled,
-    effectsAudible: prefs.masterEnabled && prefs.effectsEnabled,
+    musicAudible: prefs.masterEnabled && prefs.musicVolume > AUDIO_TOKENS.VOLUME_MIN,
+    effectsAudible:
+      prefs.masterEnabled && prefs.effectsVolume > AUDIO_TOKENS.VOLUME_MIN,
     mediaMuted: prefs.mediaMuted,
   };
+}
+
+interface LegacyAudioPreferences {
+  readonly musicEnabled?: boolean;
+  readonly effectsEnabled?: boolean;
 }
 
 function parsePersistedPreferences(raw: string | null): AudioPreferences {
@@ -114,20 +131,34 @@ function parsePersistedPreferences(raw: string | null): AudioPreferences {
     return { ...DEFAULT_AUDIO_PREFERENCES };
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<AudioPreferences>;
+    const parsed = JSON.parse(raw) as Partial<AudioPreferences> &
+      LegacyAudioPreferences;
+    const resolvedMusicVolume =
+      typeof parsed.musicVolume === "number"
+        ? clampVolume(
+            parsed.musicVolume,
+            DEFAULT_AUDIO_PREFERENCES.musicVolume,
+          )
+        : parsed.musicEnabled === false
+          ? AUDIO_TOKENS.VOLUME_MIN
+          : DEFAULT_AUDIO_PREFERENCES.musicVolume;
+    const resolvedEffectsVolume =
+      typeof parsed.effectsVolume === "number"
+        ? clampVolume(
+            parsed.effectsVolume,
+            DEFAULT_AUDIO_PREFERENCES.effectsVolume,
+          )
+        : parsed.effectsEnabled === false
+          ? AUDIO_TOKENS.VOLUME_MIN
+          : DEFAULT_AUDIO_PREFERENCES.effectsVolume;
+
     return {
       masterEnabled:
         typeof parsed.masterEnabled === "boolean"
           ? parsed.masterEnabled
           : DEFAULT_AUDIO_PREFERENCES.masterEnabled,
-      musicEnabled:
-        typeof parsed.musicEnabled === "boolean"
-          ? parsed.musicEnabled
-          : DEFAULT_AUDIO_PREFERENCES.musicEnabled,
-      effectsEnabled:
-        typeof parsed.effectsEnabled === "boolean"
-          ? parsed.effectsEnabled
-          : DEFAULT_AUDIO_PREFERENCES.effectsEnabled,
+      musicVolume: resolvedMusicVolume,
+      effectsVolume: resolvedEffectsVolume,
       mediaMuted:
         typeof parsed.mediaMuted === "boolean"
           ? parsed.mediaMuted
@@ -165,8 +196,8 @@ export class AudioPreferencesStore {
     const next = reduceAudioMixerState(this.preferences, action);
     const unchanged =
       next.masterEnabled === this.preferences.masterEnabled &&
-      next.musicEnabled === this.preferences.musicEnabled &&
-      next.effectsEnabled === this.preferences.effectsEnabled &&
+      next.musicVolume === this.preferences.musicVolume &&
+      next.effectsVolume === this.preferences.effectsVolume &&
       next.mediaMuted === this.preferences.mediaMuted;
 
     this.preferences = next;
@@ -181,12 +212,12 @@ export class AudioPreferencesStore {
     return this.dispatch({ type: "MASTER_TOGGLED" });
   }
 
-  public toggleMusic(): AudioPreferences {
-    return this.dispatch({ type: "MUSIC_TOGGLED" });
+  public setMusicVolume(volume: number): AudioPreferences {
+    return this.dispatch({ type: "SET_MUSIC_VOLUME", volume });
   }
 
-  public toggleEffects(): AudioPreferences {
-    return this.dispatch({ type: "EFFECTS_TOGGLED" });
+  public setEffectsVolume(volume: number): AudioPreferences {
+    return this.dispatch({ type: "SET_EFFECTS_VOLUME", volume });
   }
 
   public toggleStandMedia(): AudioPreferences {
