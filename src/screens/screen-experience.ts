@@ -59,6 +59,7 @@ import {
 } from "../experience/audio/audio-constants";
 import { getSharedSfxPlayer } from "../experience/audio/sfx-player";
 import { getSharedAmbiencePlayer } from "../experience/audio/ambience-player";
+import { getSharedMusicPlayer } from "../experience/audio/music-player";
 import { STAND_DICTIONARY } from "../experience/constants";
 
 interface AFrameSceneElement extends HTMLElement {
@@ -290,6 +291,7 @@ export class ExperienceScreenView implements ScreenView {
     this.toggleSceneLifecycle(true);
     if (this.audioEngine === getSharedAudioEngine()) {
       getSharedAmbiencePlayer();
+      getSharedMusicPlayer();
     }
     this.audioEngine.activateExperience(activeRoomId);
     void getSharedSfxPlayer().preloadAll();

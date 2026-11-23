@@ -82,3 +82,9 @@ export const AMBIENT_MANIFEST: Record<RoomEnvironmentId, string> = {
   [RoomEnvironmentId.ODAM]: "/assets/audio/ambient/odam-forest.mp3",
   [RoomEnvironmentId.MEXICANERO]: "/assets/audio/ambient/mexicanero-highland.mp3",
 } as const;
+
+export const AUDIO_PLAYLIST_CONSTANTS = {
+  PUBLIC_AUDIO_ENDPOINT: "/api/audio",
+  FETCH_TIMEOUT_MS: 3000,
+  MAX_CONSECUTIVE_TRACK_ERRORS: 5,
+} as const;

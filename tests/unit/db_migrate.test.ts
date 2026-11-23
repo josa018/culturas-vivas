@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { createClient } from "@libsql/client";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 // @ts-expect-error ESM utility script without generated .d.ts
 import { runMigrations } from "../../scripts/db-migrate.mjs";
@@ -51,12 +52,67 @@ describe("scripts/db-migrate.mjs", () => {
       log: (msg: string) => firstLogs.push(msg),
     });
 
-    expect(first.appliedCount).toBeGreaterThanOrEqual(7);
+    expect(first.appliedCount).toBeGreaterThanOrEqual(8);
     expect(first.skippedCount).toBe(0);
     expect(first.tables).toContain("_migrations");
     expect(first.tables).toContain("visitor_sessions");
     expect(first.tables).toContain("surveys");
     expect(first.tables).toContain("room_media_items");
+    expect(first.tables).toContain("room_audio_tracks");
+    expect(first.tables).toContain("room_playlist_settings");
+
+    const checkClient = createClient({ url: dbUrl });
+    try {
+      const idxResult = await checkClient.execute({
+        sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+        args: ["idx_room_audio_room_order"],
+      });
+      expect(idxResult.rows).toHaveLength(1);
+
+      await checkClient.execute({
+        sql: `INSERT INTO room_audio_tracks (
+          id, room_id, title, artist_credit, license_note, storage_provider, media_key,
+          mime_type, file_size_bytes, duration_ms, sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'r2', ?, ?, ?, ?, 0, 1000, 1000)`,
+        args: [
+          "track-1",
+          "LOBBY",
+          "Entrada",
+          "Ensamble",
+          "CC0",
+          "audio/lobby/track-1.m4a",
+          "audio/mp4",
+          1024,
+          120000,
+        ],
+      });
+
+      await expect(
+        checkClient.execute({
+          sql: `INSERT INTO room_audio_tracks (
+            id, room_id, title, artist_credit, license_note, storage_provider, media_key,
+            mime_type, file_size_bytes, sort_order, created_at, updated_at
+          ) VALUES ('bad', 'LOBBY', 'Bad', '', '', 'r2', 'audio/lobby/bad.ogg', 'audio/ogg', 100, 0, 1, 1)`,
+          args: [],
+        }),
+      ).rejects.toThrow();
+
+      await checkClient.execute({
+        sql: `INSERT INTO room_playlist_settings (room_id, playback_mode, updated_at)
+              VALUES ('LOBBY', 'SHUFFLE', 1000)`,
+        args: [],
+      });
+
+      await expect(
+        checkClient.execute({
+          sql: `INSERT INTO room_playlist_settings (room_id, playback_mode, updated_at)
+                VALUES ('WIXARIKA', 'RANDOM', 1000)`,
+          args: [],
+        }),
+      ).rejects.toThrow();
+    } finally {
+      checkClient.close();
+    }
 
     const secondLogs: string[] = [];
     const second = await runMigrations({

@@ -1796,3 +1796,22 @@ a-scene canvas.a-canvas {
   object-fit: cover;
   border-radius: 6px;
 }
+
+.cv-admin-audio-guidance {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.cv-admin-audio-item {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) auto;
+}
+
+.cv-admin-audio-preview {
+  width: 100%;
+  height: 36px;
+}

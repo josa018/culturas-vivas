@@ -1,18 +1,21 @@
 import { AdminAuthStore } from "../admin-auth-store";
+import { AdminAudioStore } from "../audio-store";
 import { AdminDashboardStore } from "../admin-dashboard-store";
 import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 import { AdminMediaStore } from "../media-store";
 import { AdminHeaderWidget } from "./admin-header";
 import { AttendanceChartWidget } from "./attendance-chart";
 import { MediaManagerWidget } from "./media-manager-widget";
+import { PlaylistManagerWidget } from "./playlist-manager-widget";
 import { SurveysTableWidget } from "./surveys-table";
 
-export type AdminDashboardTab = "telemetry" | "media";
+export type AdminDashboardTab = "telemetry" | "media" | "playlists";
 
 export interface AdminDashboardViewOptions {
   readonly authStore: AdminAuthStore;
   readonly dashboardStore: AdminDashboardStore;
   readonly mediaStore?: AdminMediaStore;
+  readonly audioStore?: AdminAudioStore;
   readonly onLogout: () => void;
   readonly onReturnToTour?: () => void;
 }
@@ -23,14 +26,18 @@ export class AdminDashboardView {
   private chartWidget: AttendanceChartWidget | null = null;
   private surveyWidget: SurveysTableWidget | null = null;
   private mediaWidget: MediaManagerWidget | null = null;
+  private playlistWidget: PlaylistManagerWidget | null = null;
   private telemetryTabBtn: HTMLButtonElement | null = null;
   private mediaTabBtn: HTMLButtonElement | null = null;
+  private playlistsTabBtn: HTMLButtonElement | null = null;
   private telemetryPanelEl: HTMLElement | null = null;
   private mediaPanelEl: HTMLElement | null = null;
+  private playlistsPanelEl: HTMLElement | null = null;
   private activeTab: AdminDashboardTab = "telemetry";
   private readonly authStore: AdminAuthStore;
   private readonly dashboardStore: AdminDashboardStore;
   private readonly mediaStore: AdminMediaStore;
+  private readonly audioStore: AdminAudioStore;
   private readonly onLogout: () => void;
   private readonly onReturnToTour?: () => void;
 
@@ -40,6 +47,12 @@ export class AdminDashboardView {
     this.mediaStore =
       options.mediaStore ??
       new AdminMediaStore({
+        getToken: () => this.authStore.getState().token,
+        onUnauthorized: () => this.authStore.logout(),
+      });
+    this.audioStore =
+      options.audioStore ??
+      new AdminAudioStore({
         getToken: () => this.authStore.getState().token,
         onUnauthorized: () => this.authStore.logout(),
       });
@@ -88,7 +101,17 @@ export class AdminDashboardView {
       this.setActiveTab("media");
     });
 
-    tabBar.append(telemetryBtn, mediaBtn);
+    const playlistsBtn = document.createElement("button");
+    playlistsBtn.type = "button";
+    playlistsBtn.className = ADMIN_UI_CLASSES.TAB_BTN;
+    playlistsBtn.textContent = ADMIN_UI_TEXT.TAB_PLAYLISTS;
+    playlistsBtn.setAttribute("role", "tab");
+    playlistsBtn.setAttribute("data-admin-tab", "playlists");
+    playlistsBtn.addEventListener("click", () => {
+      this.setActiveTab("playlists");
+    });
+
+    tabBar.append(telemetryBtn, mediaBtn, playlistsBtn);
     wrapper.appendChild(tabBar);
 
     const telemetryPanel = document.createElement("div");
@@ -118,14 +141,27 @@ export class AdminDashboardView {
     this.mediaWidget.mount(mediaGrid);
     mediaPanel.appendChild(mediaGrid);
 
-    wrapper.append(telemetryPanel, mediaPanel);
+    const playlistsPanel = document.createElement("div");
+    playlistsPanel.className = ADMIN_UI_CLASSES.TAB_PANEL;
+    playlistsPanel.setAttribute("role", "tabpanel");
+    playlistsPanel.setAttribute("data-admin-panel", "playlists");
+
+    const playlistsGrid = document.createElement("div");
+    playlistsGrid.className = ADMIN_UI_CLASSES.GRID_LAYOUT;
+    this.playlistWidget = new PlaylistManagerWidget(this.audioStore);
+    this.playlistWidget.mount(playlistsGrid);
+    playlistsPanel.appendChild(playlistsGrid);
+
+    wrapper.append(telemetryPanel, mediaPanel, playlistsPanel);
     parent.appendChild(wrapper);
 
     this.container = wrapper;
     this.telemetryTabBtn = telemetryBtn;
     this.mediaTabBtn = mediaBtn;
+    this.playlistsTabBtn = playlistsBtn;
     this.telemetryPanelEl = telemetryPanel;
     this.mediaPanelEl = mediaPanel;
+    this.playlistsPanelEl = playlistsPanel;
     this.syncTabPresentation();
   }
 
@@ -134,6 +170,8 @@ export class AdminDashboardView {
     this.syncTabPresentation();
     if (tab === "media") {
       void this.mediaStore.fetchCatalog();
+    } else if (tab === "playlists") {
+      void this.audioStore.fetchPlaylist();
     }
   }
 
@@ -143,16 +181,24 @@ export class AdminDashboardView {
 
   private syncTabPresentation(): void {
     const isTelemetry = this.activeTab === "telemetry";
+    const isMedia = this.activeTab === "media";
+    const isPlaylists = this.activeTab === "playlists";
+
     this.telemetryTabBtn?.classList.toggle(
       ADMIN_UI_CLASSES.TAB_BTN_ACTIVE,
       isTelemetry,
     );
     this.mediaTabBtn?.classList.toggle(
       ADMIN_UI_CLASSES.TAB_BTN_ACTIVE,
-      !isTelemetry,
+      isMedia,
+    );
+    this.playlistsTabBtn?.classList.toggle(
+      ADMIN_UI_CLASSES.TAB_BTN_ACTIVE,
+      isPlaylists,
     );
     this.telemetryTabBtn?.setAttribute("aria-selected", String(isTelemetry));
-    this.mediaTabBtn?.setAttribute("aria-selected", String(!isTelemetry));
+    this.mediaTabBtn?.setAttribute("aria-selected", String(isMedia));
+    this.playlistsTabBtn?.setAttribute("aria-selected", String(isPlaylists));
 
     this.telemetryPanelEl?.classList.toggle(
       ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN,
@@ -160,7 +206,11 @@ export class AdminDashboardView {
     );
     this.mediaPanelEl?.classList.toggle(
       ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN,
-      isTelemetry,
+      !isMedia,
+    );
+    this.playlistsPanelEl?.classList.toggle(
+      ADMIN_UI_CLASSES.TAB_PANEL_HIDDEN,
+      !isPlaylists,
     );
   }
 
@@ -181,14 +231,20 @@ export class AdminDashboardView {
       this.mediaWidget.unmount();
       this.mediaWidget = null;
     }
+    if (this.playlistWidget) {
+      this.playlistWidget.unmount();
+      this.playlistWidget = null;
+    }
     if (this.container) {
       this.container.remove();
       this.container = null;
     }
     this.telemetryTabBtn = null;
     this.mediaTabBtn = null;
+    this.playlistsTabBtn = null;
     this.telemetryPanelEl = null;
     this.mediaPanelEl = null;
+    this.playlistsPanelEl = null;
   }
 
   public show(): void {
