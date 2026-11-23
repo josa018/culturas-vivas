@@ -240,4 +240,43 @@ describe("SharedVideoController", () => {
     expect(await controller.togglePause()).toBe(false);
     expect(controller.isPlaying()).toBe(false);
   });
+
+  it("assigns SRGBColorSpace and needsUpdate on VideoTexture created by default factory", async () => {
+    const { video } = createMockVideoElement();
+    const createdTextures: Array<{ colorSpace?: string; needsUpdate: boolean }> = [];
+    class MockVideoTexture {
+      public colorSpace = "";
+      public needsUpdate = false;
+      public dispose = vi.fn();
+      constructor(_el: VideoElementLike) {
+        createdTextures.push(this);
+      }
+    }
+
+    const previousAframe = (globalThis as { AFRAME?: unknown }).AFRAME;
+    (globalThis as { AFRAME?: unknown }).AFRAME = {
+      THREE: {
+        SRGBColorSpace: "srgb",
+        VideoTexture: MockVideoTexture,
+      },
+    };
+
+    try {
+      const controller = new SharedVideoController({
+        createVideoElement: () => video,
+      });
+      const texture = await controller.playVideo("https://cdn.example.com/sbs.mp4");
+
+      expect(texture).not.toBeNull();
+      expect(createdTextures).toHaveLength(1);
+      expect(createdTextures[0]?.colorSpace).toBe("srgb");
+      expect(createdTextures[0]?.needsUpdate).toBe(true);
+    } finally {
+      if (previousAframe === undefined) {
+        delete (globalThis as { AFRAME?: unknown }).AFRAME;
+      } else {
+        (globalThis as { AFRAME?: unknown }).AFRAME = previousAframe;
+      }
+    }
+  });
 });

@@ -843,4 +843,152 @@ describe("cv-media-stand A-Frame Component", () => {
 
     instance.remove();
   });
+
+  it("configures non-cached plane geometry and binds sRGB VideoTexture directly across 2D to Half-SBS transitions", async () => {
+    const tex0: DisposableVideoTexture = {
+      colorSpace: "srgb",
+      needsUpdate: true,
+      dispose: vi.fn(),
+    };
+    const tex1: DisposableVideoTexture = {
+      colorSpace: "srgb",
+      needsUpdate: true,
+      dispose: vi.fn(),
+    };
+    const textureFactory = vi
+      .fn<() => DisposableVideoTexture>()
+      .mockReturnValueOnce(tex0)
+      .mockReturnValueOnce(tex1);
+
+    const attributes = new Map<string, string>();
+    const video: VideoElementLike = {
+      id: "",
+      src: "",
+      muted: true,
+      paused: true,
+      loop: false,
+      playsInline: true,
+      crossOrigin: null,
+      preload: "metadata",
+      style: {},
+      setAttribute: vi.fn((k: string, v: string) => {
+        attributes.set(k, v);
+      }),
+      removeAttribute: vi.fn((k: string) => {
+        attributes.delete(k);
+        if (k === "src") {
+          video.src = "";
+        }
+      }),
+      play: vi.fn(async () => {
+        video.paused = false;
+      }),
+      pause: vi.fn(() => {
+        video.paused = true;
+      }),
+      load: vi.fn(),
+    };
+    const videoController = new SharedVideoController({
+      createVideoElement: () => video,
+      createVideoTexture: textureFactory,
+    });
+
+    const items: StandMediaItem[] = [
+      {
+        id: "vid-2d",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Video 2D",
+        creatorName: "",
+        description: "Desc 2D",
+        mediaUrl: "https://cdn.example.com/2d.mp4",
+        posterUrl: "https://cdn.example.com/p0.webp",
+        width: 1920,
+        height: 1080,
+        sortOrder: 0,
+      },
+      {
+        id: "vid-sbs",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+        title: "Video Half-SBS",
+        creatorName: "",
+        description: "Desc SBS",
+        mediaUrl: "https://cdn.example.com/sbs.mp4",
+        posterUrl: "https://cdn.example.com/p1.webp",
+        width: 1080,
+        height: 1920,
+        sortOrder: 1,
+      },
+    ];
+
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+      videoController,
+    });
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Desc",
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        galleryPosition: { x: 0, y: 1.76, z: -3.2 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const leftPlane = el.querySelector(".cv-stand-left-plane") as HTMLElement & {
+      object3D?: { traverse?: (cb: (node: unknown) => void) => void };
+    };
+    const rightPlane = el.querySelector(".cv-stand-right-plane") as HTMLElement & {
+      object3D?: { traverse?: (cb: (node: unknown) => void) => void };
+    };
+
+    const leftMaterial = { map: null as unknown, needsUpdate: false };
+    const rightMaterial = { map: null as unknown, needsUpdate: false };
+    leftPlane.object3D = {
+      traverse: (cb) => cb({ material: leftMaterial }),
+    };
+    rightPlane.object3D = {
+      traverse: (cb) => cb({ material: rightMaterial }),
+    };
+
+    // (a) Initial IDLE geometry includes skipCache: true with 16:9 dimensions
+    expect(leftPlane.getAttribute("geometry")).toContain("primitive: plane");
+    expect(leftPlane.getAttribute("geometry")).toContain("width: 1.5");
+    expect(leftPlane.getAttribute("geometry")).toContain("height: 0.844");
+    expect(leftPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("geometry")).toContain("skipCache: true");
+
+    // (b) Inspecting VIDEO_2D binds tex0 directly on leftPlane only and clears src
+    await instance.inspect();
+    expect(leftPlane.getAttribute("src")).toBe("");
+    expect(leftMaterial.map).toBe(tex0);
+    expect(leftMaterial.needsUpdate).toBe(true);
+    expect(rightPlane.getAttribute("visible")).toBe("false");
+    expect(rightMaterial.map).toBeNull();
+
+    // (c) Advancing to VIDEO_STEREO_SBS updates geometry with skipCache and binds tex1 on both eyes
+    await instance.nextSlide();
+    expect(leftPlane.getAttribute("geometry")).toContain("width: 0.534");
+    expect(leftPlane.getAttribute("geometry")).toContain("height: 0.95");
+    expect(leftPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("geometry")).toContain("width: 0.534");
+    expect(rightPlane.getAttribute("geometry")).toContain("height: 0.95");
+    expect(rightPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("visible")).toBe("true");
+    expect(leftPlane.getAttribute("src")).toBe("");
+    expect(rightPlane.getAttribute("src")).toBe("");
+    expect(leftMaterial.map).toBe(tex1);
+    expect(rightMaterial.map).toBe(tex1);
+    expect((leftMaterial.map as DisposableVideoTexture).colorSpace).toBe("srgb");
+    expect(leftMaterial.needsUpdate).toBe(true);
+    expect(rightMaterial.needsUpdate).toBe(true);
+
+    instance.remove();
+  });
 });

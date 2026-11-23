@@ -34,6 +34,7 @@ export interface VideoElementLike {
 }
 
 export interface DisposableVideoTexture {
+  colorSpace?: string;
   needsUpdate: boolean;
   dispose(): void;
 }
@@ -79,6 +80,7 @@ function defaultCreateVideoTexture(
     globalThis as {
       AFRAME?: {
         THREE?: {
+          SRGBColorSpace?: string;
           VideoTexture?: new (el: VideoElementLike) => DisposableVideoTexture;
         };
       };
@@ -88,7 +90,13 @@ function defaultCreateVideoTexture(
   if (!VideoTextureCtor) {
     return null;
   }
-  return new VideoTextureCtor(video);
+  const texture = new VideoTextureCtor(video);
+  const srgbColorSpace = aframeGlobal?.THREE?.SRGBColorSpace;
+  if (srgbColorSpace) {
+    texture.colorSpace = srgbColorSpace;
+    texture.needsUpdate = true;
+  }
+  return texture;
 }
 
 /**

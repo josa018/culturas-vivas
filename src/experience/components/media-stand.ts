@@ -7,7 +7,6 @@ import {
   InspectionState,
   ROOM_CENTER_COORDINATE,
   ROOM_LAYOUT_TOKENS,
-  SHARED_VIDEO_ELEMENT_ID,
   STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
   STAND_DIMENSIONS,
@@ -34,6 +33,11 @@ import { createContactShadowDecal } from "../shadow-baker";
 
 const STAND_VISUAL_TOKENS = {
   SURFACE_COLOR: "#0f172a",
+  MEDIA_ACTIVE_COLOR: "#ffffff",
+  MEDIA_ACTIVE_MATERIAL: "shader: flat; color: #ffffff",
+  MEDIA_PLANE_GEOMETRY_PRIMITIVE: "plane",
+  MEDIA_PLANE_SKIP_CACHE: true,
+  VR_MODE_VALUE: "vr",
   HEADER_BG_COLOR: "#1e293b",
   TEXT_PRIMARY: "#EDE8DF",
   TEXT_MUTED: "#94a3b8",
@@ -208,6 +212,41 @@ function createControlButton(
   return btn;
 }
 
+function buildMediaPlaneGeometryAttr(width: number, height: number): string {
+  return `primitive: ${STAND_VISUAL_TOKENS.MEDIA_PLANE_GEOMETRY_PRIMITIVE}; width: ${width}; height: ${height}; skipCache: ${STAND_VISUAL_TOKENS.MEDIA_PLANE_SKIP_CACHE}`;
+}
+
+/**
+ * Updates both direct non-cached A-Frame geometry and mapped width/height attributes synchronously.
+ */
+function applyMediaPlaneGeometry(
+  plane: HTMLElement,
+  width: number,
+  height: number,
+): void {
+  plane.setAttribute("geometry", buildMediaPlaneGeometryAttr(width, height));
+  plane.setAttribute("width", String(width));
+  plane.setAttribute("height", String(height));
+}
+
+function createMediaEyePlane(className: string): HTMLElement {
+  const plane = document.createElement("a-plane");
+  plane.setAttribute("class", className);
+  applyMediaPlaneGeometry(
+    plane,
+    STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M,
+    STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M,
+  );
+  plane.setAttribute("position", "0 0 0");
+  plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  plane.setAttribute(
+    "material",
+    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+  );
+  plane.setAttribute("visible", "false");
+  return plane;
+}
+
 function buildStandDom(
   root: HTMLElement,
   accentColor: string,
@@ -374,29 +413,8 @@ function buildStandDom(
   mediaGroup.setAttribute("position", STAND_VISUAL_TOKENS.MEDIA_GROUP_POS);
   mediaGroup.setAttribute("cv-interactive-feedback", "hoverScale: 1.03; hoverZLift: 0.02");
 
-  const leftPlane = document.createElement("a-plane");
-  leftPlane.setAttribute("class", "cv-stand-left-plane");
-  leftPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
-  leftPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  leftPlane.setAttribute("position", "0 0 0");
-  leftPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-  leftPlane.setAttribute(
-    "material",
-    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-  );
-  leftPlane.setAttribute("visible", "false");
-
-  const rightPlane = document.createElement("a-plane");
-  rightPlane.setAttribute("class", "cv-stand-right-plane");
-  rightPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
-  rightPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  rightPlane.setAttribute("position", "0 0 0");
-  rightPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-  rightPlane.setAttribute(
-    "material",
-    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-  );
-  rightPlane.setAttribute("visible", "false");
+  const leftPlane = createMediaEyePlane("cv-stand-left-plane");
+  const rightPlane = createMediaEyePlane("cv-stand-right-plane");
 
   mediaGroup.append(leftPlane, rightPlane, videoBadge);
 
@@ -624,16 +642,20 @@ function applyMaterialTexture(
 ): void {
   const prevSrc = plane.getAttribute("src") ?? "";
   if (texture) {
-    plane.setAttribute("color", "#ffffff");
-    plane.setAttribute("material", "shader: flat; color: #ffffff");
-  } else if (fallbackSrc.length === 0 || prevSrc !== fallbackSrc) {
-    plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-    plane.setAttribute(
-      "material",
-      `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-    );
+    plane.setAttribute("color", STAND_VISUAL_TOKENS.MEDIA_ACTIVE_COLOR);
+    plane.setAttribute("material", STAND_VISUAL_TOKENS.MEDIA_ACTIVE_MATERIAL);
+    // Clear A-Frame map src so A-Frame does not recreate/dispose VideoTexture or bypass sRGB colorSpace
+    plane.setAttribute("src", "");
+  } else {
+    if (fallbackSrc.length === 0 || prevSrc !== fallbackSrc) {
+      plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+      plane.setAttribute(
+        "material",
+        `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+      );
+    }
+    plane.setAttribute("src", fallbackSrc);
   }
-  plane.setAttribute("src", fallbackSrc);
   const obj3D = (plane as unknown as {
     object3D?: {
       traverse?: (cb: (node: unknown) => void) => void;
@@ -769,7 +791,8 @@ export function createMediaStandComponentDefinition(
 
     const isVideo = instance.carousel.isCurrentVideo();
     const isHalfSBS = instance.carousel.isCurrentHalfSBS();
-    const isVR = instance.data.viewMode.toLowerCase() === "vr";
+    const isVR =
+      instance.data.viewMode.toLowerCase() === STAND_VISUAL_TOKENS.VR_MODE_VALUE;
 
     els.videoBadge.setAttribute("visible", String(!isInspecting && isVideo));
 
@@ -789,15 +812,13 @@ export function createMediaStandComponentDefinition(
     const stereoLeft = `eye: LEFT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
     const stereoRight = `eye: RIGHT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
 
-    els.leftPlane.setAttribute("width", String(dims.width));
-    els.leftPlane.setAttribute("height", String(dims.height));
+    applyMediaPlaneGeometry(els.leftPlane, dims.width, dims.height);
     els.leftPlane.setAttribute("cv-stereo-media", stereoLeft);
     els.leftPlane.setAttribute("visible", "true");
     setToggleClass(els.leftPlane, "clickable", !isInspecting);
 
     const showRightPlane = isHalfSBS && isVR;
-    els.rightPlane.setAttribute("width", String(dims.width));
-    els.rightPlane.setAttribute("height", String(dims.height));
+    applyMediaPlaneGeometry(els.rightPlane, dims.width, dims.height);
     els.rightPlane.setAttribute("cv-stereo-media", stereoRight);
     els.rightPlane.setAttribute("visible", String(showRightPlane));
 
@@ -993,9 +1014,16 @@ export function createMediaStandComponentDefinition(
     instance.carousel.setMuted(videoController.isMuted());
 
     if (instance.elements) {
-      const videoSrcToken = `#${SHARED_VIDEO_ELEMENT_ID}`;
-      applyMaterialTexture(instance.elements.leftPlane, texture, videoSrcToken);
-      applyMaterialTexture(instance.elements.rightPlane, texture, videoSrcToken);
+      const isHalfSBS = instance.carousel.isCurrentHalfSBS();
+      const isVR =
+        instance.data.viewMode.toLowerCase() === STAND_VISUAL_TOKENS.VR_MODE_VALUE;
+      const fallbackPoster = item.posterUrl ?? "";
+      applyMaterialTexture(instance.elements.leftPlane, texture, fallbackPoster);
+      if (isHalfSBS && isVR) {
+        applyMaterialTexture(instance.elements.rightPlane, texture, fallbackPoster);
+      } else {
+        applyMaterialTexture(instance.elements.rightPlane, null, "");
+      }
     }
     renderCarouselSlide(instance);
   }
