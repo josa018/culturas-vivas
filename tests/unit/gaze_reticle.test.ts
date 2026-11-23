@@ -119,7 +119,7 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
     instance.remove();
   });
 
-  it("updates room accent color via setAccentColor and triggers click confirmation pulse", () => {
+  it("updates room accent color via setAccentColor and triggers click confirmation pulse without hover SFX", async () => {
     (globalThis as unknown as { AFRAME?: unknown }).AFRAME = {
       registerComponent: vi.fn(),
       components: {},
@@ -142,8 +142,16 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       "color: #D99B26",
     );
 
+    const { getSharedSfxPlayer } = await import(
+      "../../src/experience/audio/sfx-player"
+    );
+    const { SfxId } = await import("../../src/experience/audio/audio-constants");
+    const sfxSpy = vi.spyOn(getSharedSfxPlayer(), "play");
+
     cursorEl.dispatchEvent(new Event("fusing"));
+    expect(sfxSpy).not.toHaveBeenCalledWith(SfxId.RETICLE_HOVER);
     cursorEl.dispatchEvent(new Event("click"));
+    expect(sfxSpy).toHaveBeenCalledWith(SfxId.RETICLE_FUSE);
     expect(instance.reticleState.isFusing).toBe(false);
     expect(instance.confirmRingEl?.getAttribute("animation__reticle_pulse")).toContain(
       `dur: ${RETICLE_TOKENS.CONFIRM_PULSE_MS}`,

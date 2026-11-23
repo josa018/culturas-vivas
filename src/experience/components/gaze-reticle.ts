@@ -293,7 +293,6 @@ export function createGazeReticleComponentDefinition(
         this.reticleState = startGazeReticleFuse(resolveNowMs());
         this.progressRingEl?.setAttribute("geometry", buildProgressGeometryAttr(0));
         this.progressRingEl?.setAttribute("visible", "true");
-        getSharedSfxPlayer().play(SfxId.RETICLE_HOVER);
       });
 
       bind(this.el, "mouseleave", () => {
