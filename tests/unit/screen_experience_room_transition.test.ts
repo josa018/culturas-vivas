@@ -12,12 +12,19 @@ import {
   getSharedInspectionController,
 } from "../../src/experience/components/inspectable";
 import {
+  DEFAULT_ROOM_ID,
   ExhibitMediaType,
   InspectionState,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
   VR_HUD_ELEMENT_IDS,
 } from "../../src/experience/constants";
+import {
+  AUDIO_STORAGE_KEYS,
+  DEFAULT_AUDIO_PREFERENCES,
+} from "../../src/experience/audio/audio-constants";
+import { AudioPreferencesStore } from "../../src/experience/audio/audio-preferences-store";
+import { AudioEngine } from "../../src/experience/audio/audio-engine";
 import type { RoomMediaProvider } from "../../src/experience/media-types";
 import {
   VR_HUD_RETURN_LOBBY_EVENT,
@@ -354,5 +361,133 @@ describe("ExperienceScreenView Room Transition", () => {
     expect(rig.getAttribute("rotation")).toBe("0 0 0");
     expect(lookControlsMock.yawObject.rotation.y).toBe(0);
     screenReentered.unmount();
+  });
+
+  it("retainBackground pauses audio and stand video while preserving active room and preferences", () => {
+    const map = new Map<string, string>();
+    const prefs = new AudioPreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+    prefs.activateSound();
+
+    const audioEngine = new AudioEngine({ preferencesStore: prefs });
+    const deactivateSpy = vi.spyOn(audioEngine, "deactivateExperience");
+    const videoController = {
+      pauseIfPlaying: vi.fn(() => true),
+      stopAndRelease: vi.fn(),
+    };
+
+    screen.unmount();
+    screen = new ExperienceScreenView(
+      () => {},
+      "2d",
+      undefined,
+      undefined,
+      undefined,
+      prefs,
+      audioEngine,
+      videoController,
+    );
+    screen.mount(container);
+    screen.show();
+    screen.transitionToRoom(RoomId.WIXARIKA);
+
+    screen.retainBackground();
+
+    expect(deactivateSpy).toHaveBeenCalled();
+    expect(videoController.pauseIfPlaying).toHaveBeenCalledTimes(1);
+    expect(videoController.stopAndRelease).not.toHaveBeenCalled();
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(prefs.getPreferences().masterEnabled).toBe(true);
+  });
+
+  it("hide after an active session resets room, inspection, rig/camera, video, audio prefs, and listeners while pre-session hide preserves prefs", () => {
+    const map = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => map.set(k, v),
+      removeItem: (k: string) => map.delete(k),
+    };
+    const prefs = new AudioPreferencesStore(storage);
+    prefs.activateSound();
+
+    const audioEngine = new AudioEngine({ preferencesStore: prefs });
+    const deactivateSpy = vi.spyOn(audioEngine, "deactivateExperience");
+    const videoController = {
+      pauseIfPlaying: vi.fn(() => true),
+      stopAndRelease: vi.fn(),
+    };
+
+    const rig = document.createElement("a-entity");
+    rig.setAttribute("id", "cv-camera-rig");
+    (rig as HTMLElement & { object3D?: { rotation: { y: number } } }).object3D = {
+      rotation: { y: 0 },
+    };
+    rig.appendChild(camera);
+    scene.appendChild(rig);
+
+    const lookControlsMock = {
+      touchStarted: false,
+      mouseDown: false,
+      data: { touchEnabled: true, enabled: true },
+      yawObject: { rotation: { y: 1.25 } },
+      pitchObject: { rotation: { x: 0.4 } },
+    };
+    (camera as HTMLElement & { components?: Record<string, unknown> }).components = {
+      "look-controls": lookControlsMock,
+    };
+
+    screen.unmount();
+    screen = new ExperienceScreenView(
+      () => {},
+      "2d",
+      undefined,
+      undefined,
+      undefined,
+      prefs,
+      audioEngine,
+      videoController,
+    );
+    screen.mount(container);
+
+    // Pre-session hide (before show() ever ran) must NOT wipe tutorial audio prefs
+    screen.hide();
+    expect(prefs.getPreferences().masterEnabled).toBe(true);
+    expect(videoController.stopAndRelease).not.toHaveBeenCalled();
+
+    // Start active session, transition to WIXARIKA, inspect exhibit, then hide()
+    screen.show();
+    expect(screen.transitionToRoom(RoomId.WIXARIKA)).toBe(true);
+    const inspection = getSharedInspectionController();
+    inspection.focus("exhibit-wixarika-artifact");
+    expect(inspection.getState()).toBe(InspectionState.FOCUSING);
+
+    screen.hide();
+
+    expect(deactivateSpy).toHaveBeenCalled();
+    expect(videoController.stopAndRelease).toHaveBeenCalledTimes(1);
+    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
+    expect(storage.getItem(AUDIO_STORAGE_KEYS.PREFERENCES)).toBeNull();
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+    expect(screen.getTransitionStateMachine().getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+    expect(inspection.getState()).toBe(InspectionState.IDLE);
+    expect(rig.getAttribute("rotation")).toBe("0 0 0");
+    expect(lookControlsMock.yawObject.rotation.y).toBe(0);
+    expect(lookControlsMock.pitchObject.rotation.x).toBe(0);
+    expect(camera.getAttribute("rotation")).toBe("0 0 0");
+    expect(container.querySelector(".cv-badge")?.textContent).toBe(
+      ROOM_DEFINITIONS[DEFAULT_ROOM_ID].title,
+    );
+
+    // Detached portal listener should not trigger room transition after hide()
+    scene.dispatchEvent(
+      new CustomEvent<PortalActivatedEventDetail>(PORTAL_ACTIVATED_EVENT, {
+        detail: { portalId: "portal-lobby-to-odam", targetRoomId: RoomId.ODAM },
+        bubbles: true,
+      }),
+    );
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
   });
 });

@@ -180,4 +180,64 @@ describe("SharedVideoController", () => {
     expect(controller.toggleMute()).toBe(true);
     expect(video.muted).toBe(true);
   });
+
+  it("pauseIfPlaying pauses active playback without clearing src/texture and returns whether playback stopped", async () => {
+    const { video } = createMockVideoElement();
+    const tex = createMockTexture();
+    const audioEngine = { setMediaPlaybackActive: vi.fn() } as unknown as import("../../src/experience/audio/audio-engine").AudioEngine;
+    const onStateChange = vi.fn();
+
+    const controller = new SharedVideoController({
+      createVideoElement: () => video,
+      createVideoTexture: () => tex,
+      audioEngine,
+      onStateChange,
+    });
+
+    // Returns false when idle
+    expect(controller.pauseIfPlaying()).toBe(false);
+
+    await controller.playVideo("https://cdn.example.com/clip-1.mp4");
+    expect(controller.isPlaying()).toBe(true);
+
+    onStateChange.mockClear();
+    expect(controller.pauseIfPlaying()).toBe(true);
+    expect(video.pause).toHaveBeenCalled();
+    expect(video.src).toBe("https://cdn.example.com/clip-1.mp4");
+    expect(video.removeAttribute).not.toHaveBeenCalledWith("src");
+    expect(tex.dispose).not.toHaveBeenCalled();
+    expect(controller.isPlaying()).toBe(false);
+    expect(controller.getCurrentUrl()).toBe("https://cdn.example.com/clip-1.mp4");
+    expect(controller.getTexture()).toBe(tex);
+    expect(audioEngine.setMediaPlaybackActive).toHaveBeenLastCalledWith(false);
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+
+    // Subsequent call when already paused returns false
+    expect(controller.pauseIfPlaying()).toBe(false);
+  });
+
+  it("refuses playVideo and resume via togglePause when injected isExperienceActive returns false", async () => {
+    const { video } = createMockVideoElement();
+    let active = false;
+    const controller = new SharedVideoController({
+      createVideoElement: () => video,
+      createVideoTexture: () => createMockTexture(),
+      isExperienceActive: () => active,
+    });
+
+    const blockedTex = await controller.playVideo("https://cdn.example.com/clip-1.mp4");
+    expect(blockedTex).toBeNull();
+    expect(controller.isPlaying()).toBe(false);
+    expect(video.play).not.toHaveBeenCalled();
+
+    active = true;
+    const activeTex = await controller.playVideo("https://cdn.example.com/clip-1.mp4");
+    expect(activeTex).not.toBeNull();
+    expect(controller.isPlaying()).toBe(true);
+
+    expect(controller.pauseIfPlaying()).toBe(true);
+    active = false;
+    expect(await controller.togglePause()).toBe(false);
+    expect(controller.isPlaying()).toBe(false);
+  });
 });

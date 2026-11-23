@@ -141,7 +141,12 @@ export class AudioEngine {
 
     if (this.documentRef.visibilityState === "visible") {
       this.suspendedByVisibility = false;
-      if (this.context && this.unlocked && this.context.state === "suspended") {
+      if (
+        this.context &&
+        this.unlocked &&
+        this.experienceActive &&
+        this.context.state === "suspended"
+      ) {
         void this.context
           .resume()
           .then(() => {
@@ -249,6 +254,19 @@ export class AudioEngine {
 
   public activateExperience(roomId: RoomId): void {
     this.experienceActive = true;
+    if (
+      this.context &&
+      this.unlocked &&
+      !this.suspendedByVisibility &&
+      this.context.state === "suspended"
+    ) {
+      void this.context
+        .resume()
+        .then(() => {
+          this.syncBuses();
+        })
+        .catch(() => {});
+    }
     this.ensureMusicBusConnected();
     this.musicPlayer.setActiveRoom(roomId);
     this.ambiencePlayer.transitionToEnvironment(ROOM_ENVIRONMENT_IDS[roomId]);
@@ -275,6 +293,9 @@ export class AudioEngine {
     this.ambiencePlayer.setAudible(false);
     this.ambiencePlayer.stopAll();
     this.syncBuses();
+    if (this.context && this.context.state === "running") {
+      void this.context.suspend().catch(() => {});
+    }
   }
 
   public setMediaPlaybackActive(active: boolean): void {
@@ -390,8 +411,12 @@ export class AudioEngine {
       now,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );
+    const mediaAudible =
+      this.experienceActive &&
+      !this.suspendedByVisibility &&
+      !channels.mediaMuted;
     this.mediaGain.gain.setTargetAtTime(
-      channels.mediaMuted ? 0 : 1,
+      mediaAudible ? 1 : 0,
       now,
       AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
     );

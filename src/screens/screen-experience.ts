@@ -59,9 +59,20 @@ import { getSharedSfxPlayer } from "../experience/audio/sfx-player";
 import { getSharedAmbiencePlayer } from "../experience/audio/ambience-player";
 import { getSharedMusicPlayer } from "../experience/audio/music-player";
 import {
+  getSharedVideoController,
+  type SharedVideoController,
+} from "../experience/shared-video-controller";
+import {
   computeVolumeBarState,
   quantizeVolumeStep,
 } from "../experience/audio/volume-bars";
+
+const ZERO_ROTATION_ATTR = "0 0 0";
+
+export type ExperienceVideoControllerPort = Pick<
+  SharedVideoController,
+  "pauseIfPlaying" | "stopAndRelease"
+>;
 
 interface AFrameSceneElement extends HTMLElement {
   play?: () => void;
@@ -103,6 +114,8 @@ export class ExperienceScreenView implements ScreenView {
   private readonly mediaProvider: RoomMediaProvider;
   private readonly audioPreferencesStore: AudioPreferencesStore;
   private readonly audioEngine: AudioEngine;
+  private readonly videoController: ExperienceVideoControllerPort;
+  private hasActiveExperienceSession: boolean = false;
   private settingsBtnEl: HTMLButtonElement | null = null;
   private settingsModalEl: HTMLElement | null = null;
   private settingsMusicBars: HTMLButtonElement[] = [];
@@ -120,6 +133,7 @@ export class ExperienceScreenView implements ScreenView {
     mediaProvider?: RoomMediaProvider,
     audioPreferencesStore?: AudioPreferencesStore,
     audioEngine?: AudioEngine,
+    videoController?: ExperienceVideoControllerPort,
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
@@ -130,6 +144,7 @@ export class ExperienceScreenView implements ScreenView {
     this.audioPreferencesStore =
       audioPreferencesStore ?? getSharedAudioPreferencesStore();
     this.audioEngine = audioEngine ?? getSharedAudioEngine();
+    this.videoController = videoController ?? getSharedVideoController();
   }
 
   public getTransitionStateMachine(): RoomTransitionStateMachine {
@@ -269,6 +284,7 @@ export class ExperienceScreenView implements ScreenView {
 
   public show(): void {
     this.isProgrammaticExit = false;
+    this.hasActiveExperienceSession = true;
     if (this.container) {
       this.container.classList.add(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.remove(UI_CLASSES.SCREEN_HIDDEN);
@@ -297,6 +313,7 @@ export class ExperienceScreenView implements ScreenView {
   public retainBackground(): void {
     this.closeSettingsModal();
     this.audioEngine.deactivateExperience();
+    this.videoController.pauseIfPlaying();
     if (this.container) {
       this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
       this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
@@ -324,6 +341,10 @@ export class ExperienceScreenView implements ScreenView {
   }
 
   public hide(): void {
+    if (this.hasActiveExperienceSession) {
+      this.resetExperience();
+      return;
+    }
     this.closeSettingsModal();
     this.audioEngine.deactivateExperience();
     if (this.container) {
@@ -336,6 +357,41 @@ export class ExperienceScreenView implements ScreenView {
         this.disableSpatialHud(scene);
       }
     }
+    this.toggleSceneLifecycle(false);
+  }
+
+  /**
+   * Fully tears down the active experience session, restoring default room, camera/rig orientation,
+   * media decoder release, audio suspension, and default audio preferences before next entry.
+   */
+  public resetExperience(): void {
+    this.hasActiveExperienceSession = false;
+    this.closeSettingsModal();
+    this.audioEngine.deactivateExperience();
+    this.videoController.stopAndRelease();
+    this.audioPreferencesStore.reset();
+    this.teardownSceneListeners();
+
+    if (this.container) {
+      this.container.classList.remove(UI_CLASSES.SCREEN_ACTIVE);
+      this.container.classList.add(UI_CLASSES.SCREEN_HIDDEN);
+    }
+
+    const scene =
+      typeof document !== "undefined"
+        ? document.querySelector<AFrameSceneElement>("a-scene")
+        : null;
+    if (scene) {
+      this.disableSpatialHud(scene);
+      ExhibitRoomBuilder.resetToDefaultRoom(scene);
+      this.resetCameraAndRigOrientation(scene);
+    } else {
+      ExhibitRoomBuilder.resetToDefaultRoom(null);
+    }
+
+    this.transitionStateMachine.reset(DEFAULT_ROOM_ID);
+    this.hasVisitedLobby = false;
+    this.updateRoomBadge(DEFAULT_ROOM_ID);
     this.toggleSceneLifecycle(false);
   }
 
@@ -1254,6 +1310,59 @@ export class ExperienceScreenView implements ScreenView {
 
     if (targetRoomId === RoomId.LOBBY) {
       this.hasVisitedLobby = true;
+    }
+  }
+
+  private resetCameraAndRigOrientation(scene: AFrameSceneElement): void {
+    const cameraEl =
+      scene.querySelector("a-camera") || scene.querySelector("[camera]");
+    if (cameraEl) {
+      const aframeCamera = cameraEl as unknown as {
+        object3D?: {
+          rotation?: { x?: number; y?: number; z?: number };
+          updateMatrix?: () => void;
+        };
+        components?: Record<
+          string,
+          {
+            yawObject?: { rotation?: { y?: number } };
+            pitchObject?: { rotation?: { x?: number } };
+          }
+        >;
+      };
+      const lookControls = aframeCamera.components?.["look-controls"];
+      if (lookControls?.yawObject?.rotation) {
+        lookControls.yawObject.rotation.y = 0;
+      }
+      if (lookControls?.pitchObject?.rotation) {
+        lookControls.pitchObject.rotation.x = 0;
+      }
+      if (aframeCamera.object3D?.rotation) {
+        aframeCamera.object3D.rotation.x = 0;
+        aframeCamera.object3D.rotation.y = 0;
+        aframeCamera.object3D.rotation.z = 0;
+        aframeCamera.object3D.updateMatrix?.();
+      }
+      cameraEl.setAttribute("rotation", ZERO_ROTATION_ATTR);
+    }
+
+    const rigEl = scene.querySelector(`#${PLAYER_RIG_TOKENS.CAMERA_RIG_ID}`);
+    if (rigEl) {
+      rigEl.setAttribute("rotation", ZERO_ROTATION_ATTR);
+      const rigObj = (
+        rigEl as unknown as {
+          object3D?: {
+            rotation?: { x?: number; y?: number; z?: number };
+            updateMatrix?: () => void;
+          };
+        }
+      ).object3D;
+      if (rigObj?.rotation) {
+        rigObj.rotation.x = 0;
+        rigObj.rotation.y = 0;
+        rigObj.rotation.z = 0;
+        rigObj.updateMatrix?.();
+      }
     }
   }
 

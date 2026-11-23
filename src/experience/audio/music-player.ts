@@ -113,6 +113,10 @@ export class MusicPlayer implements MusicPlayerPort {
     void this.loadRoomPlaylist(roomId);
   }
 
+  public isAudible(): boolean {
+    return this.audible;
+  }
+
   public setAudible(audible: boolean): void {
     if (this.audible === audible) {
       return;
@@ -141,6 +145,7 @@ export class MusicPlayer implements MusicPlayerPort {
   }
 
   public stopAll(): void {
+    this.audible = false;
     this.latestRequestedRoomId = null;
     this.loadedSignature = null;
     this.loadedTracks = [];

@@ -247,4 +247,53 @@ describe("AudioEngine Core Graph & Experience Lifecycle", () => {
     // Saved session preferences remain intact after leaving experience
     expect(prefs.getPreferences().masterEnabled).toBe(true);
   });
+
+  it("gates mediaGain to 0 outside active experience and suspends/resumes unlocked AudioContext on deactivate/activate", async () => {
+    const storage = new InMemoryStorage();
+    const prefs = new AudioPreferencesStore(storage);
+    const mock = createMockAudioContext("suspended");
+
+    const engine = new AudioEngine({
+      preferencesStore: prefs,
+      createAudioContext: () => mock.ctx,
+    });
+
+    await engine.unlockFromUserGesture();
+    expect(mock.ctx.state).toBe("running");
+
+    // Unmute media + mark active while still outside EXPERIENCE_3D
+    prefs.toggleStandMedia();
+    engine.setMediaPlaybackActive(true);
+
+    const mediaGain = mock.gains[3];
+    // Experience is inactive, so mediaGain MUST be 0 even with mediaMuted = false
+    expect(mediaGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0,
+      mock.ctx.currentTime,
+      AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
+    );
+
+    // Activating experience restores mediaGain to 1 when unmuted
+    engine.activateExperience(RoomId.LOBBY);
+    expect(mediaGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      1,
+      mock.ctx.currentTime,
+      AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
+    );
+
+    // Deactivating experience drops mediaGain to 0 and suspends AudioContext
+    engine.deactivateExperience();
+    expect(mediaGain.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0,
+      mock.ctx.currentTime,
+      AUDIO_TOKENS.GAIN_RAMP_TIME_CONSTANT_S,
+    );
+    expect(mock.ctx.suspend).toHaveBeenCalledTimes(1);
+    expect(mock.ctx.state).toBe("suspended");
+
+    // Re-activating experience resumes the unlocked suspended AudioContext
+    engine.activateExperience(RoomId.LOBBY);
+    expect(mock.ctx.resume).toHaveBeenCalledTimes(2);
+    expect(mock.ctx.state).toBe("running");
+  });
 });

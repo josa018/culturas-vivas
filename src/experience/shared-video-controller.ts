@@ -45,6 +45,7 @@ export interface SharedVideoControllerOptions {
   readonly preferencesStore?: AudioPreferencesStore;
   readonly audioEngine?: AudioEngine;
   readonly spatialMediaAudio?: SpatialMediaAudio;
+  readonly isExperienceActive?: () => boolean;
 }
 
 const NOT_ALLOWED_ERROR_NAME = "NotAllowedError";
@@ -102,6 +103,7 @@ export class SharedVideoController {
   private readonly preferencesStore: AudioPreferencesStore;
   private readonly audioEngine: AudioEngine;
   private readonly spatialMediaAudio: SpatialMediaAudio;
+  private readonly isExperienceActiveGuard?: () => boolean;
   private readonly stateListeners = new Set<() => void>();
 
   private video: VideoElementLike | null = null;
@@ -122,6 +124,7 @@ export class SharedVideoController {
     this.audioEngine = options.audioEngine ?? getSharedAudioEngine();
     this.spatialMediaAudio =
       options.spatialMediaAudio ?? getSharedSpatialMediaAudio();
+    this.isExperienceActiveGuard = options.isExperienceActive;
     this.muted = this.preferencesStore.getPreferences().mediaMuted;
 
     this.unsubscribePrefs = this.preferencesStore.subscribe((prefs) => {
@@ -223,6 +226,9 @@ export class SharedVideoController {
     url: string,
     options?: { readonly muted?: boolean },
   ): Promise<DisposableVideoTexture | null> {
+    if (this.isExperienceActiveGuard && !this.isExperienceActiveGuard()) {
+      return null;
+    }
     const video = this.ensureVideoElement();
     if (!video) {
       return null;
@@ -267,6 +273,9 @@ export class SharedVideoController {
       this.emitStateChange();
       return false;
     }
+    if (this.isExperienceActiveGuard && !this.isExperienceActiveGuard()) {
+      return false;
+    }
     const seq = ++this.playSequenceId;
     const resumed = await this.attemptPlayWithMutedFallback(this.video, seq);
     if (seq !== this.playSequenceId) {
@@ -301,6 +310,21 @@ export class SharedVideoController {
     }
     this.emitStateChange();
     return this.muted;
+  }
+
+  /**
+   * Pauses active playback without clearing src or disposing textures so tour resumption stays seamless.
+   */
+  public pauseIfPlaying(): boolean {
+    if (!this.video || !this.playing) {
+      return false;
+    }
+    this.playSequenceId += 1;
+    this.video.pause();
+    this.playing = false;
+    this.audioEngine.setMediaPlaybackActive(false);
+    this.emitStateChange();
+    return true;
   }
 
   /**
@@ -362,7 +386,9 @@ export class SharedVideoController {
   }
 }
 
-let sharedVideoController = new SharedVideoController();
+let sharedVideoController = new SharedVideoController({
+  isExperienceActive: () => getSharedAudioEngine().isExperienceActive(),
+});
 
 export function getSharedVideoController(): SharedVideoController {
   return sharedVideoController;

@@ -390,4 +390,25 @@ describe("RoomPlaylistClient & MusicPlayer", () => {
     await Promise.resolve();
     expect(createMediaElementSource).toHaveBeenCalledTimes(1);
   });
+
+  it("MusicPlayer.stopAll() resets audible state to false and prevents curtain resume until re-enabled", () => {
+    const fakeEl = createFakeAudioElement();
+    const player = new MusicPlayer({
+      playlistClient: {
+        fetchRoomPlaylist: async () => ({
+          roomId: RoomId.LOBBY,
+          resolvedFromRoomId: RoomId.LOBBY,
+          playbackMode: "SEQUENTIAL",
+          tracks: [],
+        }),
+      } as unknown as RoomPlaylistClient,
+      createAudioElement: () => fakeEl,
+    });
+
+    player.setAudible(true);
+    expect(player.isAudible()).toBe(true);
+
+    player.stopAll();
+    expect(player.isAudible()).toBe(false);
+  });
 });

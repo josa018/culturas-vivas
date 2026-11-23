@@ -57,6 +57,20 @@ export class ExhibitRoomBuilder {
     }
   }
 
+  public static resetToDefaultRoom(sceneEl?: HTMLElement | null): void {
+    if (sceneEl) {
+      this.teardownRoom(sceneEl);
+    } else {
+      getSharedVideoController().stopAndRelease();
+    }
+    const inspectionController = getSharedInspectionController();
+    inspectionController.abortActiveInspection();
+    inspectionController.setExhibits([
+      ...ROOM_DEFINITIONS[DEFAULT_ROOM_ID].exhibits,
+    ]);
+    this.activeRoomId = DEFAULT_ROOM_ID;
+  }
+
   public static async waitForRoomReady(
     roomGroup: HTMLElement | null,
     skyElOrTimeout: HTMLElement | number | null = null,

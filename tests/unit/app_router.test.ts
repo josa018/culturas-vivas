@@ -17,6 +17,12 @@ import type {
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
 import { setSharedInspectionController } from "../../src/experience/components/inspectable";
+import { DEFAULT_ROOM_ID, InspectionState } from "../../src/experience/constants";
+import { getSharedAudioPreferencesStore } from "../../src/experience/audio/audio-preferences-store";
+import { DEFAULT_AUDIO_PREFERENCES } from "../../src/experience/audio/audio-constants";
+import { getSharedAudioEngine } from "../../src/experience/audio/audio-engine";
+import { PORTAL_ACTIVATED_EVENT } from "../../src/experience/components/portal-waypoint";
+import { getSharedInspectionController } from "../../src/experience/components/inspectable";
 
 class InMemoryNavStorage implements StorageAdapter {
   private readonly store = new Map<string, string>();
@@ -203,5 +209,99 @@ describe("AppRouter", () => {
     // Subsequent dispatches do not throw or remount screens
     fsm.dispatch(NavigationAction.FINISH_LOADING);
     expect(root.querySelectorAll("[data-screen-id]")).toHaveLength(0);
+  });
+
+  it("preserves room and audio preferences on EXIT_MODAL -> RESUME_TOUR, and resets experience completely on CONFIRM_EXIT, SWITCH_TO_VR, and SWITCH_TO_TOUCH", () => {
+    const prefs = getSharedAudioPreferencesStore();
+    prefs.reset();
+    const audioEngine = getSharedAudioEngine();
+    const deactivateSpy = vi.spyOn(audioEngine, "deactivateExperience");
+
+    const { router, fsm } = createRouter();
+
+    // Enter 2D Touch into LOBBY, enable audio, transition to WIXARIKA, and inspect an exhibit
+    (root.querySelector('[data-action="enter"]') as HTMLElement).click();
+    (root.querySelector('[data-action="2d"]') as HTMLElement).click();
+    prefs.activateSound();
+    prefs.setMusicVolume(1);
+    prefs.setEffectsVolume(0.4);
+
+    scene.dispatchEvent(
+      new CustomEvent(PORTAL_ACTIVATED_EVENT, {
+        detail: { portalId: "portal-lobby-to-wixarika", targetRoomId: RoomId.WIXARIKA },
+        bubbles: true,
+      }),
+    );
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    getSharedInspectionController().focus("exhibit-wixarika-artifact");
+
+    // Open EXIT_MODAL -> RESUME_TOUR preserves room and audio preferences
+    (root.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXIT_MODAL);
+    expect(audioEngine.isExperienceActive()).toBe(false);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+
+    (root.querySelector('[data-action="resume-tour"]') as HTMLElement).click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+    expect(audioEngine.isExperienceActive()).toBe(true);
+    expect(prefs.getPreferences()).toEqual({
+      masterEnabled: true,
+      musicVolume: 1,
+      effectsVolume: 0.4,
+      mediaMuted: false,
+    });
+
+    // Full exit via CONFIRM_EXIT resets room, inspection, audio, and AudioPreferencesStore
+    (root.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+    (root.querySelector('[data-action="confirm-exit"]') as HTMLElement).click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.SURVEY);
+    expect(audioEngine.isExperienceActive()).toBe(false);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+    expect(getSharedInspectionController().getState()).toBe(InspectionState.IDLE);
+    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
+
+    // Finish survey -> re-enter VR -> enable sound -> enter WIXARIKA -> SWITCH_TO_TOUCH from EXIT_MODAL must also fully reset!
+    (root.querySelector('[data-action="skip-survey"]') as HTMLElement).click();
+    (root.querySelector('[data-action="vr"]') as HTMLElement).click();
+    (root.querySelector('[data-action="confirm-insertion"]') as HTMLElement).click();
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+
+    prefs.activateSound();
+    scene.dispatchEvent(
+      new CustomEvent(PORTAL_ACTIVATED_EVENT, {
+        detail: { portalId: "portal-lobby-to-wixarika", targetRoomId: RoomId.WIXARIKA },
+        bubbles: true,
+      }),
+    );
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+
+    (root.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+    (root.querySelector('[data-action="switch-to-touch"]') as HTMLElement).click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.EXPERIENCE_3D);
+    expect(fsm.getSession().viewMode).toBe("2d");
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
+
+    // SWITCH_TO_VR from 2D EXIT_MODAL also resets room and preferences
+    prefs.activateSound();
+    scene.dispatchEvent(
+      new CustomEvent(PORTAL_ACTIVATED_EVENT, {
+        detail: { portalId: "portal-lobby-to-odam", targetRoomId: RoomId.ODAM },
+        bubbles: true,
+      }),
+    );
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.ODAM);
+    (root.querySelector('[data-action="request-exit"]') as HTMLElement).click();
+    (root.querySelector('[data-action="switch-to-vr"]') as HTMLElement).click();
+    expect(fsm.getCurrentScreen()).toBe(ScreenId.TUTORIAL);
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
+    expect(prefs.getPreferences()).toEqual(DEFAULT_AUDIO_PREFERENCES);
+    expect(audioEngine.isExperienceActive()).toBe(false);
+    expect(deactivateSpy).toHaveBeenCalled();
+
+    deactivateSpy.mockRestore();
+    prefs.reset();
+    router.destroy();
   });
 });

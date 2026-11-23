@@ -102,12 +102,31 @@ export class AppRouter {
   }
 
   private subscribeToTransitions(): void {
+    let previousScreenId = this.stateMachine.getCurrentScreen();
+    let previousViewMode = this.stateMachine.getSession().viewMode;
+
     this.unsubscribe = this.stateMachine.subscribe(
       (activeScreenId, session) => {
+        const experienceScreen = this.screens.get(ScreenId.EXPERIENCE_3D) as
+          | ExperienceScreenView
+          | undefined;
+        const isModeSwitchIntoExperience =
+          previousScreenId === ScreenId.EXIT_MODAL &&
+          activeScreenId === ScreenId.EXPERIENCE_3D &&
+          previousViewMode !== session.viewMode;
+
+        previousScreenId = activeScreenId;
+        previousViewMode = session.viewMode;
+
+        if (
+          isModeSwitchIntoExperience &&
+          experienceScreen &&
+          typeof experienceScreen.resetExperience === "function"
+        ) {
+          experienceScreen.resetExperience();
+        }
+
         if (session.viewMode) {
-          const experienceScreen = this.screens.get(ScreenId.EXPERIENCE_3D) as
-            | ExperienceScreenView
-            | undefined;
           if (
             experienceScreen &&
             typeof experienceScreen.setViewMode === "function"

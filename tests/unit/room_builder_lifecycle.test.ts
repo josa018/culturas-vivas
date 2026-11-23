@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ExhibitRoomBuilder } from "../../src/experience/room-builder";
 import { RoomId } from "../../src/experience/types";
 import {
+  DEFAULT_ROOM_ID,
   DISPOSABLE_TEXTURE_SLOTS,
   ExhibitMediaType,
+  InspectionState,
   ROOM_DEFINITIONS,
   ROOM_PORTAL_ACCENTS,
 } from "../../src/experience/constants";
@@ -357,5 +359,22 @@ describe("ExhibitRoomBuilder Lifecycle", () => {
     expect(fallbackModelSphere?.getAttribute("material")).toContain("shader: lambert");
     expect(fallbackModelCone?.getAttribute("material")).toContain("shader: lambert");
     expect(fallbackModelRing?.getAttribute("material")).toContain("shader: lambert");
+  });
+
+  it("resetToDefaultRoom tears down active room, aborts active inspection, and resets activeRoomId to DEFAULT_ROOM_ID", () => {
+    const scene = document.createElement("a-scene");
+    ExhibitRoomBuilder.mountRoom(scene, RoomId.WIXARIKA, "vr");
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(RoomId.WIXARIKA);
+
+    const inspection = getSharedInspectionController();
+    inspection.focus("exhibit-wixarika-artifact");
+    expect(inspection.getState()).toBe(InspectionState.FOCUSING);
+
+    ExhibitRoomBuilder.resetToDefaultRoom(scene);
+
+    expect(scene.querySelector(`#${ExhibitRoomBuilder.ROOM_CONTAINER_ID}`)).toBeNull();
+    expect(inspection.getState()).toBe(InspectionState.IDLE);
+    expect(inspection.getActiveExhibit()).toBeNull();
+    expect(ExhibitRoomBuilder.getActiveRoomId()).toBe(DEFAULT_ROOM_ID);
   });
 });
