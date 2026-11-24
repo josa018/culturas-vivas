@@ -361,6 +361,8 @@ export const ADMIN_UI_TEXT = {
   AUDIO_SUCCESS_DELETE: "Canción eliminada.",
   AUDIO_SUCCESS_DOWNLOAD: "Descarga de audio iniciada.",
   AUDIO_ERROR_DOWNLOAD: "No se pudo preparar la descarga de la canción.",
+  AUDIO_ERROR_PRESIGN:
+    "No se pudo preparar la subida de la canción. Inténtalo de nuevo.",
 } as const;
 
 export const ADMIN_MEDIA_ENDPOINTS = {

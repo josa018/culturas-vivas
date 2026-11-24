@@ -85,7 +85,7 @@ interface PresignAudioTarget {
 }
 
 interface PresignAudioResponsePayload {
-  readonly audio: PresignAudioTarget;
+  readonly media?: PresignAudioTarget;
   readonly storageUsageBytes?: number;
   readonly maxStorageBytes?: number;
 }
@@ -176,7 +176,8 @@ export function createDefaultAudioDurationProbe(): AudioDurationProbe {
       const onMetadata = () => {
         const seconds = audio.duration;
         if (Number.isFinite(seconds) && seconds > 0) {
-          finish(Math.round(seconds * MS_PER_SECOND));
+          const durationMs = Math.round(seconds * MS_PER_SECOND);
+          finish(durationMs > 0 ? durationMs : null);
         } else {
           finish(null);
         }
@@ -340,12 +341,16 @@ export class AdminAudioStore {
         },
         headers,
       );
+      const uploadTarget = presign?.media;
+      if (!uploadTarget?.uploadUrl || !uploadTarget.key) {
+        throw new Error(ADMIN_UI_TEXT.AUDIO_ERROR_PRESIGN);
+      }
 
       emitUploadPercent(0);
       await this.fetcher.putBinary(
-        presign.audio.uploadUrl,
+        uploadTarget.uploadUrl,
         input.file,
-        presign.audio.headers,
+        uploadTarget.headers,
         (progress) => emitUploadPercent(progress.percent),
       );
 
@@ -362,7 +367,7 @@ export class AdminAudioStore {
           title: trimmedTitle,
           artistCredit: input.artistCredit.trim(),
           licenseNote: input.licenseNote.trim(),
-          mediaKey: presign.audio.key,
+          mediaKey: uploadTarget.key,
           mimeType,
           fileSizeBytes: input.file.size,
           durationMs,

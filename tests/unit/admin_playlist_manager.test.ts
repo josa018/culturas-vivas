@@ -94,10 +94,13 @@ class StubAudioFetcher implements AdminNetworkFetcher {
     this.postCalls.push({ url, body });
     if (url.includes("/presign")) {
       return {
-        audio: {
+        itemId: "t3",
+        storageProvider: "r2",
+        media: {
           key: "audio/lobby/new.m4a",
           uploadUrl: "https://r2.example/put-audio",
           headers: { "Content-Type": "audio/mp4" },
+          expiresInSeconds: 300,
         },
         storageUsageBytes: 2_000_000,
         maxStorageBytes: 8_589_934_592,
@@ -476,6 +479,7 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
       getToken: () => "jwt",
       onUnauthorized: vi.fn(),
       fetcher,
+      probeDurationMs: vi.fn(async () => 60_000),
       downloadTrigger,
     });
 
@@ -507,6 +511,20 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     );
     expect(store.getState().error).not.toContain("HTTP 413");
     expect(store.getState().error).not.toContain("/api/");
+
+    vi.spyOn(fetcher, "post").mockResolvedValueOnce({
+      storageUsageBytes: 2_000_000,
+      maxStorageBytes: 8_589_934_592,
+    });
+    await store.uploadTrack({
+      roomId: RoomId.LOBBY,
+      file: new File(["bytes"], "canto.mp3", { type: "audio/mpeg" }),
+      title: "Canto sin target",
+      artistCredit: "",
+      licenseNote: "",
+    });
+    expect(store.getState().error).toBe(ADMIN_UI_TEXT.AUDIO_ERROR_PRESIGN);
+    expect(store.getState().error).not.toBe(ADMIN_HTTP_ERROR_TEXT.NETWORK_ERROR);
   });
 
   it("PlaylistManagerWidget renders real-time audio upload progress bar and hides it on completion", async () => {
