@@ -1529,18 +1529,46 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     const reticleTabBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.TAB_RETICLE_BTN}`);
     reticleTabBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
+    const sizeSmallBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_SMALL_BTN}`);
     const sizeNormalBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_NORMAL_BTN}`);
     const sizeLargeBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_LARGE_BTN}`);
     const fuseFastBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_FUSE_FAST_BTN}`);
     const fuseNormalBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_FUSE_NORMAL_BTN}`);
     const idleToggleBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_IDLE_TOGGLE_BTN}`);
 
+    // Tabs render visually distinct from 3D lambert box buttons
+    const audioTabBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.TAB_AUDIO_BTN}`);
+    expect(audioTabBtn?.getAttribute("data-hud-role")).toBe("tab");
+    expect(reticleTabBtn?.getAttribute("data-hud-role")).toBe("tab");
+    expect(audioTabBtn?.getAttribute("material")).toContain("shader: flat");
+    expect(sizeNormalBtn?.getAttribute("material")).toContain("shader: lambert");
+
+    // Reticle option buttons are symmetrically centered around x = 0 and clear the curved R=1.8m backdrop
+    const parsePos = (node: Element | null) => {
+      const [x, y, z] = (node?.getAttribute("position") ?? "0 0 0")
+        .split(/\s+/)
+        .map(Number);
+      return { x, y, z };
+    };
+    const leftPos = parsePos(sizeSmallBtn);
+    const centerPos = parsePos(sizeNormalBtn);
+    const rightPos = parsePos(sizeLargeBtn);
+    expect(centerPos.x).toBeCloseTo(0, 3);
+    expect(leftPos.x).toBeCloseTo(-rightPos.x, 3);
+    for (const btn of [sizeSmallBtn, sizeNormalBtn, sizeLargeBtn, idleToggleBtn]) {
+      const { x, z } = parsePos(btn);
+      const backdropZ =
+        VR_HUD_GEOMETRY.CURVED_RADIUS_M -
+        Math.sqrt(VR_HUD_GEOMETRY.CURVED_RADIUS_M ** 2 - x ** 2);
+      expect(z - VR_HUD_GEOMETRY.BUTTON_DEPTH_M / 2).toBeGreaterThan(backdropZ);
+    }
+
     expect(sizeNormalBtn?.getAttribute("data-selected")).toBe("true");
     expect(sizeLargeBtn?.getAttribute("data-selected")).toBe("false");
     expect(fuseNormalBtn?.getAttribute("data-selected")).toBe("true");
     expect(
       idleToggleBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
-    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_HIDE_LABEL);
+    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_DIM_LABEL);
 
     const events: unknown[] = [];
     el.addEventListener(VR_HUD_RETICLE_PREFS_EVENT, (evt: Event) => {
@@ -1554,7 +1582,7 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(reticlePrefs.getPreferences()).toEqual({
       sizePreset: "LARGE",
       fusePreset: "FAST",
-      idleBehavior: "DIM",
+      idleBehavior: "AUTO_HIDE",
     });
     expect(sizeLargeBtn?.getAttribute("data-selected")).toBe("true");
     expect(sizeNormalBtn?.getAttribute("data-selected")).toBe("false");
@@ -1562,7 +1590,7 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     expect(fuseNormalBtn?.getAttribute("data-selected")).toBe("false");
     expect(
       idleToggleBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
-    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_DIM_LABEL);
+    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_HIDE_LABEL);
     expect(events).toHaveLength(3);
     expect(instance.isOpen).toBe(true);
 
@@ -1615,7 +1643,7 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
 
     reticlePrefs.setSizePreset("LARGE");
     reticlePrefs.setFusePreset("SLOW");
-    reticlePrefs.setIdleBehavior("DIM");
+    reticlePrefs.setIdleBehavior("AUTO_HIDE");
     expect(cursor.getAttribute("fuse-timeout")).toBe("2500");
 
     const appRoot = document.createElement("div");

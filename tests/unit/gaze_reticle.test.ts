@@ -211,10 +211,14 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       `0 0 -${RETICLE_TOKENS.REST_DEPTH_M}`,
     );
 
-    // After 300ms -> Cinema Mode hides reticle
+    // After 300ms -> Default DIM mode dims reticle instead of hiding
     now = 1400;
     instance.tick();
-    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+    expect(instance.visibilityMode).toBe("CINEMA_DIM");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain(
+      `opacity: ${RETICLE_TOKENS.DIM_OPACITY}`,
+    );
 
     // Hover wake band near control bar -> immediately wakes as GUIDE
     wakeDistance = 1.47;
@@ -272,11 +276,14 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       `opacity: ${RETICLE_TOKENS.GUIDE_OPACITY}`,
     );
 
-    // After 300ms on empty space while IDLE -> hidden
+    // After 300ms on empty space while IDLE -> defaults to CINEMA_DIM (0.25 opacity)
     now = 1300;
     instance.tick();
-    expect(instance.visibilityMode).toBe("CINEMA_HIDDEN");
-    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+    expect(instance.visibilityMode).toBe("CINEMA_DIM");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain(
+      `opacity: ${RETICLE_TOKENS.DIM_OPACITY}`,
+    );
 
     // Looking at a wake zone while IDLE wakes reticle as GUIDE
     wakeDistance = 2.0;
@@ -356,6 +363,19 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
         nonInteractiveSinceMs: 1000,
         nowMs: 1300,
       }),
+    ).toBe("CINEMA_DIM");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1300,
+        idleBehavior: "AUTO_HIDE",
+      }),
     ).toBe("CINEMA_HIDDEN");
 
     expect(
@@ -427,6 +447,7 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
         isFusing: false,
         nonInteractiveSinceMs: 1000,
         nowMs: 1300,
+        idleBehavior: "AUTO_HIDE",
       }),
     ).toBe("CINEMA_HIDDEN");
   });
@@ -544,11 +565,11 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
 
     prefsStore.setSizePreset("SMALL");
     prefsStore.setFusePreset("FAST");
-    prefsStore.setIdleBehavior("DIM");
 
     expect(cursorEl.getAttribute("fuse-timeout")).toBe("1000");
     expect(instance.data.fuseTimeout).toBe(1000);
 
+    // Default idleBehavior is DIM
     now = 1350;
     instance.tick();
     expect(instance.visibilityMode).toBe("CINEMA_DIM");
@@ -558,7 +579,7 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       `opacity: ${RETICLE_TOKENS.DIM_OPACITY}`,
     );
 
-    // Switching back to AUTO_HIDE hides immediately on next tick
+    // Switching to AUTO_HIDE hides immediately on next tick
     prefsStore.setIdleBehavior("AUTO_HIDE");
     instance.tick();
     expect(instance.visibilityMode).toBe("CINEMA_HIDDEN");

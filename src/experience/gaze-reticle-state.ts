@@ -1,5 +1,6 @@
 import { ViewMode } from "../navigation/types";
 import {
+  DEFAULT_RETICLE_PREFERENCES,
   RETICLE_IDLE_BEHAVIOR,
   RETICLE_TOKENS,
   type ReticleIdleBehavior,
@@ -127,9 +128,11 @@ export function evaluateReticleVisibilityMode(
     input.nonInteractiveSinceMs !== null &&
     input.nowMs - input.nonInteractiveSinceMs >= RETICLE_TOKENS.CINEMA_HIDE_DELAY_MS
   ) {
-    return input.idleBehavior === RETICLE_IDLE_BEHAVIOR.DIM
-      ? "CINEMA_DIM"
-      : "CINEMA_HIDDEN";
+    const idleBehavior =
+      input.idleBehavior ?? DEFAULT_RETICLE_PREFERENCES.idleBehavior;
+    return idleBehavior === RETICLE_IDLE_BEHAVIOR.AUTO_HIDE
+      ? "CINEMA_HIDDEN"
+      : "CINEMA_DIM";
   }
   return "GUIDE";
 }

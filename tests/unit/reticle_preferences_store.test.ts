@@ -58,7 +58,7 @@ describe("ReticlePreferencesStore (Session-Scoped Reticle Preferences)", () => {
     expect(store.getResolvedConfig()).toEqual({
       sizeMultiplier: 1.0,
       fuseTimeoutMs: 1500,
-      idleBehavior: "AUTO_HIDE",
+      idleBehavior: "DIM",
     });
   });
 
@@ -72,22 +72,22 @@ describe("ReticlePreferencesStore (Session-Scoped Reticle Preferences)", () => {
     });
 
     expect(seen).toEqual([
-      { sizePreset: "NORMAL", fusePreset: "NORMAL", idleBehavior: "AUTO_HIDE" },
+      { sizePreset: "NORMAL", fusePreset: "NORMAL", idleBehavior: "DIM" },
     ]);
 
     store.setSizePreset("LARGE");
     store.setFusePreset("FAST");
-    store.setIdleBehavior("DIM");
+    store.setIdleBehavior("AUTO_HIDE");
 
     expect(store.getPreferences()).toEqual({
       sizePreset: "LARGE",
       fusePreset: "FAST",
-      idleBehavior: "DIM",
+      idleBehavior: "AUTO_HIDE",
     });
     expect(store.getResolvedConfig()).toEqual({
       sizeMultiplier: 1.35,
       fuseTimeoutMs: 1000,
-      idleBehavior: "DIM",
+      idleBehavior: "AUTO_HIDE",
     });
     expect(seen).toHaveLength(4);
 
@@ -96,11 +96,11 @@ describe("ReticlePreferencesStore (Session-Scoped Reticle Preferences)", () => {
     expect(hydrated.getPreferences()).toEqual({
       sizePreset: "LARGE",
       fusePreset: "FAST",
-      idleBehavior: "DIM",
+      idleBehavior: "AUTO_HIDE",
     });
 
     hydrated.toggleIdleBehavior();
-    expect(hydrated.getPreferences().idleBehavior).toBe("AUTO_HIDE");
+    expect(hydrated.getPreferences().idleBehavior).toBe("DIM");
 
     store.reset();
     expect(store.getPreferences()).toEqual(DEFAULT_RETICLE_PREFERENCES);
