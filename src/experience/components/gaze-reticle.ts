@@ -1,9 +1,11 @@
 import { ViewMode } from "../../navigation/types";
 import {
+  DEFAULT_RETICLE_PREFERENCES,
   INSPECTION_TIMINGS,
   InspectionState,
   RENDERER_QUALITY_TOKENS,
   RETICLE_TOKENS,
+  type ReticleIdleBehavior,
 } from "../constants";
 import {
   computeReticleDepthTransform,
@@ -16,6 +18,10 @@ import {
   type GazeReticleState,
   type ReticleVisibilityMode,
 } from "../gaze-reticle-state";
+import {
+  getSharedReticlePreferencesStore,
+  type ReticlePreferencesStore,
+} from "../reticle-preferences-store";
 import { getSharedInspectionController } from "./inspectable";
 import { SfxId } from "../audio/audio-constants";
 import { getSharedSfxPlayer } from "../audio/sfx-player";
@@ -30,6 +36,7 @@ export interface GazeReticleDependencies {
   readonly getInspectionState?: () => InspectionState;
   readonly getRaycasterIntersection?: () => number | null;
   readonly getWakeIntersection?: () => number | null;
+  readonly reticlePreferencesStore?: ReticlePreferencesStore;
 }
 
 export interface GazeReticleComponentData {
@@ -68,6 +75,8 @@ export interface GazeReticleComponentInstance {
   accentColor: string;
   viewMode: string;
   visibilityMode: ReticleVisibilityMode;
+  sizeMultiplier: number;
+  idleBehavior: ReticleIdleBehavior;
   nonInteractiveSinceMs: number | null;
   containerEl: HTMLElement | null;
   idleDotEl: HTMLElement | null;
@@ -75,6 +84,7 @@ export interface GazeReticleComponentInstance {
   progressRingEl: HTMLElement | null;
   confirmRingEl: HTMLElement | null;
   confirmResetTimer: ReturnType<typeof setTimeout> | null;
+  unsubscribeReticlePrefs: (() => void) | null;
   cleanupListeners: Array<() => void>;
   init: () => void;
   tick: () => void;
@@ -163,15 +173,22 @@ function applyVisibilityStyle(
   instance: GazeReticleComponentInstance,
   mode: ReticleVisibilityMode,
 ): void {
-  const isVisible = mode === "ACTIVE" || mode === "GUIDE";
+  const isVisible =
+    mode === "ACTIVE" || mode === "GUIDE" || mode === "CINEMA_DIM";
   instance.containerEl?.setAttribute("visible", isVisible ? "true" : "false");
   if (!isVisible) {
     return;
   }
-  const dotOpacity = mode === "GUIDE" ? RETICLE_TOKENS.GUIDE_OPACITY : 0.95;
-  const haloOpacity =
+  const opacityFactor =
     mode === "GUIDE"
-      ? Number((RETICLE_TOKENS.IDLE_HALO_OPACITY * RETICLE_TOKENS.GUIDE_OPACITY).toFixed(2))
+      ? RETICLE_TOKENS.GUIDE_OPACITY
+      : mode === "CINEMA_DIM"
+        ? RETICLE_TOKENS.DIM_OPACITY
+        : null;
+  const dotOpacity = opacityFactor !== null ? opacityFactor : 0.95;
+  const haloOpacity =
+    opacityFactor !== null
+      ? Number((RETICLE_TOKENS.IDLE_HALO_OPACITY * opacityFactor).toFixed(2))
       : RETICLE_TOKENS.IDLE_HALO_OPACITY;
   instance.idleDotEl?.setAttribute(
     "material",
@@ -189,6 +206,8 @@ export function createGazeReticleComponentDefinition(
   const resolveNowMs = deps.nowMs ?? (() => Date.now());
   const resolveInspectionState =
     deps.getInspectionState ?? (() => getSharedInspectionController().getState());
+  const resolveReticlePrefs = () =>
+    deps.reticlePreferencesStore ?? getSharedReticlePreferencesStore();
 
   return {
     schema: {
@@ -209,12 +228,20 @@ export function createGazeReticleComponentDefinition(
       this.viewMode = deps.getViewMode ? deps.getViewMode() : ViewMode.VR;
       this.visibilityMode =
         this.viewMode === ViewMode.VR ? "GUIDE" : "HIDDEN";
+      const reticleStore = resolveReticlePrefs();
+      const initialResolved = reticleStore.getResolvedConfig();
+      this.sizeMultiplier = initialResolved.sizeMultiplier;
+      this.idleBehavior = initialResolved.idleBehavior ?? DEFAULT_RETICLE_PREFERENCES.idleBehavior;
       this.nonInteractiveSinceMs =
         this.viewMode === ViewMode.VR ? resolveNowMs() : null;
       this.confirmResetTimer = null;
+      this.unsubscribeReticlePrefs = null;
       this.cleanupListeners = [];
 
-      const initialTransform = computeReticleDepthTransform(null);
+      const initialTransform = computeReticleDepthTransform(
+        null,
+        this.sizeMultiplier,
+      );
       const container = document.createElement("a-entity") as GazeReticleEntity;
       container.setAttribute("class", "cv-gaze-reticle-group");
       container.setAttribute("position", `0 0 ${initialTransform.z}`);
@@ -352,6 +379,19 @@ export function createGazeReticleComponentDefinition(
           }, RETICLE_TOKENS.CONFIRM_PULSE_MS + 10);
         }
       });
+
+      this.unsubscribeReticlePrefs = reticleStore.subscribe((_prefs, resolved) => {
+        const fuseChanged = this.data?.fuseTimeout !== resolved.fuseTimeoutMs;
+        this.sizeMultiplier = resolved.sizeMultiplier;
+        this.idleBehavior = resolved.idleBehavior;
+        if (this.data) {
+          this.data.fuseTimeout = resolved.fuseTimeoutMs;
+        }
+        this.el.setAttribute("fuse-timeout", String(resolved.fuseTimeoutMs));
+        if (fuseChanged && this.reticleState.isFusing) {
+          this.resetFuse();
+        }
+      });
     },
 
     resetFuse: function (this: GazeReticleComponentInstance) {
@@ -438,6 +478,7 @@ export function createGazeReticleComponentDefinition(
         isFusing: this.reticleState.isFusing,
         nonInteractiveSinceMs: this.nonInteractiveSinceMs,
         nowMs: now,
+        idleBehavior: this.idleBehavior,
       });
 
       if (nextVisibilityMode !== this.visibilityMode) {
@@ -447,7 +488,10 @@ export function createGazeReticleComponentDefinition(
 
       if (this.containerEl) {
         const hitDist = hasClickableHit ? clickableDist : wakeDist;
-        const depthTransform = computeReticleDepthTransform(hitDist);
+        const depthTransform = computeReticleDepthTransform(
+          hitDist,
+          this.sizeMultiplier,
+        );
         this.containerEl.setAttribute("position", `0 0 ${depthTransform.z}`);
         this.containerEl.setAttribute(
           "scale",
@@ -484,6 +528,8 @@ export function createGazeReticleComponentDefinition(
         clearTimeout(this.confirmResetTimer);
         this.confirmResetTimer = null;
       }
+      this.unsubscribeReticlePrefs?.();
+      this.unsubscribeReticlePrefs = null;
       for (const cleanup of this.cleanupListeners) {
         cleanup();
       }

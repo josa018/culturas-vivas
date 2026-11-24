@@ -1416,4 +1416,264 @@ describe("VR Tap Trigger Pure Helpers & Component", () => {
     }
     instance.remove();
   });
+
+  it("switches between Audio and Reticula tabs inside cv-vr-hologram-hud with strict per-tab .clickable and visible gating", () => {
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance = createMockHudInstance(el);
+    instance.init();
+    instance.setRoomTitle(RoomId.WIXARIKA);
+
+    const ids = VR_HUD_ELEMENT_IDS as Record<string, string>;
+    const audioTabBtn = el.querySelector(`#${ids.TAB_AUDIO_BTN}`);
+    const reticleTabBtn = el.querySelector(`#${ids.TAB_RETICLE_BTN}`);
+    const audioGroup = el.querySelector(`#${ids.AUDIO_GROUP}`);
+    const reticleGroup = el.querySelector(`#${ids.RETICLE_GROUP}`);
+    const soundBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.SOUND_TOGGLE_BTN}`);
+    const sizeSmallBtn = el.querySelector(`#${ids.RETICLE_SIZE_SMALL_BTN}`);
+    const returnLobbyBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETURN_LOBBY_BTN}`);
+    const dismissBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.DISMISS_BTN}`);
+    const backdrop = el.querySelector(`#${VR_HUD_ELEMENT_IDS.PANEL_BACKDROP}`);
+
+    expect(audioTabBtn).toBeTruthy();
+    expect(reticleTabBtn).toBeTruthy();
+    expect(audioGroup?.getAttribute("visible")).toBe("true");
+    expect(reticleGroup?.getAttribute("visible")).toBe("false");
+
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    expect(audioTabBtn?.classList.contains("clickable")).toBe(true);
+    expect(reticleTabBtn?.classList.contains("clickable")).toBe(true);
+    expect(soundBtn?.classList.contains("clickable")).toBe(true);
+    expect(sizeSmallBtn?.classList.contains("clickable")).toBe(false);
+
+    // Switch to Reticle tab -> audio controls hide & lose .clickable; reticle controls show & gain .clickable
+    reticleTabBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(instance.isOpen).toBe(true);
+    expect(audioGroup?.getAttribute("visible")).toBe("false");
+    expect(reticleGroup?.getAttribute("visible")).toBe("true");
+    expect(soundBtn?.classList.contains("clickable")).toBe(false);
+    expect(sizeSmallBtn?.classList.contains("clickable")).toBe(true);
+    expect(backdrop?.classList.contains("clickable")).toBe(true);
+    expect(dismissBtn?.classList.contains("clickable")).toBe(true);
+    expect(returnLobbyBtn?.classList.contains("clickable")).toBe(true);
+
+    // Dismissing while on Reticle tab strips .clickable from everything
+    instance.dismiss();
+    expect(audioTabBtn?.classList.contains("clickable")).toBe(false);
+    expect(reticleTabBtn?.classList.contains("clickable")).toBe(false);
+    expect(sizeSmallBtn?.classList.contains("clickable")).toBe(false);
+    expect(returnLobbyBtn?.classList.contains("clickable")).toBe(false);
+    expect(dismissBtn?.classList.contains("clickable")).toBe(false);
+
+    // Switch back to Audio tab after re-summon
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+    audioTabBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(audioGroup?.getAttribute("visible")).toBe("true");
+    expect(reticleGroup?.getAttribute("visible")).toBe("false");
+    expect(soundBtn?.classList.contains("clickable")).toBe(true);
+    expect(sizeSmallBtn?.classList.contains("clickable")).toBe(false);
+
+    instance.remove();
+  });
+
+  it("updates ReticlePreferencesStore presets, selection highlights, and idle label from VR HUD Reticula tab without dismissing HUD", async () => {
+    const { ReticlePreferencesStore } = await import(
+      "../../src/experience/reticle-preferences-store"
+    );
+    const { VR_HUD_RETICLE_PREFS_EVENT } = await import(
+      "../../src/experience/components/vr-hologram-hud"
+    );
+
+    const map = new Map<string, string>();
+    const reticlePrefs = new ReticlePreferencesStore({
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    });
+
+    const def = createVrHologramHudComponentDefinition({
+      reticlePreferencesStore: reticlePrefs,
+    });
+    const el = document.createElement("a-entity") as VrHologramHudEntity;
+    const instance: VrHologramHudComponentInstance = {
+      el,
+      isOpen: false,
+      enabled: true,
+      activeRoomId: DEFAULT_ROOM_ID,
+      callbacks: {},
+      roomChipEl: null,
+      init: function () {
+        def.init.call(this);
+      },
+      setCallbacks: function (c) {
+        def.setCallbacks.call(this, c);
+      },
+      setEnabled: function (e) {
+        def.setEnabled.call(this, e);
+      },
+      setRoomTitle: function (r) {
+        def.setRoomTitle.call(this, r);
+      },
+      summon: function (p) {
+        def.summon.call(this, p);
+      },
+      dismiss: function () {
+        def.dismiss.call(this);
+      },
+      remove: function () {
+        def.remove.call(this);
+      },
+    };
+    instance.init();
+    instance.summon({ position: { x: 0, y: 1.6, z: 0 }, yawRad: 0 });
+
+    const reticleTabBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.TAB_RETICLE_BTN}`);
+    reticleTabBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const sizeSmallBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_SMALL_BTN}`);
+    const sizeNormalBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_NORMAL_BTN}`);
+    const sizeLargeBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_SIZE_LARGE_BTN}`);
+    const fuseFastBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_FUSE_FAST_BTN}`);
+    const fuseNormalBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_FUSE_NORMAL_BTN}`);
+    const idleToggleBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.RETICLE_IDLE_TOGGLE_BTN}`);
+
+    // Tabs render visually distinct from 3D lambert box buttons
+    const audioTabBtn = el.querySelector(`#${VR_HUD_ELEMENT_IDS.TAB_AUDIO_BTN}`);
+    expect(audioTabBtn?.getAttribute("data-hud-role")).toBe("tab");
+    expect(reticleTabBtn?.getAttribute("data-hud-role")).toBe("tab");
+    expect(audioTabBtn?.getAttribute("material")).toContain("shader: flat");
+    expect(sizeNormalBtn?.getAttribute("material")).toContain("shader: lambert");
+
+    // Reticle option buttons are symmetrically centered around x = 0 and clear the curved R=1.8m backdrop
+    const parsePos = (node: Element | null) => {
+      const [x, y, z] = (node?.getAttribute("position") ?? "0 0 0")
+        .split(/\s+/)
+        .map(Number);
+      return { x, y, z };
+    };
+    const leftPos = parsePos(sizeSmallBtn);
+    const centerPos = parsePos(sizeNormalBtn);
+    const rightPos = parsePos(sizeLargeBtn);
+    expect(centerPos.x).toBeCloseTo(0, 3);
+    expect(leftPos.x).toBeCloseTo(-rightPos.x, 3);
+    for (const btn of [sizeSmallBtn, sizeNormalBtn, sizeLargeBtn, idleToggleBtn]) {
+      const { x, z } = parsePos(btn);
+      const backdropZ =
+        VR_HUD_GEOMETRY.CURVED_RADIUS_M -
+        Math.sqrt(VR_HUD_GEOMETRY.CURVED_RADIUS_M ** 2 - x ** 2);
+      expect(z - VR_HUD_GEOMETRY.BUTTON_DEPTH_M / 2).toBeGreaterThan(backdropZ);
+    }
+
+    expect(sizeNormalBtn?.getAttribute("data-selected")).toBe("true");
+    expect(sizeLargeBtn?.getAttribute("data-selected")).toBe("false");
+    expect(fuseNormalBtn?.getAttribute("data-selected")).toBe("true");
+    expect(
+      idleToggleBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
+    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_DIM_LABEL);
+
+    const events: unknown[] = [];
+    el.addEventListener(VR_HUD_RETICLE_PREFS_EVENT, (evt: Event) => {
+      events.push((evt as CustomEvent).detail);
+    });
+
+    sizeLargeBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    fuseFastBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    idleToggleBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(reticlePrefs.getPreferences()).toEqual({
+      sizePreset: "LARGE",
+      fusePreset: "FAST",
+      idleBehavior: "AUTO_HIDE",
+    });
+    expect(sizeLargeBtn?.getAttribute("data-selected")).toBe("true");
+    expect(sizeNormalBtn?.getAttribute("data-selected")).toBe("false");
+    expect(fuseFastBtn?.getAttribute("data-selected")).toBe("true");
+    expect(fuseNormalBtn?.getAttribute("data-selected")).toBe("false");
+    expect(
+      idleToggleBtn?.querySelector("[cv-canvas-text]")?.getAttribute("value"),
+    ).toBe(VR_HUD_DICTIONARY.RETICLE_IDLE_HIDE_LABEL);
+    expect(events).toHaveLength(3);
+    expect(instance.isOpen).toBe(true);
+
+    instance.remove();
+    // After remove(), external store changes do not throw or mutate unmounted controls
+    reticlePrefs.setSizePreset("SMALL");
+    expect(sizeLargeBtn?.getAttribute("data-selected")).toBe("true");
+  });
+
+  it("resets ReticlePreferencesStore and host cursor fuse-timeout in resetExperience() while keeping 2D Settings modal audio-only", async () => {
+    const {
+      DEFAULT_RETICLE_PREFERENCES,
+      INSPECTION_TIMINGS,
+      RETICLE_TOKENS,
+    } = await import("../../src/experience/constants");
+    const { ReticlePreferencesStore } = await import(
+      "../../src/experience/reticle-preferences-store"
+    );
+    const { createGazeReticleComponentDefinition } = await import(
+      "../../src/experience/components/gaze-reticle"
+    );
+
+    const map = new Map<string, string>();
+    const storage: StorageAdapter = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    };
+    const reticlePrefs = new ReticlePreferencesStore(storage);
+
+    const scene = document.createElement("a-scene");
+    const camera = document.createElement("a-camera");
+    const cursor = document.createElement("a-cursor") as AFrameCursorElement;
+    cursor.setAttribute("fuse", "true");
+    cursor.setAttribute("fuse-timeout", "1500");
+    camera.appendChild(cursor);
+    scene.appendChild(camera);
+    document.body.appendChild(scene);
+
+    const reticleDef = createGazeReticleComponentDefinition({
+      reticlePreferencesStore: reticlePrefs,
+    });
+    const reticleInstance = Object.create(reticleDef);
+    reticleInstance.el = cursor;
+    reticleInstance.data = {
+      fuseTimeout: INSPECTION_TIMINGS.FUSE_TIMEOUT_MS,
+      accentColor: RETICLE_TOKENS.DEFAULT_ACCENT_COLOR,
+    };
+    reticleInstance.init();
+
+    reticlePrefs.setSizePreset("LARGE");
+    reticlePrefs.setFusePreset("SLOW");
+    reticlePrefs.setIdleBehavior("AUTO_HIDE");
+    expect(cursor.getAttribute("fuse-timeout")).toBe("2500");
+
+    const appRoot = document.createElement("div");
+    document.body.appendChild(appRoot);
+
+    const screen = new ExperienceScreenView(
+      vi.fn(),
+      ViewMode.TOUCH_2D,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reticlePrefs,
+    );
+
+    screen.mount(appRoot);
+    const settingsModal = appRoot.querySelector('[data-settings-modal="true"]')!;
+    expect(settingsModal.querySelector('[data-sound-toggle="master"]')).not.toBeNull();
+    expect(settingsModal.querySelector('[data-volume-channel="music"]')).not.toBeNull();
+    expect(settingsModal.querySelector('[data-volume-channel="effects"]')).not.toBeNull();
+    expect(settingsModal.textContent).not.toContain("Retícula");
+    expect(settingsModal.textContent).not.toContain("Fijación");
+
+    screen.resetExperience();
+    expect(reticlePrefs.getPreferences()).toEqual(DEFAULT_RETICLE_PREFERENCES);
+    expect(cursor.getAttribute("fuse-timeout")).toBe("1500");
+
+    reticleInstance.remove();
+    screen.unmount();
+  });
 });

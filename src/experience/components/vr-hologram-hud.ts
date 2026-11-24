@@ -43,11 +43,23 @@ import {
   computeVolumeBarState,
   quantizeVolumeStep,
 } from "../audio/volume-bars";
+import {
+  ReticlePreferencesStore,
+  getSharedReticlePreferencesStore,
+} from "../reticle-preferences-store";
+import {
+  RETICLE_IDLE_BEHAVIOR,
+  type ReticleFusePreset,
+  type ReticleSizePreset,
+} from "../constants";
 
 export const VR_HUD_RETURN_LOBBY_EVENT = "cv-vr-hud-return-lobby";
 export const VR_HUD_DISMISS_EVENT = "cv-vr-hud-dismiss";
 export const VR_HUD_SOUND_TOGGLE_EVENT = "cv-vr-hud-sound-toggle";
 export const VR_HUD_VOLUME_CHANGE_EVENT = "cv-vr-hud-volume-change";
+export const VR_HUD_RETICLE_PREFS_EVENT = "cv-vr-hud-reticle-prefs";
+
+export type VrHudTab = "AUDIO" | "RETICLE";
 
 export interface VrHudActionCallbacks {
   readonly onReturnToLobby?: () => void;
@@ -58,6 +70,7 @@ export interface VrHudActionCallbacks {
 export interface VrHologramHudDeps {
   readonly audioPreferencesStore?: AudioPreferencesStore;
   readonly audioEngine?: Pick<AudioEngine, "unlockFromUserGesture">;
+  readonly reticlePreferencesStore?: ReticlePreferencesStore;
 }
 
 export interface VrHudCameraPose {
@@ -92,14 +105,23 @@ export interface VrHologramHudComponentInstance {
   roomChipEl: HTMLElement | null;
   returnLobbyBtnEl?: HTMLElement | null;
   soundBtnEl?: HTMLElement | null;
+  activeTab?: VrHudTab;
+  audioGroupEl?: HTMLElement | null;
+  reticleGroupEl?: HTMLElement | null;
+  audioTabBtnEl?: HTMLElement | null;
+  reticleTabBtnEl?: HTMLElement | null;
   hudEpoch?: number;
   dismissTimer?: ReturnType<typeof setTimeout> | null;
   hudOutCompleteHandler?: (() => void) | null;
   interactiveEls?: HTMLElement[];
+  audioInteractiveEls?: HTMLElement[];
+  reticleInteractiveEls?: HTMLElement[];
+  sharedInteractiveEls?: HTMLElement[];
   ownedTextures?: ProceduralHudTexture[];
   lastTransform?: VrHudWorldTransform | null;
   unsubscribeInspection?: (() => void) | null;
   unsubscribeAudioPrefs?: (() => void) | null;
+  unsubscribeReticlePrefs?: (() => void) | null;
   init: () => void;
   setCallbacks: (callbacks: VrHudActionCallbacks) => void;
   setEnabled: (enabled: boolean) => void;
@@ -125,16 +147,32 @@ function setHudInteractiveClickable(
   instance: VrHologramHudComponentInstance,
   enabled: boolean,
 ): void {
-  if (!instance.interactiveEls) {
-    return;
-  }
+  const activeTab: VrHudTab = instance.activeTab ?? "AUDIO";
   const canReturnToLobby = instance.activeRoomId !== RoomId.LOBBY;
-  for (const el of instance.interactiveEls) {
-    if (el === instance.returnLobbyBtnEl) {
-      setElementClickable(el, enabled && canReturnToLobby);
-    } else {
-      setElementClickable(el, enabled);
+
+  if (instance.sharedInteractiveEls) {
+    for (const el of instance.sharedInteractiveEls) {
+      if (el === instance.returnLobbyBtnEl) {
+        setElementClickable(el, enabled && canReturnToLobby);
+      } else {
+        setElementClickable(el, enabled);
+      }
     }
+  } else if (instance.interactiveEls) {
+    for (const el of instance.interactiveEls) {
+      if (el === instance.returnLobbyBtnEl) {
+        setElementClickable(el, enabled && canReturnToLobby);
+      } else {
+        setElementClickable(el, enabled);
+      }
+    }
+  }
+
+  for (const el of instance.audioInteractiveEls ?? []) {
+    setElementClickable(el, enabled && activeTab === "AUDIO");
+  }
+  for (const el of instance.reticleInteractiveEls ?? []) {
+    setElementClickable(el, enabled && activeTab === "RETICLE");
   }
 }
 
@@ -175,6 +213,32 @@ export function computeCurvedHudStripTransform(
     thetaStart: Number((180 - thetaLengthDeg / 2 + thetaOffsetDeg).toFixed(4)),
     thetaLength: Number(thetaLengthDeg.toFixed(4)),
     centerZ: Number(radiusM.toFixed(4)),
+  };
+}
+
+export interface CurvedHudElementTransform {
+  readonly position: string;
+  readonly rotation: string;
+}
+
+/**
+ * Places a HUD element along a concentric cylindrical arc strictly in front of the curved backdrop.
+ */
+export function computeCurvedHudElementTransform(
+  arcOffsetX: number,
+  yPos: number,
+  clearanceM: number = VR_HUD_GEOMETRY.UI_RADIAL_CLEARANCE_M,
+): CurvedHudElementTransform {
+  const backdropRadius = VR_HUD_GEOMETRY.CURVED_RADIUS_M;
+  const uiRadius = backdropRadius - clearanceM;
+  const thetaRad = uiRadius > 0 ? arcOffsetX / uiRadius : 0;
+  const x = Number((uiRadius * Math.sin(thetaRad)).toFixed(4));
+  const y = Number(yPos.toFixed(4));
+  const z = Number((backdropRadius - uiRadius * Math.cos(thetaRad)).toFixed(4));
+  const yawDeg = Number(((-thetaRad * 180) / Math.PI).toFixed(3));
+  return {
+    position: `${x} ${y} ${z}`,
+    rotation: `0 ${yawDeg} 0`,
   };
 }
 
@@ -548,6 +612,218 @@ function createHudButtonEntity(options: {
   return btn;
 }
 
+function createHudTabButton(options: {
+  id: string;
+  action: string;
+  label: string;
+  arcOffsetX: number;
+  yPos: number;
+  width: number;
+  height: number;
+}): HTMLElement {
+  const transform = computeCurvedHudElementTransform(
+    options.arcOffsetX,
+    options.yPos,
+  );
+  const tab = document.createElement("a-entity");
+  tab.setAttribute("id", options.id);
+  tab.setAttribute("class", "cv-hud-control cv-hud-tab");
+  tab.setAttribute("cv-interactive-feedback", "");
+  tab.setAttribute("data-hud-role", "tab");
+  tab.setAttribute("data-action", options.action);
+  tab.setAttribute("data-selected", "false");
+  tab.setAttribute("position", transform.position);
+  tab.setAttribute("rotation", transform.rotation);
+  tab.setAttribute(
+    "geometry",
+    `primitive: plane; width: ${options.width}; height: ${options.height}`,
+  );
+  tab.setAttribute(
+    "material",
+    `shader: flat; color: ${VR_HUD_COLORS.TAB_INACTIVE_SURFACE}; opacity: 0.65; transparent: true`,
+  );
+
+  const bottomIndicator = document.createElement("a-plane");
+  bottomIndicator.setAttribute("class", "cv-hud-tab-indicator");
+  bottomIndicator.setAttribute("width", String(options.width));
+  bottomIndicator.setAttribute("height", "0.014");
+  bottomIndicator.setAttribute(
+    "position",
+    `0 ${Number((-options.height / 2 + 0.007).toFixed(4))} 0.003`,
+  );
+  bottomIndicator.setAttribute("color", VR_HUD_COLORS.VOLUME_BAR_INACTIVE);
+  bottomIndicator.setAttribute("material", "shader: flat; opacity: 0.35; transparent: true");
+
+  const labelEl = createCanvasTextPlane({
+    value: options.label,
+    align: "center",
+    baseline: "middle",
+    color: VR_HUD_COLORS.TEXT_BONE,
+    width: options.width * 0.88,
+    height: options.height * 0.72,
+    fontSizePx: 36,
+    fontWeight: "700",
+    canvasWidth: 384,
+    canvasHeight: 96,
+    maxLines: 1,
+    position: "0 0.004 0.005",
+  });
+
+  tab.append(bottomIndicator, labelEl);
+  return tab;
+}
+
+function setTabButtonSelected(
+  tab: HTMLElement | null | undefined,
+  selected: boolean,
+  activeColor: string,
+): void {
+  if (!tab) {
+    return;
+  }
+  tab.setAttribute("data-selected", selected ? "true" : "false");
+  tab.setAttribute(
+    "material",
+    `shader: flat; color: ${selected ? VR_HUD_COLORS.TAB_ACTIVE_SURFACE : VR_HUD_COLORS.TAB_INACTIVE_SURFACE}; opacity: ${selected ? "0.96" : "0.6"}; transparent: true`,
+  );
+  const indicator = tab.querySelector(".cv-hud-tab-indicator");
+  indicator?.setAttribute(
+    "color",
+    selected ? activeColor : VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+  );
+  indicator?.setAttribute(
+    "material",
+    `shader: flat; opacity: ${selected ? "1" : "0.25"}; transparent: true`,
+  );
+}
+
+function createHudCompactButton(options: {
+  id: string;
+  action: string;
+  label: string;
+  arcOffsetX: number;
+  yPos: number;
+  width: number;
+  height: number;
+  borderColor: string;
+  fontSizePx?: number;
+}): HTMLElement {
+  const depth = VR_HUD_GEOMETRY.BUTTON_DEPTH_M;
+  const transform = computeCurvedHudElementTransform(
+    options.arcOffsetX,
+    options.yPos,
+  );
+  const btn = document.createElement("a-entity");
+  btn.setAttribute("id", options.id);
+  btn.setAttribute("class", "cv-hud-control");
+  btn.setAttribute("cv-interactive-feedback", "");
+  btn.setAttribute("data-hud-role", "option");
+  btn.setAttribute("data-action", options.action);
+  btn.setAttribute("data-selected", "false");
+  btn.setAttribute("position", transform.position);
+  btn.setAttribute("rotation", transform.rotation);
+  btn.setAttribute(
+    "geometry",
+    `primitive: box; width: ${options.width}; height: ${options.height}; depth: ${depth}`,
+  );
+  btn.setAttribute(
+    "material",
+    `shader: lambert; color: ${VR_HUD_COLORS.BUTTON_SURFACE}; opacity: 0.95`,
+  );
+
+  const accentBar = document.createElement("a-plane");
+  accentBar.setAttribute("class", "cv-hud-btn-accent");
+  accentBar.setAttribute("width", String(options.width));
+  accentBar.setAttribute("height", "0.012");
+  accentBar.setAttribute(
+    "position",
+    `0 ${Number((options.height / 2 - 0.006).toFixed(4))} ${depth / 2 + 0.003}`,
+  );
+  accentBar.setAttribute("color", options.borderColor);
+  accentBar.setAttribute("material", "shader: flat");
+
+  const labelEl = createCanvasTextPlane({
+    value: options.label,
+    align: "center",
+    baseline: "middle",
+    color: VR_HUD_COLORS.TEXT_BONE,
+    width: options.width * 0.88,
+    height: options.height * 0.72,
+    fontSizePx: options.fontSizePx ?? 34,
+    fontWeight: "600",
+    canvasWidth: 384,
+    canvasHeight: 96,
+    maxLines: 1,
+    position: `0 0 ${depth / 2 + 0.006}`,
+  });
+
+  btn.append(accentBar, labelEl);
+  return btn;
+}
+
+function setCompactButtonSelected(
+  btn: HTMLElement | null | undefined,
+  selected: boolean,
+  activeColor: string,
+  inactiveBorderColor: string = VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+): void {
+  if (!btn) {
+    return;
+  }
+  btn.setAttribute("data-selected", selected ? "true" : "false");
+  btn.setAttribute(
+    "material",
+    `shader: lambert; color: ${selected ? VR_HUD_COLORS.BUTTON_ACTIVE_SURFACE : VR_HUD_COLORS.BUTTON_SURFACE}; opacity: ${selected ? "1" : "0.9"}`,
+  );
+  const accent = btn.querySelector(".cv-hud-btn-accent");
+  accent?.setAttribute("color", selected ? activeColor : inactiveBorderColor);
+}
+
+function setCompactButtonLabel(
+  btn: HTMLElement | null | undefined,
+  label: string,
+  fontSizePx: number = 34,
+): void {
+  const labelEl = btn?.querySelector("[cv-canvas-text]") as HTMLElement | null;
+  if (!labelEl) {
+    return;
+  }
+  labelEl.setAttribute("value", label);
+  setCanvasTextElement(labelEl, {
+    mode: "label",
+    value: label,
+    align: "center",
+    baseline: "middle",
+    color: VR_HUD_COLORS.TEXT_BONE,
+    fontSizePx,
+    fontWeight: "600",
+    canvasWidth: 384,
+    canvasHeight: 96,
+    maxLines: 1,
+  });
+}
+
+function applyActiveTabState(
+  instance: VrHologramHudComponentInstance,
+  tab: VrHudTab,
+): void {
+  instance.activeTab = tab;
+  const isAudio = tab === "AUDIO";
+  instance.audioGroupEl?.setAttribute("visible", isAudio ? "true" : "false");
+  instance.reticleGroupEl?.setAttribute("visible", isAudio ? "false" : "true");
+  setTabButtonSelected(
+    instance.audioTabBtnEl,
+    isAudio,
+    VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+  );
+  setTabButtonSelected(
+    instance.reticleTabBtnEl,
+    !isAudio,
+    VR_HUD_COLORS.ACCENT_TURQUESA,
+  );
+  setHudInteractiveClickable(instance, instance.isOpen);
+}
+
 interface HudVolumeBarsHandle {
   readonly groupEl: HTMLElement;
   readonly downBtn: HTMLElement;
@@ -807,6 +1083,8 @@ export function createVrHologramHudComponentDefinition(
   const resolveAudioPrefs = () =>
     deps.audioPreferencesStore ?? getSharedAudioPreferencesStore();
   const resolveAudioEngine = () => deps.audioEngine ?? getSharedAudioEngine();
+  const resolveReticlePrefs = () =>
+    deps.reticlePreferencesStore ?? getSharedReticlePreferencesStore();
 
   return {
     schema: {
@@ -931,9 +1209,60 @@ export function createVrHologramHudComponentDefinition(
         canvasWidth: 1024,
         canvasHeight: 128,
         maxLines: 1,
-        position: "0 0.39 0.04",
+        position: "0 0.43 0.04",
       });
       this.roomChipEl = roomChip;
+      this.activeTab = "AUDIO";
+
+      // Flat segmented top tab bar (Audio | Retícula) + divider track
+      const audioTabBtn = createHudTabButton({
+        id: VR_HUD_ELEMENT_IDS.TAB_AUDIO_BTN,
+        action: "tab-audio",
+        label: VR_HUD_DICTIONARY.TAB_AUDIO_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.TAB_AUDIO_X_M,
+        yPos: VR_HUD_GEOMETRY.TAB_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.TAB_BTN_WIDTH_M,
+        height: VR_HUD_GEOMETRY.TAB_BTN_HEIGHT_M,
+      });
+      const reticleTabBtn = createHudTabButton({
+        id: VR_HUD_ELEMENT_IDS.TAB_RETICLE_BTN,
+        action: "tab-reticle",
+        label: VR_HUD_DICTIONARY.TAB_RETICLE_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.TAB_RETICLE_X_M,
+        yPos: VR_HUD_GEOMETRY.TAB_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.TAB_BTN_WIDTH_M,
+        height: VR_HUD_GEOMETRY.TAB_BTN_HEIGHT_M,
+      });
+      const tabTrackDivider = document.createElement("a-plane");
+      tabTrackDivider.setAttribute("class", "cv-hud-tab-track");
+      tabTrackDivider.setAttribute("width", String(VR_HUD_GEOMETRY.TAB_TRACK_WIDTH_M));
+      tabTrackDivider.setAttribute("height", "0.005");
+      tabTrackDivider.setAttribute(
+        "position",
+        `0 ${VR_HUD_GEOMETRY.TAB_TRACK_Y_M} ${VR_HUD_GEOMETRY.UI_RADIAL_CLEARANCE_M}`,
+      );
+      tabTrackDivider.setAttribute(
+        "material",
+        `shader: flat; color: ${VR_HUD_COLORS.VOLUME_BAR_INACTIVE}; opacity: 0.5; transparent: true`,
+      );
+      this.audioTabBtnEl = audioTabBtn;
+      this.reticleTabBtnEl = reticleTabBtn;
+
+      audioTabBtn.addEventListener?.("click", (evt) => {
+        evt?.stopPropagation?.();
+        applyActiveTabState(this, "AUDIO");
+        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+      });
+      reticleTabBtn.addEventListener?.("click", (evt) => {
+        evt?.stopPropagation?.();
+        applyActiveTabState(this, "RETICLE");
+        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+      });
+
+      const audioGroupEl = document.createElement("a-entity");
+      audioGroupEl.setAttribute("id", VR_HUD_ELEMENT_IDS.AUDIO_GROUP);
+      audioGroupEl.setAttribute("visible", "true");
+      this.audioGroupEl = audioGroupEl;
 
       // Center Master Sound toggle button (stays open so user sees feedback)
       const initialPrefs = resolveAudioPrefs().getPreferences();
@@ -945,7 +1274,7 @@ export function createVrHologramHudComponentDefinition(
         label: initialSoundOn
           ? VR_HUD_DICTIONARY.SOUND_ON_LABEL
           : VR_HUD_DICTIONARY.SOUND_OFF_LABEL,
-        position: "0 0.14 0.05",
+        position: `0 ${VR_HUD_GEOMETRY.AUDIO_SOUND_Y_M} 0.05`,
         width: VR_HUD_GEOMETRY.BUTTON_WIDTH_M,
         backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
         borderColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
@@ -1006,6 +1335,10 @@ export function createVrHologramHudComponentDefinition(
         applyChannelVolume(channel, next);
       };
 
+      const musicArc = computeCurvedHudElementTransform(
+        VR_HUD_GEOMETRY.VOLUME_MUSIC_X_M,
+        VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M,
+      );
       const musicBars = createHudVolumeBarGroup({
         groupId: VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_GROUP,
         downId: VR_HUD_ELEMENT_IDS.MUSIC_SLIDER_DOWN_BTN,
@@ -1013,14 +1346,18 @@ export function createVrHologramHudComponentDefinition(
         barIdPrefix: VR_HUD_ELEMENT_IDS.MUSIC_BAR_PREFIX,
         channel: "music",
         label: VR_HUD_DICTIONARY.MUSIC_SLIDER_LABEL,
-        position: `${VR_HUD_GEOMETRY.VOLUME_MUSIC_X_M} ${VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M} ${VR_HUD_GEOMETRY.VOLUME_Z_M}`,
-        rotation: `0 ${VR_HUD_GEOMETRY.VOLUME_YAW_DEG} 0`,
+        position: musicArc.position,
+        rotation: musicArc.rotation,
         accentColor: VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
         initialVolume: initialPrefs.musicVolume,
         onSelectVolume: (volume) => applyChannelVolume("music", volume),
         onStep: (delta) => stepChannelVolume("music", delta),
       });
 
+      const effectsArc = computeCurvedHudElementTransform(
+        VR_HUD_GEOMETRY.VOLUME_EFFECTS_X_M,
+        VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M,
+      );
       const effectsBars = createHudVolumeBarGroup({
         groupId: VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_GROUP,
         downId: VR_HUD_ELEMENT_IDS.EFFECTS_SLIDER_DOWN_BTN,
@@ -1028,12 +1365,218 @@ export function createVrHologramHudComponentDefinition(
         barIdPrefix: VR_HUD_ELEMENT_IDS.EFFECTS_BAR_PREFIX,
         channel: "effects",
         label: VR_HUD_DICTIONARY.EFFECTS_SLIDER_LABEL,
-        position: `${VR_HUD_GEOMETRY.VOLUME_EFFECTS_X_M} ${VR_HUD_GEOMETRY.VOLUME_GROUP_Y_M} ${VR_HUD_GEOMETRY.VOLUME_Z_M}`,
-        rotation: `0 -${VR_HUD_GEOMETRY.VOLUME_YAW_DEG} 0`,
+        position: effectsArc.position,
+        rotation: effectsArc.rotation,
         accentColor: VR_HUD_COLORS.ACCENT_TURQUESA,
         initialVolume: initialPrefs.effectsVolume,
         onSelectVolume: (volume) => applyChannelVolume("effects", volume),
         onStep: (delta) => stepChannelVolume("effects", delta),
+      });
+
+      audioGroupEl.append(soundToggleBtn, musicBars.groupEl, effectsBars.groupEl);
+
+      // Reticle tab group (centered rows along the curved arc; hidden & non-clickable while Audio tab is active)
+      const reticleGroupEl = document.createElement("a-entity");
+      reticleGroupEl.setAttribute("id", VR_HUD_ELEMENT_IDS.RETICLE_GROUP);
+      reticleGroupEl.setAttribute("visible", "false");
+      this.reticleGroupEl = reticleGroupEl;
+
+      const createCenteredRowLabel = (value: string, yPos: number): HTMLElement =>
+        createCanvasTextPlane({
+          value,
+          align: "center",
+          baseline: "middle",
+          color: VR_HUD_COLORS.TEXT_BONE,
+          width: VR_HUD_GEOMETRY.RETICLE_LABEL_WIDTH_M,
+          height: VR_HUD_GEOMETRY.RETICLE_LABEL_HEIGHT_M,
+          fontSizePx: 30,
+          fontWeight: "600",
+          canvasWidth: 512,
+          canvasHeight: 64,
+          maxLines: 1,
+          position: `0 ${yPos} ${VR_HUD_GEOMETRY.UI_RADIAL_CLEARANCE_M}`,
+        });
+
+      const sizeRowLabel = createCenteredRowLabel(
+        VR_HUD_DICTIONARY.RETICLE_SIZE_LABEL,
+        VR_HUD_GEOMETRY.RETICLE_SIZE_LABEL_Y_M,
+      );
+      const sizeSmallBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_SIZE_SMALL_BTN,
+        action: "reticle-size-small",
+        label: VR_HUD_DICTIONARY.RETICLE_SIZE_SMALL_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[0],
+        yPos: VR_HUD_GEOMETRY.RETICLE_SIZE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+        fontSizePx: 30,
+      });
+      const sizeNormalBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_SIZE_NORMAL_BTN,
+        action: "reticle-size-normal",
+        label: VR_HUD_DICTIONARY.RETICLE_SIZE_NORMAL_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[1],
+        yPos: VR_HUD_GEOMETRY.RETICLE_SIZE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
+        fontSizePx: 30,
+      });
+      const sizeLargeBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_SIZE_LARGE_BTN,
+        action: "reticle-size-large",
+        label: VR_HUD_DICTIONARY.RETICLE_SIZE_LARGE_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[2],
+        yPos: VR_HUD_GEOMETRY.RETICLE_SIZE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+        fontSizePx: 30,
+      });
+
+      const fuseRowLabel = createCenteredRowLabel(
+        VR_HUD_DICTIONARY.RETICLE_FUSE_LABEL,
+        VR_HUD_GEOMETRY.RETICLE_FUSE_LABEL_Y_M,
+      );
+      const fuseFastBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_FUSE_FAST_BTN,
+        action: "reticle-fuse-fast",
+        label: VR_HUD_DICTIONARY.RETICLE_FUSE_FAST_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[0],
+        yPos: VR_HUD_GEOMETRY.RETICLE_FUSE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+        fontSizePx: 30,
+      });
+      const fuseNormalBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_FUSE_NORMAL_BTN,
+        action: "reticle-fuse-normal",
+        label: VR_HUD_DICTIONARY.RETICLE_FUSE_NORMAL_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[1],
+        yPos: VR_HUD_GEOMETRY.RETICLE_FUSE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
+        fontSizePx: 30,
+      });
+      const fuseSlowBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_FUSE_SLOW_BTN,
+        action: "reticle-fuse-slow",
+        label: VR_HUD_DICTIONARY.RETICLE_FUSE_SLOW_LABEL,
+        arcOffsetX: VR_HUD_GEOMETRY.RETICLE_OPTION_X_M[2],
+        yPos: VR_HUD_GEOMETRY.RETICLE_FUSE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_OPTION_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_OPTION_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.VOLUME_BAR_INACTIVE,
+        fontSizePx: 30,
+      });
+
+      const idleToggleBtn = createHudCompactButton({
+        id: VR_HUD_ELEMENT_IDS.RETICLE_IDLE_TOGGLE_BTN,
+        action: "reticle-idle-toggle",
+        label: VR_HUD_DICTIONARY.RETICLE_IDLE_DIM_LABEL,
+        arcOffsetX: 0,
+        yPos: VR_HUD_GEOMETRY.RETICLE_IDLE_ROW_Y_M,
+        width: VR_HUD_GEOMETRY.RETICLE_IDLE_BTN_WIDTH_M,
+        height: VR_HUD_GEOMETRY.RETICLE_IDLE_BTN_HEIGHT_M,
+        borderColor: VR_HUD_COLORS.ACCENT_TURQUESA,
+        fontSizePx: 32,
+      });
+
+      reticleGroupEl.append(
+        sizeRowLabel,
+        sizeSmallBtn,
+        sizeNormalBtn,
+        sizeLargeBtn,
+        fuseRowLabel,
+        fuseFastBtn,
+        fuseNormalBtn,
+        fuseSlowBtn,
+        idleToggleBtn,
+      );
+
+      const emitReticlePrefsUpdate = (): void => {
+        getSharedSfxPlayer().play(SfxId.TOGGLE_CLICK);
+        this.el.dispatchEvent?.(
+          new CustomEvent(VR_HUD_RETICLE_PREFS_EVENT, {
+            bubbles: true,
+            detail: resolveReticlePrefs().getPreferences(),
+          }),
+        );
+      };
+
+      const sizeButtons: Record<ReticleSizePreset, HTMLElement> = {
+        SMALL: sizeSmallBtn,
+        NORMAL: sizeNormalBtn,
+        LARGE: sizeLargeBtn,
+      };
+      for (const [preset, btn] of Object.entries(sizeButtons) as Array<
+        [ReticleSizePreset, HTMLElement]
+      >) {
+        btn.addEventListener?.("click", (evt) => {
+          evt?.stopPropagation?.();
+          resolveReticlePrefs().setSizePreset(preset);
+          emitReticlePrefsUpdate();
+        });
+      }
+
+      const fuseButtons: Record<ReticleFusePreset, HTMLElement> = {
+        FAST: fuseFastBtn,
+        NORMAL: fuseNormalBtn,
+        SLOW: fuseSlowBtn,
+      };
+      for (const [preset, btn] of Object.entries(fuseButtons) as Array<
+        [ReticleFusePreset, HTMLElement]
+      >) {
+        btn.addEventListener?.("click", (evt) => {
+          evt?.stopPropagation?.();
+          resolveReticlePrefs().setFusePreset(preset);
+          emitReticlePrefsUpdate();
+        });
+      }
+
+      idleToggleBtn.addEventListener?.("click", (evt) => {
+        evt?.stopPropagation?.();
+        resolveReticlePrefs().toggleIdleBehavior();
+        emitReticlePrefsUpdate();
+      });
+
+      this.unsubscribeReticlePrefs?.();
+      this.unsubscribeReticlePrefs = resolveReticlePrefs().subscribe((prefs) => {
+        for (const [preset, btn] of Object.entries(sizeButtons) as Array<
+          [ReticleSizePreset, HTMLElement]
+        >) {
+          setCompactButtonSelected(
+            btn,
+            prefs.sizePreset === preset,
+            VR_HUD_COLORS.ACCENT_TURQUESA,
+          );
+        }
+        for (const [preset, btn] of Object.entries(fuseButtons) as Array<
+          [ReticleFusePreset, HTMLElement]
+        >) {
+          setCompactButtonSelected(
+            btn,
+            prefs.fusePreset === preset,
+            VR_HUD_COLORS.ACCENT_TURQUESA,
+          );
+        }
+        const isDimMode = prefs.idleBehavior === RETICLE_IDLE_BEHAVIOR.DIM;
+        setCompactButtonSelected(
+          idleToggleBtn,
+          isDimMode,
+          VR_HUD_COLORS.ACCENT_TURQUESA,
+          VR_HUD_COLORS.ACCENT_CEMPASUCHIL,
+        );
+        setCompactButtonLabel(
+          idleToggleBtn,
+          isDimMode
+            ? VR_HUD_DICTIONARY.RETICLE_IDLE_DIM_LABEL
+            : VR_HUD_DICTIONARY.RETICLE_IDLE_HIDE_LABEL,
+          32,
+        );
       });
 
       // Conditional Return to Lobby button (hidden when activeRoomId === LOBBY)
@@ -1042,7 +1585,7 @@ export function createVrHologramHudComponentDefinition(
         action: "return-lobby",
         iconId: "lobby",
         label: VR_HUD_DICTIONARY.RETURN_LOBBY_LABEL,
-        position: "0 -0.40 0.06",
+        position: `0 -0.40 ${VR_HUD_GEOMETRY.RETURN_LOBBY_Z_M}`,
         width: VR_HUD_GEOMETRY.LOBBY_BUTTON_WIDTH_M,
         height: VR_HUD_GEOMETRY.LOBBY_BUTTON_HEIGHT_M,
         backgroundColor: VR_HUD_COLORS.BUTTON_SURFACE,
@@ -1064,13 +1607,14 @@ export function createVrHologramHudComponentDefinition(
       });
 
       // Top-right circular dismiss medallion
+      const dismissArc = computeCurvedHudElementTransform(0.6, 0.4, 0.065);
       const dismissBtn = document.createElement("a-entity");
       dismissBtn.setAttribute("id", VR_HUD_ELEMENT_IDS.DISMISS_BTN);
       dismissBtn.setAttribute("class", "cv-hud-control");
       dismissBtn.setAttribute("cv-interactive-feedback", "");
       dismissBtn.setAttribute("data-action", "dismiss-hud");
-      dismissBtn.setAttribute("position", "0.60 0.40 0.08");
-      dismissBtn.setAttribute("rotation", "0 -14 0");
+      dismissBtn.setAttribute("position", dismissArc.position);
+      dismissBtn.setAttribute("rotation", dismissArc.rotation);
       dismissBtn.setAttribute(
         "geometry",
         `primitive: circle; radius: ${VR_HUD_GEOMETRY.DISMISS_RADIUS_M}; segments: ${VR_HUD_GEOMETRY.DISMISS_SEGMENTS}`,
@@ -1118,8 +1662,14 @@ export function createVrHologramHudComponentDefinition(
         this.dismiss();
       });
 
-      this.interactiveEls = [
+      this.sharedInteractiveEls = [
         backdrop,
+        audioTabBtn,
+        reticleTabBtn,
+        returnLobbyBtn,
+        dismissBtn,
+      ];
+      this.audioInteractiveEls = [
         soundToggleBtn,
         musicBars.downBtn,
         ...musicBars.barEls,
@@ -1127,8 +1677,20 @@ export function createVrHologramHudComponentDefinition(
         effectsBars.downBtn,
         ...effectsBars.barEls,
         effectsBars.upBtn,
-        returnLobbyBtn,
-        dismissBtn,
+      ];
+      this.reticleInteractiveEls = [
+        sizeSmallBtn,
+        sizeNormalBtn,
+        sizeLargeBtn,
+        fuseFastBtn,
+        fuseNormalBtn,
+        fuseSlowBtn,
+        idleToggleBtn,
+      ];
+      this.interactiveEls = [
+        ...this.sharedInteractiveEls,
+        ...this.audioInteractiveEls,
+        ...this.reticleInteractiveEls,
       ];
       this.el.append(
         backdrop,
@@ -1137,12 +1699,15 @@ export function createVrHologramHudComponentDefinition(
         leftRail,
         rightRail,
         roomChip,
-        soundToggleBtn,
-        musicBars.groupEl,
-        effectsBars.groupEl,
+        audioTabBtn,
+        reticleTabBtn,
+        tabTrackDivider,
+        audioGroupEl,
+        reticleGroupEl,
         returnLobbyBtn,
         dismissBtn,
       );
+      applyActiveTabState(this, "AUDIO");
 
       this.unsubscribeAudioPrefs?.();
       this.unsubscribeAudioPrefs = resolveAudioPrefs().subscribe((prefs) => {
@@ -1379,6 +1944,8 @@ export function createVrHologramHudComponentDefinition(
       this.unsubscribeInspection = null;
       this.unsubscribeAudioPrefs?.();
       this.unsubscribeAudioPrefs = null;
+      this.unsubscribeReticlePrefs?.();
+      this.unsubscribeReticlePrefs = null;
       setHudInteractiveClickable(this, false);
       if (this.ownedTextures) {
         for (const tex of this.ownedTextures) {
@@ -1391,7 +1958,14 @@ export function createVrHologramHudComponentDefinition(
       this.roomChipEl = null;
       this.returnLobbyBtnEl = null;
       this.soundBtnEl = null;
+      this.audioGroupEl = null;
+      this.reticleGroupEl = null;
+      this.audioTabBtnEl = null;
+      this.reticleTabBtnEl = null;
       this.interactiveEls = [];
+      this.audioInteractiveEls = [];
+      this.reticleInteractiveEls = [];
+      this.sharedInteractiveEls = [];
     },
   };
 }
