@@ -493,4 +493,123 @@ describe("AdminMediaStore", () => {
     expect(store.getState().error).not.toContain("HTTP 413");
     expect(store.getState().error).not.toContain("/api/");
   });
+
+  it("reports real-time upload progress via XMLHttpRequest putBinary and clears uploadProgress after completion", async () => {
+    const { createDefaultAdminFetcher } = await import(
+      "../../src/admin/admin-http-client"
+    );
+
+    const OriginalXhr = globalThis.XMLHttpRequest;
+    const uploadListeners: Record<string, (ev: ProgressEvent) => void> = {};
+    const xhrListeners: Record<string, () => void> = {};
+    const setHeaders: Record<string, string> = {};
+    let sentBlob: Blob | null = null;
+
+    class MockXhr {
+      public status = 200;
+      public upload = {
+        addEventListener: (type: string, cb: (ev: ProgressEvent) => void) => {
+          uploadListeners[type] = cb;
+        },
+      };
+      public open = vi.fn();
+      public setRequestHeader = (k: string, v: string) => {
+        setHeaders[k] = v;
+      };
+      public addEventListener = (type: string, cb: () => void) => {
+        xhrListeners[type] = cb;
+      };
+      public send = (body: Blob) => {
+        sentBlob = body;
+        uploadListeners.progress?.({
+          lengthComputable: true,
+          loaded: 50,
+          total: 100,
+        } as ProgressEvent);
+        uploadListeners.progress?.({
+          lengthComputable: true,
+          loaded: 100,
+          total: 100,
+        } as ProgressEvent);
+        xhrListeners.load?.();
+      };
+    }
+
+    globalThis.XMLHttpRequest = MockXhr as unknown as typeof XMLHttpRequest;
+    try {
+      const realFetcher = createDefaultAdminFetcher();
+      const events: number[] = [];
+      const blob = new Blob(["abc"], { type: "image/webp" });
+      await realFetcher.putBinary!(
+        "https://r2.example.com/upload",
+        blob,
+        { "Content-Type": "image/webp" },
+        (p) => events.push(p.percent),
+      );
+      expect(sentBlob).toBe(blob);
+      expect(setHeaders["Content-Type"]).toBe("image/webp");
+      expect(events).toEqual([50, 100]);
+    } finally {
+      globalThis.XMLHttpRequest = OriginalXhr;
+    }
+
+    // Store updates uploadProgress from putBinary callback and resets to null at completion
+    const observedProgress: Array<{ percent: number; stageLabel: string } | null> =
+      [];
+    (fetcher.post as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        media: {
+          key: "rooms/wixarika/arte/p1.webp",
+          uploadUrl: "https://r2.example.com/p1.webp",
+          headers: { "Content-Type": "image/webp" },
+        },
+      })
+      .mockResolvedValueOnce({
+        item: {
+          id: "p1",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaType: ExhibitMediaType.IMAGE_2D,
+          title: "Foto Progreso",
+          creatorName: "",
+          description: "",
+          mediaUrl: "https://pub.r2.dev/p1.webp",
+          sortOrder: 0,
+        },
+      });
+    (fetcher.putBinary as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _url: string,
+        _body: Blob,
+        _headers: Record<string, string>,
+        onProgress?: (p: { loaded: number; total: number; percent: number }) => void,
+      ) => {
+        onProgress?.({ loaded: 50, total: 100, percent: 50 });
+        onProgress?.({ loaded: 100, total: 100, percent: 100 });
+      },
+    );
+
+    const store = new AdminMediaStore({
+      fetcher,
+      getToken: () => "jwt-token",
+      onUnauthorized,
+      processor,
+    });
+    const unsub = store.subscribe((s) => observedProgress.push(s.uploadProgress));
+    await store.uploadMedia({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      file: new File(["img"], "foto.jpg", { type: "image/jpeg" }),
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Foto Progreso",
+      creatorName: "",
+      description: "",
+    });
+    unsub();
+
+    expect(
+      observedProgress.some((p) => p !== null && p.percent > 0 && p.percent <= 100),
+    ).toBe(true);
+    expect(store.getState().uploadProgress).toBeNull();
+  });
 });

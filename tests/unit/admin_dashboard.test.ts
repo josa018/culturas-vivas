@@ -345,12 +345,13 @@ describe("Admin UI Widgets & AdminController", () => {
     vi.restoreAllMocks();
   });
 
-  it("AttendanceChartWidget syncs labels, values, peak badge, and connection status", async () => {
+  it("AttendanceChartWidget syncs labels, values, peak badge, hides connection indicator until offline, and switches chart ranges", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
     const store = new AdminDashboardStore({
       getToken: () => "jwt-token",
-      fetcher: new StubAdminFetcher(),
+      fetcher,
     });
 
     const chartWidget = new AttendanceChartWidget(store);
@@ -360,17 +361,13 @@ describe("Admin UI Widgets & AdminController", () => {
     const statusEl = el.querySelector(
       '[data-admin-metric="connection-status"]',
     ) as HTMLElement;
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
-    ).toBe(true);
-    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
+    // Hidden during initial connecting state
+    expect(statusEl.hidden).toBe(true);
 
     await store.fetchStats();
 
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE),
-    ).toBe(true);
-    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_ONLINE);
+    // Remains hidden while online
+    expect(statusEl.hidden).toBe(true);
 
     const chart = chartWidget.getChartInstance() as unknown as {
       data: { labels: string[]; datasets: Array<{ data: number[] }> };
@@ -385,6 +382,45 @@ describe("Admin UI Widgets & AdminController", () => {
     ) as HTMLElement;
     expect(peakBadge.textContent).toContain("9");
 
+    // Visible only when offline
+    const savedStats = fetcher.statsResult;
+    fetcher.statsResult = new AdminHttpError(503, "Offline");
+    await store.fetchStats();
+    expect(statusEl.hidden).toBe(false);
+    expect(
+      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
+    ).toBe(true);
+    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
+
+    // Clicking week timeframe requests ?range=week and hides offline indicator on recovery
+    fetcher.statsResult = {
+      activeSessions: 2,
+      range: "week",
+      hourlyAttendance: {
+        labels: ["Lun 1", "Mar 2", "Mié 3", "Jue 4", "Vie 5", "Sáb 6", "Dom 7"],
+        values: [3, 5, 1, 2, 4, 8, 6],
+        peak: 8,
+      },
+      surveys: [],
+      averageRating: 0,
+    };
+    const weekBtn = el.querySelector(
+      '[data-chart-range="week"]',
+    ) as HTMLButtonElement;
+    expect(weekBtn).not.toBeNull();
+    weekBtn.click();
+
+    await vi.waitFor(() => {
+      expect(fetcher.getCalls.some((c) => c.url.includes("range=week"))).toBe(
+        true,
+      );
+      expect(weekBtn.getAttribute("aria-pressed")).toBe("true");
+      expect(statusEl.hidden).toBe(true);
+      expect(chart.data.labels).toHaveLength(7);
+      expect(peakBadge.textContent).toContain("8");
+    });
+
+    fetcher.statsResult = savedStats;
     chartWidget.unmount();
   });
 
@@ -422,6 +458,109 @@ describe("Admin UI Widgets & AdminController", () => {
     expect(tbody.children[2].children[1].textContent).toBe(
       ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN,
     );
+
+    tableWidget.unmount();
+  });
+
+  it("SurveysTableWidget provides filter/sort controls and pagination controls wired to AdminDashboardStore", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
+    fetcher.statsResult = {
+      activeSessions: 1,
+      hourlyAttendance: {
+        labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
+        values: Array.from({ length: 24 }, () => 0),
+        peak: 0,
+      },
+      surveys: [
+        {
+          id: "11",
+          timestamp: Date.UTC(2026, 10, 23, 21, 30, 0),
+          rating: 5,
+          feedback: "Muy claro",
+          viewMode: "vr",
+        },
+      ],
+      averageRating: 4.5,
+      totalSurveys: 12,
+      surveysPagination: {
+        page: 1,
+        pageSize: 10,
+        totalItems: 12,
+        totalPages: 2,
+      },
+    };
+
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+    });
+    const tableWidget = new SurveysTableWidget(store);
+    tableWidget.mount(parent);
+    await store.fetchStats();
+
+    const el = tableWidget.getElement()!;
+    const modeSelect = el.querySelector(
+      '[data-survey-filter="mode"]',
+    ) as HTMLSelectElement;
+    const ratingSelect = el.querySelector(
+      '[data-survey-filter="rating"]',
+    ) as HTMLSelectElement;
+    const sortSelect = el.querySelector(
+      '[data-survey-filter="sort"]',
+    ) as HTMLSelectElement;
+    const commentCheck = el.querySelector(
+      '[data-survey-filter="has-feedback"]',
+    ) as HTMLInputElement;
+    const prevBtn = el.querySelector(
+      '[data-survey-page="prev"]',
+    ) as HTMLButtonElement;
+    const nextBtn = el.querySelector(
+      '[data-survey-page="next"]',
+    ) as HTMLButtonElement;
+    const pageSummary = el.querySelector(
+      '[data-survey-page="summary"]',
+    ) as HTMLElement;
+
+    expect(modeSelect).not.toBeNull();
+    expect(ratingSelect).not.toBeNull();
+    expect(sortSelect).not.toBeNull();
+    expect(commentCheck).not.toBeNull();
+    expect(prevBtn.disabled).toBe(true);
+    expect(nextBtn.disabled).toBe(false);
+    expect(pageSummary.textContent).toContain("1");
+    expect(pageSummary.textContent).toContain("2");
+
+    // Advance to page 2
+    fetcher.statsResult = {
+      ...(fetcher.statsResult as Record<string, unknown>),
+      surveysPagination: { page: 2, pageSize: 10, totalItems: 12, totalPages: 2 },
+    };
+    nextBtn.click();
+    await vi.waitFor(() => {
+      expect(fetcher.getCalls.some((c) => c.url.includes("surveyPage=2"))).toBe(
+        true,
+      );
+      expect(prevBtn.disabled).toBe(false);
+      expect(nextBtn.disabled).toBe(true);
+    });
+
+    // Changing filter resets page back to 1
+    modeSelect.value = "vr";
+    modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      const lastCall = fetcher.getCalls[fetcher.getCalls.length - 1];
+      expect(lastCall.url).toContain("surveyMode=vr");
+      expect(lastCall.url).not.toContain("surveyPage=2");
+    });
+
+    commentCheck.checked = true;
+    commentCheck.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      const lastCall = fetcher.getCalls[fetcher.getCalls.length - 1];
+      expect(lastCall.url).toContain("surveyHasFeedback=1");
+    });
 
     tableWidget.unmount();
   });
@@ -511,29 +650,28 @@ describe("Admin UI Widgets & AdminController", () => {
     modal.unmount();
   });
 
-  it("AdminHeaderWidget triggers logout & return-to-tour callbacks", () => {
+  it("AdminHeaderWidget omits return-to-tour button and triggers logout callback", () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
 
     let loggedOut = false;
-    let returnedToTour = false;
     const header = new AdminHeaderWidget({
       username: "alfredo",
       role: "librarian",
       onLogout: () => {
         loggedOut = true;
       },
-      onReturnToTour: () => {
-        returnedToTour = true;
-      },
+      onReturnToTour: () => {},
     });
 
     header.mount(parent);
-    const actions = header.getElement()!.children[1];
-    (actions.children[0] as HTMLElement).click();
-    (actions.children[1] as HTMLElement).click();
+    const headerEl = header.getElement()!;
+    expect(headerEl.querySelector(".cv-admin-btn-exit")).toBeNull();
+    const actions = headerEl.children[1];
+    const logoutBtn = actions.querySelector(".cv-admin-btn-logout") as HTMLElement;
+    expect(logoutBtn).not.toBeNull();
+    logoutBtn.click();
 
-    expect(returnedToTour).toBe(true);
     expect(loggedOut).toBe(true);
     header.unmount();
   });
@@ -1121,7 +1259,7 @@ describe("Admin UI Widgets & AdminController", () => {
     );
   });
 
-  it("AdminLoginModalView renders orientation subtitle, toggles password visibility, and hides internal API paths", () => {
+  it("AdminLoginModalView renders SVG eye toggle for password visibility and hides internal API paths", () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
     const authFetcher = new StubAdminFetcher();
@@ -1135,7 +1273,7 @@ describe("Admin UI Widgets & AdminController", () => {
     modal.show();
 
     const el = modal.getElement()!;
-    expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_SUBTITLE);
+    expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_TITLE);
     expect(ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE).not.toContain("/api/");
 
     const passInput = el.querySelector(
@@ -1145,15 +1283,28 @@ describe("Admin UI Widgets & AdminController", () => {
       '[data-action="toggle-password"]',
     ) as HTMLButtonElement;
     expect(toggleBtn).not.toBeNull();
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
     expect(passInput.type).toBe("password");
 
     toggleBtn.click();
     expect(passInput.type).toBe("text");
-    expect(toggleBtn.textContent).toBe(ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD);
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD_ARIA,
+    );
 
     toggleBtn.click();
     expect(passInput.type).toBe("password");
-    expect(toggleBtn.textContent).toBe(ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD);
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
 
     modal.unmount();
   });
@@ -1198,13 +1349,13 @@ describe("Admin UI Widgets & AdminController", () => {
 
     expect(
       el.querySelector('[data-admin-tab="telemetry"]')?.textContent,
-    ).toBe("Visitas y Opiniones");
+    ).toBe(ADMIN_UI_TEXT.TAB_TELEMETRY);
     expect(el.querySelector('[data-admin-tab="media"]')?.textContent).toBe(
-      "Fotos y Videos",
+      ADMIN_UI_TEXT.TAB_MEDIA,
     );
     expect(
       el.querySelector('[data-admin-tab="playlists"]')?.textContent,
-    ).toBe("Música de Salas");
+    ).toBe(ADMIN_UI_TEXT.TAB_PLAYLISTS);
 
     const telemetryGrid = el.querySelector(
       `[data-admin-panel="telemetry"] .${ADMIN_UI_CLASSES.GRID_TELEMETRY}`,
@@ -1351,10 +1502,27 @@ describe("Admin UI Widgets & AdminController", () => {
     expect(parent.textContent).not.toContain("IMAGE_2D");
     expect(parent.textContent).not.toContain("VIDEO_STEREO_SBS");
 
-    // Technical Half-SBS guidance sits inside collapsible <details>
-    const detailsEl = parent.querySelector("details");
-    expect(detailsEl).not.toBeNull();
-    expect(detailsEl?.textContent).toContain("Half-SBS");
+    // No bottom <details> hint in MediaManagerWidget; format help sits beside label as popover trigger
+    expect(parent.querySelector("details")).toBeNull();
+    const helpBtn = parent.querySelector(
+      '[data-help-toggle="format"]',
+    ) as HTMLButtonElement;
+    const helpPopover = parent.querySelector(
+      '[data-help-popover="format"]',
+    ) as HTMLElement;
+    expect(helpBtn).not.toBeNull();
+    expect(helpPopover).not.toBeNull();
+    expect(helpBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(helpPopover.hidden).toBe(true);
+    expect(helpPopover.textContent).toContain("Half-SBS");
+
+    helpBtn.click();
+    expect(helpBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(helpPopover.hidden).toBe(false);
+
+    helpBtn.click();
+    expect(helpBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(helpPopover.hidden).toBe(true);
 
     // Reorder buttons include accessible aria-label
     const moveDownBtn = parent.querySelector(
@@ -1398,6 +1566,97 @@ describe("Admin UI Widgets & AdminController", () => {
         "estambre.webp",
       );
     });
+
+    // Real-time upload progress bar is hidden when idle and renders percentage while uploading
+    const progressEl = parent.querySelector(
+      '[data-upload-progress="media"]',
+    ) as HTMLElement;
+    expect(progressEl).not.toBeNull();
+    expect(progressEl.hidden).toBe(true);
+
+    let resolveUpload: (() => void) | null = null;
+    (mediaFetcher.post as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        media: {
+          key: "rooms/wixarika/arte/img.webp",
+          uploadUrl: "https://r2.example.com/img.webp",
+          headers: { "Content-Type": "image/webp" },
+        },
+      })
+      .mockResolvedValueOnce({
+        item: {
+          id: "w-3",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaType: ExhibitMediaType.IMAGE_2D,
+          title: "Nueva Foto",
+          creatorName: "",
+          description: "",
+          mediaUrl: "https://pub.r2.dev/w-3.webp",
+          sortOrder: 2,
+        },
+      });
+    (mediaFetcher.putBinary as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _url: string,
+        _body: Blob,
+        _headers: Record<string, string>,
+        onProgress?: (p: { loaded: number; total: number; percent: number }) => void,
+      ) => {
+        onProgress?.({ loaded: 65, total: 100, percent: 65 });
+        await new Promise<void>((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+
+    const processorStub = {
+      optimizeImage: vi.fn(async () => ({
+        blob: new Blob(["webp"], { type: "image/webp" }),
+        mimeType: "image/webp" as const,
+        width: 800,
+        height: 600,
+      })),
+    };
+    const progressStore = new AdminMediaStore({
+      getToken: () => "jwt-token",
+      onUnauthorized: () => {},
+      fetcher: mediaFetcher,
+      processor: processorStub as never,
+    });
+    const progressWidget = new MediaManagerWidget(progressStore);
+    const p2 = document.createElement("div");
+    document.body.appendChild(p2);
+    progressWidget.mount(p2);
+
+    const uploadPromise = progressStore.uploadMedia({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      file: new File(["img"], "nueva.jpg", { type: "image/jpeg" }),
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Nueva Foto",
+      creatorName: "",
+      description: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(resolveUpload).not.toBeNull();
+      const bar = p2.querySelector(
+        '[data-upload-progress="media"]',
+      ) as HTMLElement;
+      expect(bar.hidden).toBe(false);
+      expect(bar.getAttribute("aria-valuenow")).toBe("65");
+      expect(bar.textContent).toContain("65%");
+    });
+
+    resolveUpload?.();
+    await uploadPromise;
+
+    const finishedBar = p2.querySelector(
+      '[data-upload-progress="media"]',
+    ) as HTMLElement;
+    expect(finishedBar.hidden).toBe(true);
+    progressWidget.unmount();
 
     widget.unmount();
   });

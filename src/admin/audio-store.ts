@@ -4,6 +4,7 @@ import {
   AdminHttpError,
   createDefaultAdminFetcher,
   type AdminNetworkFetcher,
+  type UploadProgressState,
 } from "./admin-http-client";
 import {
   ADMIN_AUDIO_ENDPOINTS,
@@ -40,6 +41,7 @@ export interface AdminAudioState {
   readonly tracks: readonly AdminAudioTrackRecord[];
   readonly isLoading: boolean;
   readonly isUploading: boolean;
+  readonly uploadProgress: UploadProgressState | null;
   readonly error: string | null;
   readonly successMessage: string | null;
   readonly storageUsageBytes: number;
@@ -204,6 +206,7 @@ export class AdminAudioStore {
     tracks: [],
     isLoading: false,
     isUploading: false,
+    uploadProgress: null,
     error: null,
     successMessage: null,
     storageUsageBytes: 0,
@@ -304,7 +307,27 @@ export class AdminAudioStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null, successMessage: null });
+    this.updateState({
+      isUploading: true,
+      uploadProgress: {
+        percent: 5,
+        stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_PREPARING,
+      },
+      error: null,
+      successMessage: null,
+    });
+    const emitUploadPercent = (rawPercent: number) => {
+      const scaled = Math.min(
+        95,
+        Math.max(10, Math.round(10 + (rawPercent * 85) / 100)),
+      );
+      this.updateState({
+        uploadProgress: {
+          percent: scaled,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_UPLOADING,
+        },
+      });
+    };
     try {
       const durationMs = await this.probeDurationMs(input.file);
       const presign = await this.fetcher.post<PresignAudioResponsePayload>(
@@ -318,12 +341,20 @@ export class AdminAudioStore {
         headers,
       );
 
+      emitUploadPercent(0);
       await this.fetcher.putBinary(
         presign.audio.uploadUrl,
         input.file,
         presign.audio.headers,
+        (progress) => emitUploadPercent(progress.percent),
       );
 
+      this.updateState({
+        uploadProgress: {
+          percent: 96,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_SAVING,
+        },
+      });
       const created = await this.fetcher.post<AudioTrackResponsePayload>(
         ADMIN_AUDIO_ENDPOINTS.AUDIO,
         {
@@ -353,11 +384,13 @@ export class AdminAudioStore {
           this.state.storageUsageBytes + input.file.size,
         maxStorageBytes: created.maxStorageBytes ?? this.state.maxStorageBytes,
         isUploading: false,
+        uploadProgress: null,
         successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_UPLOAD,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo subir la pista de audio.", {
         isUploading: false,
+        uploadProgress: null,
       });
     }
   }

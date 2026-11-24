@@ -1,4 +1,12 @@
+import type { UploadProgressState } from "../admin-http-client";
 import { ADMIN_UI_CLASSES } from "../constants";
+
+export interface FieldHelpOptions {
+  readonly toggleKey: string;
+  readonly popoverId: string;
+  readonly ariaLabel: string;
+  readonly bodyText: string;
+}
 
 export interface LabeledFieldOptions {
   readonly id: string;
@@ -6,6 +14,7 @@ export interface LabeledFieldOptions {
   readonly control: HTMLElement;
   readonly hintText?: string;
   readonly fullWidth?: boolean;
+  readonly help?: FieldHelpOptions;
 }
 
 export interface CounterFieldOptions {
@@ -32,6 +41,53 @@ export interface InlineDeleteControlsOptions {
   readonly onCancel: () => void;
 }
 
+export function createFieldHelpPopover(
+  options: FieldHelpOptions,
+): HTMLElement {
+  const wrapper = document.createElement("span");
+  wrapper.className = ADMIN_UI_CLASSES.FIELD_HELP_WRAPPER;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = ADMIN_UI_CLASSES.FIELD_HELP_BTN;
+  btn.textContent = "?";
+  btn.setAttribute("data-help-toggle", options.toggleKey);
+  btn.setAttribute("aria-label", options.ariaLabel);
+  btn.setAttribute("aria-controls", options.popoverId);
+  btn.setAttribute("aria-expanded", "false");
+
+  const popover = document.createElement("div");
+  popover.id = options.popoverId;
+  popover.className = ADMIN_UI_CLASSES.FIELD_HELP_POPOVER;
+  popover.setAttribute("role", "tooltip");
+  popover.setAttribute("data-help-popover", options.toggleKey);
+  popover.hidden = true;
+  popover.textContent = options.bodyText;
+
+  let isOpen = false;
+  const syncState = (nextOpen: boolean) => {
+    isOpen = nextOpen;
+    popover.hidden = !nextOpen;
+    btn.setAttribute("aria-expanded", String(nextOpen));
+    wrapper.classList.toggle(ADMIN_UI_CLASSES.FIELD_HELP_OPEN, nextOpen);
+  };
+
+  btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    syncState(!isOpen);
+  });
+
+  wrapper.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isOpen) {
+      syncState(false);
+      btn.focus();
+    }
+  });
+
+  wrapper.append(btn, popover);
+  return wrapper;
+}
+
 export function createLabeledField(options: LabeledFieldOptions): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = options.fullWidth
@@ -44,7 +100,15 @@ export function createLabeledField(options: LabeledFieldOptions): HTMLElement {
   label.textContent = options.labelText;
 
   options.control.id = options.id;
-  wrapper.append(label, options.control);
+
+  if (options.help) {
+    const labelRow = document.createElement("div");
+    labelRow.className = ADMIN_UI_CLASSES.MEDIA_FIELD_LABEL_ROW;
+    labelRow.append(label, createFieldHelpPopover(options.help));
+    wrapper.append(labelRow, options.control);
+  } else {
+    wrapper.append(label, options.control);
+  }
 
   if (options.hintText) {
     const hint = document.createElement("span");
@@ -181,4 +245,52 @@ export function createStatusBanners(): {
   };
 
   return { errorBanner, successBanner, syncBanners };
+}
+
+export function createUploadProgressBar(kind: "media" | "audio"): {
+  container: HTMLElement;
+  syncProgress: (progress: UploadProgressState | null) => void;
+} {
+  const container = document.createElement("div");
+  container.className = `${ADMIN_UI_CLASSES.UPLOAD_PROGRESS} ${ADMIN_UI_CLASSES.MEDIA_FORM_FULL}`;
+  container.setAttribute("role", "progressbar");
+  container.setAttribute("aria-valuemin", "0");
+  container.setAttribute("aria-valuemax", "100");
+  container.setAttribute("aria-valuenow", "0");
+  container.setAttribute("data-upload-progress", kind);
+  container.hidden = true;
+
+  const header = document.createElement("div");
+  header.className = ADMIN_UI_CLASSES.UPLOAD_PROGRESS_HEADER;
+  const stageSpan = document.createElement("span");
+  const percentSpan = document.createElement("span");
+  header.append(stageSpan, percentSpan);
+
+  const track = document.createElement("div");
+  track.className = ADMIN_UI_CLASSES.UPLOAD_PROGRESS_TRACK;
+  const fill = document.createElement("div");
+  fill.className = ADMIN_UI_CLASSES.UPLOAD_PROGRESS_FILL;
+  fill.style.width = "0%";
+  track.appendChild(fill);
+
+  container.append(header, track);
+
+  const syncProgress = (progress: UploadProgressState | null) => {
+    if (!progress) {
+      container.hidden = true;
+      container.setAttribute("aria-valuenow", "0");
+      stageSpan.textContent = "";
+      percentSpan.textContent = "";
+      fill.style.width = "0%";
+      return;
+    }
+    const clamped = Math.min(100, Math.max(0, Math.round(progress.percent)));
+    container.hidden = false;
+    container.setAttribute("aria-valuenow", String(clamped));
+    stageSpan.textContent = progress.stageLabel;
+    percentSpan.textContent = `${clamped}%`;
+    fill.style.width = `${clamped}%`;
+  };
+
+  return { container, syncProgress };
 }

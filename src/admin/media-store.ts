@@ -15,6 +15,7 @@ import {
   AdminHttpError,
   createDefaultAdminFetcher,
   type AdminNetworkFetcher,
+  type UploadProgressState,
 } from "./admin-http-client";
 import {
   ADMIN_MEDIA_ENDPOINTS,
@@ -33,10 +34,13 @@ export interface AdminMediaItemRecord extends StandMediaItem {
   readonly fileSizeBytes?: number;
 }
 
+export type { UploadProgressState };
+
 export interface AdminMediaState {
   readonly items: readonly AdminMediaItemRecord[];
   readonly isLoading: boolean;
   readonly isUploading: boolean;
+  readonly uploadProgress: UploadProgressState | null;
   readonly error: string | null;
   readonly successMessage: string | null;
   readonly selectedRoomId: RoomId;
@@ -129,6 +133,7 @@ export class AdminMediaStore {
     items: [],
     isLoading: false,
     isUploading: false,
+    uploadProgress: null,
     error: null,
     successMessage: null,
     selectedRoomId: DEFAULT_ROOM_ID,
@@ -218,7 +223,27 @@ export class AdminMediaStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null, successMessage: null });
+    this.updateState({
+      isUploading: true,
+      uploadProgress: {
+        percent: 5,
+        stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_PREPARING,
+      },
+      error: null,
+      successMessage: null,
+    });
+    const emitUploadPercent = (rawPercent: number) => {
+      const scaled = Math.min(
+        95,
+        Math.max(10, Math.round(10 + (rawPercent * 85) / 100)),
+      );
+      this.updateState({
+        uploadProgress: {
+          percent: scaled,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_UPLOADING,
+        },
+      });
+    };
     try {
       const isVideo = isVideoMediaType(input.mediaKind);
 
@@ -282,11 +307,19 @@ export class AdminMediaStore {
           headers,
         );
 
+        emitUploadPercent(0);
         await this.fetcher.putBinary(
           presign.media.uploadUrl,
           preparedVideo,
           presign.media.headers,
+          (progress) => emitUploadPercent(progress.percent),
         );
+        this.updateState({
+          uploadProgress: {
+            percent: 96,
+            stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_SAVING,
+          },
+        });
         if (presign.poster) {
           await this.fetcher.putBinary(
             presign.poster.uploadUrl,
@@ -322,6 +355,7 @@ export class AdminMediaStore {
           maxStorageBytes:
             created.maxStorageBytes ?? this.state.maxStorageBytes,
           isUploading: false,
+          uploadProgress: null,
           successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_UPLOAD,
         });
         return;
@@ -340,12 +374,20 @@ export class AdminMediaStore {
         headers,
       );
 
+      emitUploadPercent(0);
       await this.fetcher.putBinary(
         presign.media.uploadUrl,
         optimized.blob,
         presign.media.headers,
+        (progress) => emitUploadPercent(progress.percent),
       );
 
+      this.updateState({
+        uploadProgress: {
+          percent: 96,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_SAVING,
+        },
+      });
       const created = await this.fetcher.post<MediaCreateResponsePayload>(
         ADMIN_MEDIA_ENDPOINTS.MEDIA,
         {
@@ -371,11 +413,13 @@ export class AdminMediaStore {
           this.state.storageUsageBytes + optimized.blob.size,
         maxStorageBytes: created.maxStorageBytes ?? this.state.maxStorageBytes,
         isUploading: false,
+        uploadProgress: null,
         successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_UPLOAD,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo subir el archivo multimedia.", {
         isUploading: false,
+        uploadProgress: null,
       });
     }
   }

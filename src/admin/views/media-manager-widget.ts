@@ -14,13 +14,14 @@ import type {
   AdminMediaItemRecord,
   AdminMediaState,
   AdminMediaStore,
+  UploadProgressState,
 } from "../media-store";
 import {
   createCounterField,
   createInlineDeleteControls,
   createLabeledField,
   createStatusBanners,
-  createTechnicalHintDetails,
+  createUploadProgressBar,
 } from "./admin-form-helpers";
 
 const BYTES_PER_MIB = 1_048_576;
@@ -75,6 +76,8 @@ export class MediaManagerWidget {
   private syncBannersFn:
     | ((error: string | null, success: string | null) => void)
     | null = null;
+  private syncProgressFn: ((progress: UploadProgressState | null) => void) | null =
+    null;
   private submitBtnEl: HTMLButtonElement | null = null;
   private listEl: HTMLElement | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -207,6 +210,12 @@ export class MediaManagerWidget {
       id: "cv-media-upload-format",
       labelText: ADMIN_UI_TEXT.MEDIA_FORMAT_LABEL,
       control: formatSelect,
+      help: {
+        toggleKey: "format",
+        popoverId: "cv-media-format-help",
+        ariaLabel: ADMIN_UI_TEXT.MEDIA_FORMAT_HELP_ARIA,
+        bodyText: ADMIN_UI_TEXT.MEDIA_TECH_HINT_BODY,
+      },
     });
 
     const titleInput = document.createElement("input");
@@ -382,10 +391,8 @@ export class MediaManagerWidget {
       posterPreviewImg,
     );
 
-    const techHint = createTechnicalHintDetails(
-      ADMIN_UI_TEXT.MEDIA_TECH_HINT_SUMMARY,
-      ADMIN_UI_TEXT.MEDIA_TECH_HINT_BODY,
-    );
+    const progressBar = createUploadProgressBar("media");
+    this.syncProgressFn = progressBar.syncProgress;
 
     const submitBtn = document.createElement("button");
     submitBtn.type = "submit";
@@ -399,7 +406,7 @@ export class MediaManagerWidget {
       creatorField.wrapper,
       descField.wrapper,
       posterControls,
-      techHint,
+      progressBar.container,
       submitBtn,
     );
 
@@ -495,6 +502,7 @@ export class MediaManagerWidget {
     this.roomSelectEl = null;
     this.standSelectEl = null;
     this.syncBannersFn = null;
+    this.syncProgressFn = null;
     this.submitBtnEl = null;
     this.listEl = null;
     this.confirmingDeleteId = null;
@@ -541,6 +549,7 @@ export class MediaManagerWidget {
     }
 
     this.syncBannersFn?.(state.error, state.successMessage);
+    this.syncProgressFn?.(state.uploadProgress);
 
     if (this.submitBtnEl) {
       this.submitBtnEl.disabled = state.isUploading;

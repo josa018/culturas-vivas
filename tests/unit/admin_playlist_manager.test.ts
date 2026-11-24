@@ -472,4 +472,55 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     expect(store.getState().error).not.toContain("HTTP 413");
     expect(store.getState().error).not.toContain("/api/");
   });
+
+  it("PlaylistManagerWidget renders real-time audio upload progress bar and hides it on completion", async () => {
+    const fetcher = new StubAudioFetcher();
+    let resolveUpload: (() => void) | null = null;
+    fetcher.putBinary = async (
+      _url: string,
+      _body: Blob,
+      _headers?: Record<string, string>,
+      onProgress?: (p: { loaded: number; total: number; percent: number }) => void,
+    ) => {
+      onProgress?.({ loaded: 70, total: 100, percent: 70 });
+      await new Promise<void>((resolve) => {
+        resolveUpload = resolve;
+      });
+    };
+
+    const store = new AdminAudioStore({
+      getToken: () => "jwt",
+      onUnauthorized: vi.fn(),
+      fetcher,
+      probeDurationMs: vi.fn(async () => 60_000),
+    });
+    const widget = new PlaylistManagerWidget(store);
+    widget.mount(root);
+    await store.fetchPlaylist(RoomId.LOBBY);
+
+    const progressEl = root.querySelector(
+      '[data-upload-progress="audio"]',
+    ) as HTMLElement;
+    expect(progressEl).not.toBeNull();
+    expect(progressEl.hidden).toBe(true);
+
+    const uploadPromise = store.uploadTrack({
+      roomId: RoomId.LOBBY,
+      file: new File(["audio"], "tema.mp3", { type: "audio/mpeg" }),
+      title: "Tema de Sala",
+      artistCredit: "",
+      licenseNote: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(resolveUpload).not.toBeNull();
+      expect(progressEl.hidden).toBe(false);
+      expect(progressEl.getAttribute("aria-valuenow")).toBe("70");
+      expect(progressEl.textContent).toContain("70%");
+    });
+
+    resolveUpload?.();
+    await uploadPromise;
+    expect(progressEl.hidden).toBe(true);
+  });
 });

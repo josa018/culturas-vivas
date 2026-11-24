@@ -4,6 +4,7 @@ import {
   ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
 } from "../constants";
+import type { UploadProgressState } from "../admin-http-client";
 import type {
   AdminAudioPlaybackMode,
   AdminAudioState,
@@ -16,6 +17,7 @@ import {
   createLabeledField,
   createStatusBanners,
   createTechnicalHintDetails,
+  createUploadProgressBar,
 } from "./admin-form-helpers";
 
 const BYTES_PER_MIB = 1_048_576;
@@ -53,6 +55,8 @@ export class PlaylistManagerWidget {
   private quotaFillEl: HTMLElement | null = null;
   private roomSelectEl: HTMLSelectElement | null = null;
   private modeSelectEl: HTMLSelectElement | null = null;
+  private syncProgressFn: ((progress: UploadProgressState | null) => void) | null =
+    null;
   private syncBannersFn:
     | ((error: string | null, success: string | null) => void)
     | null = null;
@@ -223,6 +227,9 @@ export class PlaylistManagerWidget {
       maxLength: ADMIN_AUDIO_LIMITS.MAX_LICENSE_LENGTH,
     });
 
+    const progressBar = createUploadProgressBar("audio");
+    this.syncProgressFn = progressBar.syncProgress;
+
     const submitBtn = document.createElement("button");
     submitBtn.type = "submit";
     submitBtn.className = `${ADMIN_UI_CLASSES.BUTTON_SUBMIT} ${ADMIN_UI_CLASSES.MEDIA_FORM_FULL}`;
@@ -234,6 +241,7 @@ export class PlaylistManagerWidget {
       creditField.wrapper,
       licenseField.wrapper,
       techDetails,
+      progressBar.container,
       submitBtn,
     );
 
@@ -321,6 +329,7 @@ export class PlaylistManagerWidget {
     }
 
     this.syncBannersFn?.(state.error, state.successMessage);
+    this.syncProgressFn?.(state.uploadProgress);
 
     if (this.submitBtnEl) {
       this.submitBtnEl.disabled = state.isUploading;

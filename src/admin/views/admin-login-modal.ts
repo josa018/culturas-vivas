@@ -109,22 +109,14 @@ export class AdminLoginModalView {
     const togglePasswordBtn = document.createElement("button");
     togglePasswordBtn.type = "button";
     togglePasswordBtn.className = ADMIN_UI_CLASSES.PASSWORD_TOGGLE_BTN;
-    togglePasswordBtn.textContent = ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
     togglePasswordBtn.setAttribute("data-action", "toggle-password");
-    togglePasswordBtn.setAttribute(
-      "aria-label",
-      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
-    );
-    togglePasswordBtn.setAttribute("aria-pressed", "false");
+    this.passwordToggleBtn = togglePasswordBtn;
+    this.syncPasswordToggleState(false);
     togglePasswordBtn.addEventListener("click", () => {
       const shouldReveal = passwordInput.type === "password";
       passwordInput.type = shouldReveal ? "text" : "password";
-      togglePasswordBtn.textContent = shouldReveal
-        ? ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD
-        : ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
-      togglePasswordBtn.setAttribute("aria-pressed", String(shouldReveal));
+      this.syncPasswordToggleState(shouldReveal);
     });
-    this.passwordToggleBtn = togglePasswordBtn;
 
     passwordWrapper.append(passwordInput, togglePasswordBtn);
     passGroup.append(passLabel, passwordWrapper);
@@ -290,8 +282,66 @@ export class AdminLoginModalView {
       this.passwordInput.type = "password";
     }
     if (this.passwordToggleBtn) {
-      this.passwordToggleBtn.textContent = ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
-      this.passwordToggleBtn.setAttribute("aria-pressed", "false");
+      this.syncPasswordToggleState(false);
     }
   }
+
+  private syncPasswordToggleState(revealed: boolean): void {
+    if (!this.passwordToggleBtn) {
+      return;
+    }
+    this.passwordToggleBtn.replaceChildren(createEyeIconSvg(revealed));
+    this.passwordToggleBtn.setAttribute("aria-pressed", String(revealed));
+    this.passwordToggleBtn.setAttribute(
+      "aria-label",
+      revealed
+        ? ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD_ARIA
+        : ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
+  }
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Builds an accessible Feather-style eye / eye-off SVG without innerHTML. */
+function createEyeIconSvg(revealed: boolean): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "20");
+  svg.setAttribute("height", "20");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const addPath = (d: string) => {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    svg.appendChild(p);
+  };
+
+  if (revealed) {
+    // Eye-off icon when password is visible (clicking hides it)
+    addPath("M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94");
+    addPath("M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19");
+    addPath("M14.12 14.12a3 3 0 1 1-4.24-4.24");
+    const slash = document.createElementNS(SVG_NS, "line");
+    slash.setAttribute("x1", "1");
+    slash.setAttribute("y1", "1");
+    slash.setAttribute("x2", "23");
+    slash.setAttribute("y2", "23");
+    svg.appendChild(slash);
+    return svg;
+  }
+
+  // Open eye icon when password is hidden (clicking reveals it)
+  addPath("M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z");
+  const pupil = document.createElementNS(SVG_NS, "circle");
+  pupil.setAttribute("cx", "12");
+  pupil.setAttribute("cy", "12");
+  pupil.setAttribute("r", "3");
+  svg.appendChild(pupil);
+  return svg;
 }
