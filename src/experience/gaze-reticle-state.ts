@@ -1,7 +1,16 @@
 import { ViewMode } from "../navigation/types";
-import { RETICLE_TOKENS } from "./constants";
+import {
+  RETICLE_IDLE_BEHAVIOR,
+  RETICLE_TOKENS,
+  type ReticleIdleBehavior,
+} from "./constants";
 
-export type ReticleVisibilityMode = "HIDDEN" | "ACTIVE" | "GUIDE" | "CINEMA_HIDDEN";
+export type ReticleVisibilityMode =
+  | "HIDDEN"
+  | "ACTIVE"
+  | "GUIDE"
+  | "CINEMA_HIDDEN"
+  | "CINEMA_DIM";
 
 export interface ReticleDepthTransform {
   readonly depthM: number;
@@ -17,6 +26,7 @@ export interface ReticleVisibilityInput {
   readonly isFusing: boolean;
   readonly nonInteractiveSinceMs: number | null;
   readonly nowMs: number;
+  readonly idleBehavior?: ReticleIdleBehavior;
 }
 
 export interface GazeReticleState {
@@ -76,6 +86,7 @@ export function computeThetaLengthDeg(progress: number): number {
  */
 export function computeReticleDepthTransform(
   hitDistanceM: number | null,
+  sizeMultiplier: number = 1,
 ): ReticleDepthTransform {
   const rawDepthM =
     hitDistanceM !== null && Number.isFinite(hitDistanceM) && hitDistanceM > 0
@@ -85,14 +96,20 @@ export function computeReticleDepthTransform(
     RETICLE_TOKENS.MAX_DEPTH_M,
     Math.max(RETICLE_TOKENS.MIN_DEPTH_M, rawDepthM),
   );
+  const resolvedMultiplier =
+    Number.isFinite(sizeMultiplier) && sizeMultiplier > 0 ? sizeMultiplier : 1;
   const depthM = Number(clampedDepthM.toFixed(4));
   const z = Number((-depthM).toFixed(4));
-  const scale = Number((depthM / RETICLE_TOKENS.REFERENCE_DEPTH_M).toFixed(4));
+  const scale = Number(
+    ((depthM / RETICLE_TOKENS.REFERENCE_DEPTH_M) * resolvedMultiplier).toFixed(
+      4,
+    ),
+  );
   return { depthM, z, scale };
 }
 
 /**
- * Resolves reticle visibility across ViewMode.VR using wake zones and grace delay.
+ * Resolves reticle visibility across ViewMode.VR using wake zones, grace delay, and idle behavior.
  */
 export function evaluateReticleVisibilityMode(
   input: ReticleVisibilityInput,
@@ -110,7 +127,9 @@ export function evaluateReticleVisibilityMode(
     input.nonInteractiveSinceMs !== null &&
     input.nowMs - input.nonInteractiveSinceMs >= RETICLE_TOKENS.CINEMA_HIDE_DELAY_MS
   ) {
-    return "CINEMA_HIDDEN";
+    return input.idleBehavior === RETICLE_IDLE_BEHAVIOR.DIM
+      ? "CINEMA_DIM"
+      : "CINEMA_HIDDEN";
   }
   return "GUIDE";
 }

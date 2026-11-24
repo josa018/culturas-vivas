@@ -5,6 +5,7 @@ import {
   CURTAIN_RENDER_ORDER,
   INSPECTION_TIMINGS,
   InspectionState,
+  RETICLE_SIZE_PRESETS,
   RETICLE_TOKENS,
 } from "../../src/experience/constants";
 import {
@@ -18,6 +19,8 @@ import {
   type GazeReticleComponentInstance,
   type GazeReticleEntity,
 } from "../../src/experience/components/gaze-reticle";
+import { ReticlePreferencesStore } from "../../src/experience/reticle-preferences-store";
+import type { StorageAdapter } from "../../src/navigation/session-store";
 
 describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
   afterEach(() => {
@@ -467,5 +470,113 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
     expect(enableLayer).toHaveBeenCalledWith(StereoTextureMapper.THREE_LAYER_LEFT);
 
     instance.remove();
+  });
+
+  it("scales reticle depth transform by sizeMultiplier and evaluates CINEMA_DIM when idleBehavior is DIM", () => {
+    expect(computeReticleDepthTransform(1.43, RETICLE_SIZE_PRESETS.SMALL)).toEqual({
+      depthM: 1.41,
+      z: -1.41,
+      scale: 1.0575,
+    });
+    expect(computeReticleDepthTransform(1.43, RETICLE_SIZE_PRESETS.LARGE)).toEqual({
+      depthM: 1.41,
+      z: -1.41,
+      scale: 1.9035,
+    });
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1200,
+        idleBehavior: "DIM",
+      }),
+    ).toBe("GUIDE");
+
+    expect(
+      evaluateReticleVisibilityMode({
+        viewMode: "vr",
+        isInspecting: false,
+        hasClickableHit: false,
+        hasWakeZoneHit: false,
+        isFusing: false,
+        nonInteractiveSinceMs: 1000,
+        nowMs: 1300,
+        idleBehavior: "DIM",
+      }),
+    ).toBe("CINEMA_DIM");
+  });
+
+  it("synchronizes ReticlePreferencesStore size, fuse-timeout on host cursor, and CINEMA_DIM visibility in cv-gaze-reticle", () => {
+    const map = new Map<string, string>();
+    const storage: StorageAdapter = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => map.set(k, v),
+      removeItem: (k) => map.delete(k),
+    };
+    const prefsStore = new ReticlePreferencesStore(storage);
+
+    let now = 1000;
+    let clickableDistance: number | null = null;
+    const cursorEl = document.createElement("a-cursor") as unknown as GazeReticleEntity;
+    cursorEl.setAttribute("fuse", "true");
+    cursorEl.setAttribute("fuse-timeout", "1500");
+
+    const def = createGazeReticleComponentDefinition({
+      nowMs: () => now,
+      getInspectionState: () => InspectionState.IDLE,
+      getRaycasterIntersection: () => clickableDistance,
+      getWakeIntersection: () => null,
+      reticlePreferencesStore: prefsStore,
+    });
+
+    const instance = Object.create(def) as GazeReticleComponentInstance;
+    instance.el = cursorEl;
+    instance.data = {
+      fuseTimeout: INSPECTION_TIMINGS.FUSE_TIMEOUT_MS,
+      accentColor: RETICLE_TOKENS.DEFAULT_ACCENT_COLOR,
+    };
+    instance.init();
+
+    prefsStore.setSizePreset("SMALL");
+    prefsStore.setFusePreset("FAST");
+    prefsStore.setIdleBehavior("DIM");
+
+    expect(cursorEl.getAttribute("fuse-timeout")).toBe("1000");
+    expect(instance.data.fuseTimeout).toBe(1000);
+
+    now = 1350;
+    instance.tick();
+    expect(instance.visibilityMode).toBe("CINEMA_DIM");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("true");
+    expect(instance.containerEl?.getAttribute("scale")).toBe("2.1 2.1 2.1");
+    expect(instance.idleDotEl?.getAttribute("material")).toContain(
+      `opacity: ${RETICLE_TOKENS.DIM_OPACITY}`,
+    );
+
+    // Switching back to AUTO_HIDE hides immediately on next tick
+    prefsStore.setIdleBehavior("AUTO_HIDE");
+    instance.tick();
+    expect(instance.visibilityMode).toBe("CINEMA_HIDDEN");
+    expect(instance.containerEl?.getAttribute("visible")).toBe("false");
+
+    // Fuse timing reflects FAST (1000 ms)
+    clickableDistance = 1.5;
+    now = 2000;
+    instance.tick();
+    cursorEl.dispatchEvent(new Event("fusing"));
+    now = 2500;
+    instance.tick();
+    expect(instance.progressRingEl?.getAttribute("geometry")).toContain(
+      "thetaLength: 180",
+    );
+
+    instance.remove();
+    prefsStore.setFusePreset("SLOW");
+    expect(cursorEl.getAttribute("fuse-timeout")).toBe("1000");
   });
 });

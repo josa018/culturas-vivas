@@ -408,16 +408,35 @@ export const VR_HUD_GEOMETRY = {
   VOLUME_BAR_GAP_M: 0.016,
   VOLUME_STEP_BTN_SIZE_M: 0.095,
   VOLUME_STEP_BTN_GAP_M: 0.028,
-  VOLUME_GROUP_Y_M: -0.1,
+  VOLUME_GROUP_Y_M: -0.15,
   VOLUME_MUSIC_X_M: -0.34,
   VOLUME_EFFECTS_X_M: 0.34,
   VOLUME_Z_M: 0.055,
   VOLUME_YAW_DEG: 6,
+  AUDIO_SOUND_Y_M: 0.09,
+  TAB_ROW_Y_M: 0.27,
+  TAB_BTN_WIDTH_M: 0.38,
+  TAB_BTN_HEIGHT_M: 0.095,
+  TAB_AUDIO_X_M: -0.21,
+  TAB_RETICLE_X_M: 0.21,
+  TAB_Z_M: 0.05,
+  RETICLE_LABEL_X_M: -0.44,
+  RETICLE_LABEL_WIDTH_M: 0.36,
+  RETICLE_OPTION_WIDTH_M: 0.24,
+  RETICLE_OPTION_HEIGHT_M: 0.09,
+  RETICLE_OPTION_X_M: [-0.08, 0.2, 0.48] as const,
+  RETICLE_SIZE_ROW_Y_M: 0.12,
+  RETICLE_FUSE_ROW_Y_M: -0.02,
+  RETICLE_IDLE_ROW_Y_M: -0.17,
+  RETICLE_IDLE_BTN_WIDTH_M: 0.72,
+  RETICLE_IDLE_BTN_HEIGHT_M: 0.1,
+  RETICLE_Z_M: 0.055,
 } as const;
 
 export const VR_HUD_COLORS = {
   SURFACE_OBSIDIAN: "#0B0F17",
   BUTTON_SURFACE: "#1e293b",
+  BUTTON_ACTIVE_SURFACE: "#273549",
   VOLUME_BAR_INACTIVE: "#334155",
   SURFACE_OPACITY: 0.85,
   ACCENT_CEMPASUCHIL: "#D99B26",
@@ -430,6 +449,10 @@ export const VR_HUD_ELEMENT_IDS = {
   HUD_ROOT: "cv-vr-hologram-hud",
   PANEL_BACKDROP: "cv-vr-hud-panel",
   ROOM_CHIP: "cv-vr-hud-room-chip",
+  TAB_AUDIO_BTN: "cv-vr-hud-tab-audio",
+  TAB_RETICLE_BTN: "cv-vr-hud-tab-reticle",
+  AUDIO_GROUP: "cv-vr-hud-audio-group",
+  RETICLE_GROUP: "cv-vr-hud-reticle-group",
   SOUND_TOGGLE_BTN: "cv-vr-hud-sound-toggle",
   MUSIC_SLIDER_GROUP: "cv-vr-hud-music-slider",
   MUSIC_SLIDER_DOWN_BTN: "cv-vr-hud-music-down",
@@ -439,12 +462,21 @@ export const VR_HUD_ELEMENT_IDS = {
   EFFECTS_SLIDER_DOWN_BTN: "cv-vr-hud-effects-down",
   EFFECTS_SLIDER_UP_BTN: "cv-vr-hud-effects-up",
   EFFECTS_BAR_PREFIX: "cv-vr-hud-effects-bar-",
+  RETICLE_SIZE_SMALL_BTN: "cv-vr-hud-reticle-size-small",
+  RETICLE_SIZE_NORMAL_BTN: "cv-vr-hud-reticle-size-normal",
+  RETICLE_SIZE_LARGE_BTN: "cv-vr-hud-reticle-size-large",
+  RETICLE_FUSE_FAST_BTN: "cv-vr-hud-reticle-fuse-fast",
+  RETICLE_FUSE_NORMAL_BTN: "cv-vr-hud-reticle-fuse-normal",
+  RETICLE_FUSE_SLOW_BTN: "cv-vr-hud-reticle-fuse-slow",
+  RETICLE_IDLE_TOGGLE_BTN: "cv-vr-hud-reticle-idle-toggle",
   RETURN_LOBBY_BTN: "cv-vr-hud-return-lobby",
   DISMISS_BTN: "cv-vr-hud-dismiss",
   TAP_TRIGGER: "cv-vr-tap-trigger",
 } as const;
 
 export const VR_HUD_DICTIONARY = {
+  TAB_AUDIO_LABEL: "Audio",
+  TAB_RETICLE_LABEL: "Retícula",
   SOUND_ON_LABEL: "Sonido: ON",
   SOUND_OFF_LABEL: "Sonido: OFF",
   MUSIC_SLIDER_LABEL: "Música",
@@ -452,6 +484,16 @@ export const VR_HUD_DICTIONARY = {
   SLIDER_DECREASE_ICON: "−",
   SLIDER_INCREASE_ICON: "+",
   SLIDER_PERCENT_SUFFIX: "%",
+  RETICLE_SIZE_LABEL: "Tamaño",
+  RETICLE_SIZE_SMALL_LABEL: "Pequeña",
+  RETICLE_SIZE_NORMAL_LABEL: "Normal",
+  RETICLE_SIZE_LARGE_LABEL: "Grande",
+  RETICLE_FUSE_LABEL: "Fijación",
+  RETICLE_FUSE_FAST_LABEL: "1.0 s",
+  RETICLE_FUSE_NORMAL_LABEL: "1.5 s",
+  RETICLE_FUSE_SLOW_LABEL: "2.5 s",
+  RETICLE_IDLE_HIDE_LABEL: "Reposo: Ocultar",
+  RETICLE_IDLE_DIM_LABEL: "Reposo: Atenuar",
   RETURN_LOBBY_LABEL: "Volver al Lobby",
   DISMISS_LABEL: "✕",
 } as const;
@@ -518,7 +560,45 @@ export const RETICLE_TOKENS = {
   REFERENCE_DEPTH_M: 1.0,
   CINEMA_HIDE_DELAY_MS: 300,
   GUIDE_OPACITY: 0.55,
+  DIM_OPACITY: 0.25,
   TOUCH_RAYCASTER_ID: "cv-touch-raycaster",
+} as const;
+
+export const RETICLE_STORAGE_KEYS = {
+  PREFERENCES: "cv_reticle_preferences",
+} as const;
+
+export const RETICLE_SIZE_PRESETS = {
+  SMALL: 0.75,
+  NORMAL: 1.0,
+  LARGE: 1.35,
+} as const;
+export type ReticleSizePreset = keyof typeof RETICLE_SIZE_PRESETS;
+
+export const RETICLE_FUSE_PRESETS_MS = {
+  FAST: 1000,
+  NORMAL: 1500,
+  SLOW: 2500,
+} as const;
+export type ReticleFusePreset = keyof typeof RETICLE_FUSE_PRESETS_MS;
+
+export const RETICLE_IDLE_BEHAVIOR = {
+  AUTO_HIDE: "AUTO_HIDE",
+  DIM: "DIM",
+} as const;
+export type ReticleIdleBehavior =
+  (typeof RETICLE_IDLE_BEHAVIOR)[keyof typeof RETICLE_IDLE_BEHAVIOR];
+
+export interface ReticlePreferences {
+  readonly sizePreset: ReticleSizePreset;
+  readonly fusePreset: ReticleFusePreset;
+  readonly idleBehavior: ReticleIdleBehavior;
+}
+
+export const DEFAULT_RETICLE_PREFERENCES: ReticlePreferences = {
+  sizePreset: "NORMAL",
+  fusePreset: "NORMAL",
+  idleBehavior: RETICLE_IDLE_BEHAVIOR.AUTO_HIDE,
 } as const;
 
 export const INTERACTION_ANIMATION_TOKENS = {

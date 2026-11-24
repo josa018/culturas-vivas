@@ -63,6 +63,10 @@ import {
   type SharedVideoController,
 } from "../experience/shared-video-controller";
 import {
+  ReticlePreferencesStore,
+  getSharedReticlePreferencesStore,
+} from "../experience/reticle-preferences-store";
+import {
   computeVolumeBarState,
   quantizeVolumeStep,
 } from "../experience/audio/volume-bars";
@@ -113,6 +117,7 @@ export class ExperienceScreenView implements ScreenView {
   private readonly roomAssetCache: RoomAssetCache;
   private readonly mediaProvider: RoomMediaProvider;
   private readonly audioPreferencesStore: AudioPreferencesStore;
+  private readonly reticlePreferencesStore: ReticlePreferencesStore;
   private readonly audioEngine: AudioEngine;
   private readonly videoController: ExperienceVideoControllerPort;
   private hasActiveExperienceSession: boolean = false;
@@ -134,6 +139,7 @@ export class ExperienceScreenView implements ScreenView {
     audioPreferencesStore?: AudioPreferencesStore,
     audioEngine?: AudioEngine,
     videoController?: ExperienceVideoControllerPort,
+    reticlePreferencesStore?: ReticlePreferencesStore,
   ) {
     this.dispatch = dispatch;
     this.viewMode = viewMode;
@@ -143,6 +149,8 @@ export class ExperienceScreenView implements ScreenView {
     this.mediaProvider = mediaProvider ?? getSharedMediaCatalogClient();
     this.audioPreferencesStore =
       audioPreferencesStore ?? getSharedAudioPreferencesStore();
+    this.reticlePreferencesStore =
+      reticlePreferencesStore ?? getSharedReticlePreferencesStore();
     this.audioEngine = audioEngine ?? getSharedAudioEngine();
     this.videoController = videoController ?? getSharedVideoController();
   }
@@ -370,6 +378,7 @@ export class ExperienceScreenView implements ScreenView {
     this.audioEngine.deactivateExperience();
     this.videoController.stopAndRelease();
     this.audioPreferencesStore.reset();
+    this.reticlePreferencesStore.reset();
     this.teardownSceneListeners();
 
     if (this.container) {
