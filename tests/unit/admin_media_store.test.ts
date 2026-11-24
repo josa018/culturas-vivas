@@ -612,4 +612,60 @@ describe("AdminMediaStore", () => {
     ).toBe(true);
     expect(store.getState().uploadProgress).toBeNull();
   });
+
+  it("scopes edit success messages to itemSuccess and auto-dismisses success feedback after timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      (fetcher.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [
+          {
+            id: "m1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_2D,
+            title: "Original",
+            creatorName: "",
+            description: "",
+            mediaUrl: "https://pub.r2.dev/m1.webp",
+            sortOrder: 0,
+          },
+        ],
+        storageUsageBytes: 100,
+        maxStorageBytes: 8_589_934_592,
+      });
+      (fetcher.patch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        item: {
+          id: "m1",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaType: ExhibitMediaType.IMAGE_2D,
+          title: "Editado",
+          creatorName: "",
+          description: "",
+          mediaUrl: "https://pub.r2.dev/m1.webp",
+          sortOrder: 0,
+        },
+      });
+
+      const store = new AdminMediaStore({
+        fetcher,
+        getToken: () => "jwt-token",
+        onUnauthorized,
+        processor,
+      });
+      await store.fetchCatalog();
+
+      await store.updateItemMetadata({ id: "m1", title: "Editado" });
+      expect(store.getState().successMessage).toBeNull();
+      expect(store.getState().itemSuccess).toEqual({
+        itemId: "m1",
+        message: ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT,
+      });
+
+      await vi.advanceTimersByTimeAsync(4500);
+      expect(store.getState().itemSuccess).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

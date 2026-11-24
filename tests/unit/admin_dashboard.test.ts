@@ -1502,7 +1502,44 @@ describe("Admin UI Widgets & AdminController", () => {
     expect(parent.textContent).not.toContain("IMAGE_2D");
     expect(parent.textContent).not.toContain("VIDEO_STEREO_SBS");
 
-    // No bottom <details> hint in MediaManagerWidget; format help sits beside label as popover trigger
+    // Modern custom file picker replaces native file input appearance and updates filename on selection/reset
+    const fileInput = parent.querySelector(
+      '[data-upload-field="file"]',
+    ) as HTMLInputElement;
+    const filePicker = fileInput.closest(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER}`,
+    ) as HTMLElement;
+    expect(filePicker).not.toBeNull();
+    const pickerBtn = filePicker.querySelector(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER_BTN}`,
+    ) as HTMLButtonElement;
+    const pickerName = filePicker.querySelector(
+      '[data-file-name="true"]',
+    ) as HTMLElement;
+    expect(pickerBtn.querySelector("svg")).not.toBeNull();
+    expect(pickerName.textContent).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
+    const sampleFile = new File(["bytes"], "foto-ceremonial.jpg", {
+      type: "image/jpeg",
+    });
+    Object.defineProperty(fileInput, "files", {
+      value: [sampleFile],
+      configurable: true,
+    });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(pickerName.textContent).toContain("foto-ceremonial.jpg");
+
+    // Resetting clears selected filename label back to empty placeholder
+    Object.defineProperty(fileInput, "files", {
+      value: [],
+      configurable: true,
+    });
+    const formEl = fileInput.closest("form") as HTMLFormElement;
+    formEl.reset();
+    await Promise.resolve();
+    expect(pickerName.textContent).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
+    // No bottom <details> hint in MediaManagerWidget; format help sits beside label as hover-only popover
     expect(parent.querySelector("details")).toBeNull();
     const helpBtn = parent.querySelector(
       '[data-help-toggle="format"]',
@@ -1510,19 +1547,18 @@ describe("Admin UI Widgets & AdminController", () => {
     const helpPopover = parent.querySelector(
       '[data-help-popover="format"]',
     ) as HTMLElement;
+    const helpWrapper = helpBtn.closest(
+      `.${ADMIN_UI_CLASSES.FIELD_HELP_WRAPPER}`,
+    ) as HTMLElement;
     expect(helpBtn).not.toBeNull();
     expect(helpPopover).not.toBeNull();
-    expect(helpBtn.getAttribute("aria-expanded")).toBe("false");
     expect(helpPopover.hidden).toBe(true);
     expect(helpPopover.textContent).toContain("Half-SBS");
 
+    // Clicking the help icon does not toggle or change wrapper state (hover-only CSS)
     helpBtn.click();
-    expect(helpBtn.getAttribute("aria-expanded")).toBe("true");
-    expect(helpPopover.hidden).toBe(false);
-
-    helpBtn.click();
-    expect(helpBtn.getAttribute("aria-expanded")).toBe("false");
     expect(helpPopover.hidden).toBe(true);
+    expect(helpWrapper.className).toBe(ADMIN_UI_CLASSES.FIELD_HELP_WRAPPER);
 
     // Reorder buttons include accessible aria-label
     const moveDownBtn = parent.querySelector(
@@ -1659,5 +1695,98 @@ describe("Admin UI Widgets & AdminController", () => {
     progressWidget.unmount();
 
     widget.unmount();
+  });
+
+  it("MediaManagerWidget displays edit confirmation inline inside the edited item card and auto-dismisses it", async () => {
+    vi.useFakeTimers();
+    try {
+      const mediaFetcher: AdminNetworkFetcher = {
+        get: vi.fn(async () => ({
+          items: [
+            {
+              id: "w-1",
+              roomId: RoomId.WIXARIKA,
+              standId: StandId.ARTE,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Estambre Ceremonial",
+              creatorName: "María Cruz",
+              description: "Tabla.",
+              mediaUrl: "https://pub.r2.dev/w-1.webp",
+              sortOrder: 0,
+            },
+          ],
+          storageUsageBytes: 100,
+          maxStorageBytes: 8_589_934_592,
+        })),
+        post: vi.fn(async () => ({})),
+        patch: vi.fn(async () => ({
+          item: {
+            id: "w-1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_2D,
+            title: "Estambre Actualizado",
+            creatorName: "María Cruz",
+            description: "Tabla.",
+            mediaUrl: "https://pub.r2.dev/w-1.webp",
+            sortOrder: 0,
+          },
+        })),
+        delete: vi.fn(async () => ({})),
+        putBinary: vi.fn(async () => {}),
+      };
+
+      const mediaStore = new AdminMediaStore({
+        getToken: () => "jwt-token",
+        onUnauthorized: () => {},
+        fetcher: mediaFetcher,
+      });
+      const widget = new MediaManagerWidget(mediaStore);
+      const parent = document.createElement("div");
+      document.body.appendChild(parent);
+      widget.mount(parent);
+      await mediaStore.fetchCatalog();
+      mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+
+      const editBtn = parent.querySelector(
+        '[data-item-id="w-1"] [data-action="edit"]',
+      ) as HTMLButtonElement;
+      editBtn.click();
+
+      const titleInput = parent.querySelector(
+        '[data-item-id="w-1"] [data-edit-field="title"]',
+      ) as HTMLInputElement;
+      titleInput.value = "Estambre Actualizado";
+      const saveBtn = parent.querySelector(
+        '[data-item-id="w-1"] [data-action="save-edit"]',
+      ) as HTMLButtonElement;
+      saveBtn.click();
+
+      // Let async PATCH settle without running the 4s timer yet
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const topSuccessBanner = parent.querySelector(
+        `.${ADMIN_UI_CLASSES.SUCCESS_TEXT}`,
+      ) as HTMLElement;
+      expect(
+        topSuccessBanner.classList.contains(ADMIN_UI_CLASSES.SUCCESS_HIDDEN),
+      ).toBe(true);
+
+      const inlineSuccess = parent.querySelector(
+        '[data-item-id="w-1"] [data-item-success="true"]',
+      ) as HTMLElement;
+      expect(inlineSuccess).not.toBeNull();
+      expect(inlineSuccess.textContent).toBe(ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT);
+
+      await vi.advanceTimersByTimeAsync(4500);
+      expect(
+        parent.querySelector('[data-item-id="w-1"] [data-item-success="true"]'),
+      ).toBeNull();
+
+      widget.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

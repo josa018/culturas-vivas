@@ -36,6 +36,11 @@ export interface AdminMediaItemRecord extends StandMediaItem {
 
 export type { UploadProgressState };
 
+export interface ItemSuccessFeedback {
+  readonly itemId: string;
+  readonly message: string;
+}
+
 export interface AdminMediaState {
   readonly items: readonly AdminMediaItemRecord[];
   readonly isLoading: boolean;
@@ -43,6 +48,7 @@ export interface AdminMediaState {
   readonly uploadProgress: UploadProgressState | null;
   readonly error: string | null;
   readonly successMessage: string | null;
+  readonly itemSuccess: ItemSuccessFeedback | null;
   readonly selectedRoomId: RoomId;
   readonly selectedStandId: StandId;
   readonly storageUsageBytes: number;
@@ -128,6 +134,7 @@ export class AdminMediaStore {
   private readonly getToken: () => string | null;
   private readonly onUnauthorized: () => void;
   private readonly listeners = new Set<AdminMediaListener>();
+  private successDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
   private state: AdminMediaState = {
     items: [],
@@ -136,6 +143,7 @@ export class AdminMediaStore {
     uploadProgress: null,
     error: null,
     successMessage: null,
+    itemSuccess: null,
     selectedRoomId: DEFAULT_ROOM_ID,
     selectedStandId: getDefaultStandForRoom(DEFAULT_ROOM_ID),
     storageUsageBytes: 0,
@@ -451,7 +459,12 @@ export class AdminMediaStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null, successMessage: null });
+    this.updateState({
+      isUploading: true,
+      error: null,
+      successMessage: null,
+      itemSuccess: null,
+    });
     try {
       let posterBlob: Blob;
       let posterMimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
@@ -506,7 +519,11 @@ export class AdminMediaStore {
           item.id === id && response?.item ? response.item : item,
         ),
         isUploading: false,
-        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_POSTER,
+        successMessage: null,
+        itemSuccess: {
+          itemId: id,
+          message: ADMIN_UI_TEXT.MEDIA_SUCCESS_POSTER,
+        },
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo actualizar la miniatura.", {
@@ -535,7 +552,11 @@ export class AdminMediaStore {
             item.id === input.id ? response.item : item,
           ),
           error: null,
-          successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT,
+          successMessage: null,
+          itemSuccess: {
+            itemId: input.id,
+            message: ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT,
+          },
         });
       }
     } catch (error) {
@@ -671,16 +692,62 @@ export class AdminMediaStore {
       error instanceof AdminHttpError &&
       error.status === HTTP_STATUS_UNAUTHORIZED
     ) {
-      this.updateState({ ...extraPatch, error: null, successMessage: null });
+      this.updateState({
+        ...extraPatch,
+        error: null,
+        successMessage: null,
+        itemSuccess: null,
+      });
       this.onUnauthorized();
       return;
     }
     const message = mapAdminErrorMessage(error, fallbackMessage);
-    this.updateState({ ...extraPatch, error: message, successMessage: null });
+    this.updateState({
+      ...extraPatch,
+      error: message,
+      successMessage: null,
+      itemSuccess: null,
+    });
+  }
+
+  private clearSuccessDismissTimer(): void {
+    if (this.successDismissTimer !== null) {
+      clearTimeout(this.successDismissTimer);
+      this.successDismissTimer = null;
+    }
   }
 
   private updateState(patch: Partial<AdminMediaState>): void {
-    this.state = { ...this.state, ...patch };
+    const touchesFeedback =
+      patch.successMessage !== undefined ||
+      patch.itemSuccess !== undefined ||
+      patch.error !== undefined;
+    const nextPatch: Partial<AdminMediaState> =
+      patch.successMessage && patch.itemSuccess === undefined
+        ? { ...patch, itemSuccess: null }
+        : patch;
+
+    this.state = { ...this.state, ...nextPatch };
+
+    if (touchesFeedback) {
+      this.clearSuccessDismissTimer();
+      if (this.state.successMessage || this.state.itemSuccess) {
+        const timer = setTimeout(() => {
+          this.successDismissTimer = null;
+          this.updateState({ successMessage: null, itemSuccess: null });
+        }, ADMIN_MEDIA_LIMITS.SUCCESS_AUTO_DISMISS_MS);
+        if (
+          typeof timer === "object" &&
+          timer !== null &&
+          "unref" in timer &&
+          typeof (timer as { unref?: unknown }).unref === "function"
+        ) {
+          (timer as { unref: () => void }).unref();
+        }
+        this.successDismissTimer = timer;
+      }
+    }
+
     for (const listener of this.listeners) {
       listener(this.state);
     }

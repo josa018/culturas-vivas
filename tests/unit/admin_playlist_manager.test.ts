@@ -343,6 +343,21 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_FILE_LABEL);
     expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_TITLE_LABEL);
 
+    // Audio upload uses modern custom file picker with SVG button
+    const audioFileInput = root.querySelector(
+      '[data-audio-upload="file"]',
+    ) as HTMLInputElement;
+    const audioPicker = audioFileInput.closest(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER}`,
+    ) as HTMLElement;
+    expect(audioPicker).not.toBeNull();
+    expect(
+      audioPicker.querySelector(`.${ADMIN_UI_CLASSES.FILE_PICKER_BTN} svg`),
+    ).not.toBeNull();
+    expect(
+      audioPicker.querySelector('[data-file-name="true"]')?.textContent,
+    ).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
     // Collapsible technical details preserves -16 LUFS and AAC-LC
     const detailsEl = root.querySelector("details");
     expect(detailsEl).not.toBeNull();

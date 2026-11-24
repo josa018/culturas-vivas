@@ -15,6 +15,7 @@ import {
   createCounterField,
   createInlineDeleteControls,
   createLabeledField,
+  createModernFileInput,
   createStatusBanners,
   createTechnicalHintDetails,
   createUploadProgressBar,
@@ -172,16 +173,20 @@ export class PlaylistManagerWidget {
     form.className = ADMIN_UI_CLASSES.MEDIA_FORM;
     form.noValidate = true;
 
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = ".mp3,.m4a,audio/mpeg,audio/mp4";
-    fileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    fileInput.setAttribute("data-audio-upload", "file");
+    const filePicker = createModernFileInput({
+      id: "cv-audio-upload-file",
+      accept: ".mp3,.m4a,audio/mpeg,audio/mp4",
+      dataAttrName: "data-audio-upload",
+      dataAttrValue: "file",
+      form,
+    });
+    const fileInput = filePicker.input;
 
     const fileField = createLabeledField({
       id: "cv-audio-upload-file",
       labelText: ADMIN_UI_TEXT.AUDIO_FILE_LABEL,
-      control: fileInput,
+      control: filePicker.wrapper,
+      controlTargetForId: fileInput,
     });
 
     const titleInput = document.createElement("input");
@@ -268,6 +273,7 @@ export class PlaylistManagerWidget {
         .then(() => {
           if (!this.store.getState().error) {
             form.reset();
+            filePicker.syncFileName();
             titleField.syncCounter();
             creditField.syncCounter();
             licenseField.syncCounter();

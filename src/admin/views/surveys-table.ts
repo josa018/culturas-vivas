@@ -61,11 +61,7 @@ export class SurveysTableWidget {
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.SURVEY_TITLE;
 
-    const subtitle = document.createElement("p");
-    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
-    subtitle.textContent = ADMIN_UI_TEXT.SURVEY_SUBTITLE;
-
-    titleGroup.append(title, subtitle);
+    titleGroup.append(title);
 
     const avgBadge = document.createElement("span");
     avgBadge.className = ADMIN_UI_CLASSES.SURVEY_AVG_BADGE;

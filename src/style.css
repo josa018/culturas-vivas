@@ -2110,7 +2110,7 @@ a-scene canvas.a-canvas {
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
-  cursor: pointer;
+  cursor: help;
 }
 
 .cv-admin-help-btn:hover,
@@ -2141,10 +2141,10 @@ a-scene canvas.a-canvas {
   display: none;
 }
 
-.cv-admin-help-wrapper:hover .cv-admin-help-popover,
-.cv-admin-help-wrapper:focus-within .cv-admin-help-popover,
-.cv-admin-help-wrapper--open .cv-admin-help-popover {
-  display: block;
+@media (hover: hover) and (pointer: fine) {
+  .cv-admin-help-wrapper:hover .cv-admin-help-popover {
+    display: block;
+  }
 }
 
 .cv-admin-field-hint {
@@ -2218,6 +2218,89 @@ a-scene canvas.a-canvas {
     var(--cv-color-accent-cyan, #7ddcde)
   );
   transition: width 140ms ease;
+}
+
+.cv-admin-item-success {
+  grid-column: 1 / -1;
+  margin: 4px 0 0 0;
+}
+
+.cv-admin-file-picker {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--cv-radius-medium);
+  border: 1.5px dashed rgba(208, 188, 255, 0.35);
+  background-color: var(--md-sys-color-surface-container-low);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.cv-admin-file-picker:hover,
+.cv-admin-file-picker--dragover {
+  border-color: var(--md-sys-color-primary);
+  background-color: rgba(208, 188, 255, 0.08);
+}
+
+.cv-admin-file-picker:focus-within {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.cv-admin-file-input-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cv-admin-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(208, 188, 255, 0.4);
+  border-radius: var(--cv-radius-pill);
+  background-color: rgba(208, 188, 255, 0.16);
+  color: var(--md-sys-color-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 140ms ease;
+}
+
+.cv-admin-file-btn:hover {
+  background-color: rgba(208, 188, 255, 0.26);
+}
+
+.cv-admin-file-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.cv-admin-file-name {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  min-width: 0;
+  flex: 1 1 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cv-admin-media-list {

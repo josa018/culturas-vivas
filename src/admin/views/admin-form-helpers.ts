@@ -1,5 +1,9 @@
 import type { UploadProgressState } from "../admin-http-client";
-import { ADMIN_UI_CLASSES } from "../constants";
+import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const BYTES_PER_KIB = 1024;
+const BYTES_PER_MIB = 1_048_576;
 
 export interface FieldHelpOptions {
   readonly toggleKey: string;
@@ -12,9 +16,20 @@ export interface LabeledFieldOptions {
   readonly id: string;
   readonly labelText: string;
   readonly control: HTMLElement;
+  readonly controlTargetForId?: HTMLElement;
   readonly hintText?: string;
   readonly fullWidth?: boolean;
   readonly help?: FieldHelpOptions;
+}
+
+export interface ModernFileInputOptions {
+  readonly id: string;
+  readonly accept: string;
+  readonly dataAttrName: string;
+  readonly dataAttrValue: string;
+  readonly form?: HTMLFormElement;
+  readonly buttonLabel?: string;
+  readonly emptyLabel?: string;
 }
 
 export interface CounterFieldOptions {
@@ -53,8 +68,7 @@ export function createFieldHelpPopover(
   btn.textContent = "?";
   btn.setAttribute("data-help-toggle", options.toggleKey);
   btn.setAttribute("aria-label", options.ariaLabel);
-  btn.setAttribute("aria-controls", options.popoverId);
-  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute("aria-describedby", options.popoverId);
 
   const popover = document.createElement("div");
   popover.id = options.popoverId;
@@ -64,24 +78,9 @@ export function createFieldHelpPopover(
   popover.hidden = true;
   popover.textContent = options.bodyText;
 
-  let isOpen = false;
-  const syncState = (nextOpen: boolean) => {
-    isOpen = nextOpen;
-    popover.hidden = !nextOpen;
-    btn.setAttribute("aria-expanded", String(nextOpen));
-    wrapper.classList.toggle(ADMIN_UI_CLASSES.FIELD_HELP_OPEN, nextOpen);
-  };
-
+  // Clicking the icon intentionally performs no action; visibility is hover-only.
   btn.addEventListener("click", (event) => {
     event.preventDefault();
-    syncState(!isOpen);
-  });
-
-  wrapper.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && isOpen) {
-      syncState(false);
-      btn.focus();
-    }
   });
 
   wrapper.append(btn, popover);
@@ -99,7 +98,7 @@ export function createLabeledField(options: LabeledFieldOptions): HTMLElement {
   label.htmlFor = options.id;
   label.textContent = options.labelText;
 
-  options.control.id = options.id;
+  (options.controlTargetForId ?? options.control).id = options.id;
 
   if (options.help) {
     const labelRow = document.createElement("div");
@@ -293,4 +292,118 @@ export function createUploadProgressBar(kind: "media" | "audio"): {
   };
 
   return { container, syncProgress };
+}
+
+function createUploadIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const addPath = (d: string) => {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  };
+  addPath("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4");
+  addPath("M17 8l-5-5-5 5");
+  addPath("M12 3v12");
+  return svg;
+}
+
+function formatFileSizeLabel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "";
+  }
+  if (bytes >= BYTES_PER_MIB) {
+    return ` (${(bytes / BYTES_PER_MIB).toFixed(1)} MB)`;
+  }
+  return ` (${Math.max(1, Math.round(bytes / BYTES_PER_KIB))} KB)`;
+}
+
+export function createModernFileInput(options: ModernFileInputOptions): {
+  wrapper: HTMLElement;
+  input: HTMLInputElement;
+  syncFileName: () => void;
+} {
+  const emptyText = options.emptyLabel ?? ADMIN_UI_TEXT.FILE_PICKER_EMPTY;
+  const buttonText = options.buttonLabel ?? ADMIN_UI_TEXT.FILE_PICKER_SELECT_BTN;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = ADMIN_UI_CLASSES.FILE_PICKER;
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.id = options.id;
+  input.accept = options.accept;
+  input.className = ADMIN_UI_CLASSES.FILE_PICKER_INPUT;
+  input.setAttribute(options.dataAttrName, options.dataAttrValue);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = ADMIN_UI_CLASSES.FILE_PICKER_BTN;
+  const labelSpan = document.createElement("span");
+  labelSpan.textContent = buttonText;
+  btn.append(createUploadIconSvg(), labelSpan);
+
+  const fileNameSpan = document.createElement("span");
+  fileNameSpan.className = ADMIN_UI_CLASSES.FILE_PICKER_NAME;
+  fileNameSpan.setAttribute("data-file-name", "true");
+  fileNameSpan.textContent = emptyText;
+
+  const syncFileName = () => {
+    const selected = input.files?.[0];
+    fileNameSpan.textContent = selected
+      ? `${selected.name}${formatFileSizeLabel(selected.size)}`
+      : emptyText;
+  };
+
+  btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    input.click();
+  });
+
+  wrapper.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    if (target === input || (target && btn.contains(target))) {
+      return;
+    }
+    input.click();
+  });
+
+  input.addEventListener("change", syncFileName);
+
+  wrapper.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    wrapper.classList.add(ADMIN_UI_CLASSES.FILE_PICKER_DRAGOVER);
+  });
+  wrapper.addEventListener("dragleave", () => {
+    wrapper.classList.remove(ADMIN_UI_CLASSES.FILE_PICKER_DRAGOVER);
+  });
+  wrapper.addEventListener("drop", (event) => {
+    event.preventDefault();
+    wrapper.classList.remove(ADMIN_UI_CLASSES.FILE_PICKER_DRAGOVER);
+    const dropped = event.dataTransfer?.files;
+    if (dropped && dropped.length > 0) {
+      try {
+        input.files = dropped;
+      } catch {
+        // Ignore read-only files property in non-browser DOM test shims
+      }
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+
+  options.form?.addEventListener("reset", () => {
+    queueMicrotask(syncFileName);
+  });
+
+  wrapper.append(input, btn, fileNameSpan);
+  return { wrapper, input, syncFileName };
 }

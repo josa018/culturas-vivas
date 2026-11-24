@@ -20,6 +20,7 @@ import {
   createCounterField,
   createInlineDeleteControls,
   createLabeledField,
+  createModernFileInput,
   createStatusBanners,
   createUploadProgressBar,
 } from "./admin-form-helpers";
@@ -182,16 +183,20 @@ export class MediaManagerWidget {
     form.className = ADMIN_UI_CLASSES.MEDIA_FORM;
     form.noValidate = true;
 
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "image/jpeg,image/png,image/webp,video/mp4";
-    fileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    fileInput.setAttribute("data-upload-field", "file");
+    const filePicker = createModernFileInput({
+      id: "cv-media-upload-file",
+      accept: "image/jpeg,image/png,image/webp,video/mp4",
+      dataAttrName: "data-upload-field",
+      dataAttrValue: "file",
+      form,
+    });
+    const fileInput = filePicker.input;
 
     const fileField = createLabeledField({
       id: "cv-media-upload-file",
       labelText: ADMIN_UI_TEXT.MEDIA_FILE_LABEL,
-      control: fileInput,
+      control: filePicker.wrapper,
+      controlTargetForId: fileInput,
       hintText: ADMIN_UI_TEXT.MEDIA_FILE_HINT,
     });
 
@@ -291,16 +296,20 @@ export class MediaManagerWidget {
     capturePreviewBtn.textContent = ADMIN_UI_TEXT.MEDIA_POSTER_CAPTURE_BTN;
     capturePreviewBtn.setAttribute("data-action", "capture-poster-preview");
 
-    const customPosterInput = document.createElement("input");
-    customPosterInput.type = "file";
-    customPosterInput.accept = "image/jpeg,image/png,image/webp";
-    customPosterInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    customPosterInput.setAttribute("data-upload-field", "customPoster");
+    const customPosterPicker = createModernFileInput({
+      id: "cv-media-poster-custom",
+      accept: "image/jpeg,image/png,image/webp",
+      dataAttrName: "data-upload-field",
+      dataAttrValue: "customPoster",
+      form,
+    });
+    const customPosterInput = customPosterPicker.input;
 
     const customPosterField = createLabeledField({
       id: "cv-media-poster-custom",
       labelText: ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
-      control: customPosterInput,
+      control: customPosterPicker.wrapper,
+      controlTargetForId: customPosterInput,
     });
 
     const posterPreviewImg = document.createElement("img");
@@ -448,6 +457,8 @@ export class MediaManagerWidget {
         .then(() => {
           if (!this.store.getState().error) {
             form.reset();
+            filePicker.syncFileName();
+            customPosterPicker.syncFileName();
             titleField.syncCounter();
             creatorField.syncCounter();
             descField.syncCounter();
@@ -677,6 +688,16 @@ export class MediaManagerWidget {
     actions.append(upBtn, downBtn, downloadBtn, editBtn, deleteControl);
     card.append(thumb, info, actions);
 
+    const itemSuccess = this.store.getState().itemSuccess;
+    if (itemSuccess && itemSuccess.itemId === item.id) {
+      const itemBanner = document.createElement("p");
+      itemBanner.className = `${ADMIN_UI_CLASSES.SUCCESS_CONTAINER} ${ADMIN_UI_CLASSES.SUCCESS_TEXT} ${ADMIN_UI_CLASSES.ITEM_SUCCESS_BANNER}`;
+      itemBanner.setAttribute("role", "status");
+      itemBanner.setAttribute("data-item-success", "true");
+      itemBanner.textContent = itemSuccess.message;
+      card.appendChild(itemBanner);
+    }
+
     if (this.editingItemId === item.id) {
       card.appendChild(this.buildInlineEditForm(item));
     }
@@ -802,16 +823,19 @@ export class MediaManagerWidget {
     );
 
     if (isVideoMediaType(item.mediaType)) {
-      const posterFileInput = document.createElement("input");
-      posterFileInput.type = "file";
-      posterFileInput.accept = "image/jpeg,image/png,image/webp";
-      posterFileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-      posterFileInput.setAttribute("data-edit-field", "posterFile");
+      const posterFilePicker = createModernFileInput({
+        id: `cv-media-edit-poster-${item.id}`,
+        accept: "image/jpeg,image/png,image/webp",
+        dataAttrName: "data-edit-field",
+        dataAttrValue: "posterFile",
+      });
+      const posterFileInput = posterFilePicker.input;
 
       const posterField = createLabeledField({
         id: `cv-media-edit-poster-${item.id}`,
         labelText: ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
-        control: posterFileInput,
+        control: posterFilePicker.wrapper,
+        controlTargetForId: posterFileInput,
       });
 
       const replacePosterBtn = document.createElement("button");
