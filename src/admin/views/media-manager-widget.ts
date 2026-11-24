@@ -196,10 +196,10 @@ export class MediaManagerWidget {
     formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     formatSelect.setAttribute("data-upload-field", "format");
     const opt2D = document.createElement("option");
-    opt2D.value = "2D";
+    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
     opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
     const optSbs = document.createElement("option");
-    optSbs.value = "SBS";
+    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
     optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
     formatSelect.append(opt2D, optSbs);
 
@@ -334,17 +334,6 @@ export class MediaManagerWidget {
         clearPreview();
       }
     });
-
-    const formatSelect = document.createElement("select");
-    formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    formatSelect.setAttribute("data-upload-field", "format");
-    const opt2D = document.createElement("option");
-    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
-    opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
-    const optSbs = document.createElement("option");
-    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
-    optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
-    formatSelect.append(opt2D, optSbs);
 
     const refreshVideoPosterPreview = () => {
       const selectedFile = fileInput.files?.[0];
@@ -740,13 +729,15 @@ export class MediaManagerWidget {
     formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     formatSelect.setAttribute("data-edit-field", "format");
     const opt2D = document.createElement("option");
-    opt2D.value = "2D";
+    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
     opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
     const optSbs = document.createElement("option");
-    optSbs.value = "SBS";
+    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
     optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
     formatSelect.append(opt2D, optSbs);
-    formatSelect.value = isHalfSbsMediaType(item.mediaType) ? "SBS" : "2D";
+    formatSelect.value = isHalfSbsMediaType(item.mediaType)
+      ? ADMIN_MEDIA_FORMAT.HALF_SBS
+      : ADMIN_MEDIA_FORMAT.STANDARD_2D;
 
     const formatField = createLabeledField({
       id: `cv-media-edit-format-${item.id}`,
@@ -770,7 +761,7 @@ export class MediaManagerWidget {
       }
       const nextKind = resolveMediaKind(
         isVideoMediaType(item.mediaType),
-        formatSelect.value === "SBS",
+        formatSelect.value === ADMIN_MEDIA_FORMAT.HALF_SBS,
       );
       this.editingItemId = null;
       void this.store.updateItemMetadata({
