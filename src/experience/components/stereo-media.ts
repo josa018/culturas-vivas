@@ -1,6 +1,13 @@
 import type { StereoEye } from "../stereo-mapper";
 import { StereoEye as StereoEyeValues, StereoTextureMapper } from "../stereo-mapper";
 
+const STEREO_COMPONENT_TOKENS = {
+  OBJECT3D_SET_EVENT: "object3dset",
+  COMPONENT_CHANGED_EVENT: "componentchanged",
+  GEOMETRY_COMPONENT_NAME: "geometry",
+  VR_MODE_VALUE: "vr",
+} as const;
+
 export interface StereoMediaComponentData {
   eye: StereoEye;
   isHalfSBS: boolean;
@@ -20,6 +27,9 @@ interface MeshGeometryLike {
 
 interface Object3DNodeLike {
   geometry?: MeshGeometryLike;
+  layers?: {
+    set?: (channel: number) => void;
+  };
 }
 
 export interface StereoMediaEntity extends HTMLElement {
@@ -40,10 +50,31 @@ export interface StereoMediaComponentInstance {
   data: StereoMediaComponentData;
   baseUvCache?: WeakMap<object, number[]>;
   onObject3DSet?: () => void;
+  onComponentChanged?: (event: Event) => void;
   init: () => void;
   update: (oldData: Partial<StereoMediaComponentData>) => void;
   remove?: () => void;
   applyStereoLayers: () => void;
+}
+
+/**
+ * Propagates a Three.js camera layer index to both the entity group and its child meshes.
+ */
+function applyLayerToHierarchy(
+  object3D: StereoMediaEntity["object3D"],
+  layer: number,
+): void {
+  if (object3D.layers && typeof object3D.layers.set === "function") {
+    object3D.layers.set(layer);
+  }
+  if (typeof object3D.traverse === "function") {
+    object3D.traverse((node: unknown) => {
+      const nodeLayers = (node as Object3DNodeLike | null)?.layers;
+      if (nodeLayers && typeof nodeLayers.set === "function") {
+        nodeLayers.set(layer);
+      }
+    });
+  }
 }
 
 function getOrCacheBaseUVs(
@@ -72,7 +103,20 @@ export function createStereoMediaComponentDefinition() {
       this.onObject3DSet = () => {
         this.applyStereoLayers();
       };
-      this.el.addEventListener("object3dset", this.onObject3DSet);
+      this.onComponentChanged = (event: Event) => {
+        const changedName = (event as CustomEvent<{ name?: string }>).detail?.name;
+        if (changedName === STEREO_COMPONENT_TOKENS.GEOMETRY_COMPONENT_NAME) {
+          this.applyStereoLayers();
+        }
+      };
+      this.el.addEventListener(
+        STEREO_COMPONENT_TOKENS.OBJECT3D_SET_EVENT,
+        this.onObject3DSet,
+      );
+      this.el.addEventListener(
+        STEREO_COMPONENT_TOKENS.COMPONENT_CHANGED_EVENT,
+        this.onComponentChanged,
+      );
       this.applyStereoLayers();
     },
 
@@ -91,7 +135,16 @@ export function createStereoMediaComponentDefinition() {
 
     remove: function (this: StereoMediaComponentInstance) {
       if (this.onObject3DSet) {
-        this.el.removeEventListener("object3dset", this.onObject3DSet);
+        this.el.removeEventListener(
+          STEREO_COMPONENT_TOKENS.OBJECT3D_SET_EVENT,
+          this.onObject3DSet,
+        );
+      }
+      if (this.onComponentChanged) {
+        this.el.removeEventListener(
+          STEREO_COMPONENT_TOKENS.COMPONENT_CHANGED_EVENT,
+          this.onComponentChanged,
+        );
       }
     },
 
@@ -100,21 +153,17 @@ export function createStereoMediaComponentDefinition() {
         return;
       }
 
-      const isVR = this.data.viewMode.toLowerCase() === "vr";
+      const isVR =
+        this.data.viewMode.toLowerCase() === STEREO_COMPONENT_TOKENS.VR_MODE_VALUE;
       const isRightEye = this.data.eye.toUpperCase() === StereoEyeValues.RIGHT;
 
       if (isVR && this.data.isHalfSBS) {
-        // VR Mode: assign hardware eye layer
+        // VR Mode: assign hardware eye layer across group and descendant meshes
         const layer = isRightEye
           ? StereoTextureMapper.THREE_LAYER_RIGHT
           : StereoTextureMapper.THREE_LAYER_LEFT;
 
-        if (
-          this.el.object3D.layers &&
-          typeof this.el.object3D.layers.set === "function"
-        ) {
-          this.el.object3D.layers.set(layer);
-        }
+        applyLayerToHierarchy(this.el.object3D, layer);
         this.el.object3D.visible = true;
         this.el.setAttribute("visible", "true");
       } else {
@@ -123,14 +172,10 @@ export function createStereoMediaComponentDefinition() {
           this.el.object3D.visible = false;
           this.el.setAttribute("visible", "false");
         } else {
-          if (
-            this.el.object3D.layers &&
-            typeof this.el.object3D.layers.set === "function"
-          ) {
-            this.el.object3D.layers.set(
-              StereoTextureMapper.THREE_LAYER_DEFAULT,
-            );
-          }
+          applyLayerToHierarchy(
+            this.el.object3D,
+            StereoTextureMapper.THREE_LAYER_DEFAULT,
+          );
           this.el.object3D.visible = true;
           this.el.setAttribute("visible", "true");
         }

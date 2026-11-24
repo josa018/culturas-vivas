@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AdminHttpError, type AdminNetworkFetcher } from "../../src/admin/admin-http-client";
+import {
+  AdminHttpError,
+  type AdminNetworkFetcher,
+} from "../../src/admin/admin-http-client";
 import {
   ADMIN_HTTP_ERROR_TEXT,
   ADMIN_MEDIA_ENDPOINTS,
@@ -12,7 +15,11 @@ import { RoomId, StandId } from "../../src/shared/room-catalog";
 
 function createMockFetcher(): AdminNetworkFetcher {
   return {
-    get: vi.fn(async () => ({ items: [], storageUsageBytes: 0, maxStorageBytes: 8_589_934_592 })),
+    get: vi.fn(async () => ({
+      items: [],
+      storageUsageBytes: 0,
+      maxStorageBytes: 8_589_934_592,
+    })),
     post: vi.fn(async () => ({})),
     patch: vi.fn(async () => ({})),
     delete: vi.fn(async () => ({ ok: true, storageUsageBytes: 0 })),
@@ -91,7 +98,9 @@ describe("AdminMediaStore", () => {
       processor,
     });
 
-    const videoFile = new File(["123456789"], "danza.mp4", { type: "video/mp4" });
+    const videoFile = new File(["123456789"], "danza.mp4", {
+      type: "video/mp4",
+    });
     await store.uploadMedia({
       roomId: RoomId.WIXARIKA,
       standId: StandId.ARTE,
@@ -114,7 +123,16 @@ describe("AdminMediaStore", () => {
       }),
       { Authorization: "Bearer jwt-token" },
     );
-    expect(fetcher.putBinary).toHaveBeenCalledTimes(2);
+    expect(fetcher.putBinary).toHaveBeenCalledWith(
+      "https://r2.example.com/v1-poster.webp",
+      expect.any(Blob),
+      expect.any(Object),
+    );
+    expect(processor.extractVideoPoster).toHaveBeenCalledWith(
+      videoFile,
+      undefined,
+      { cropHalfSbsLeft: true },
+    );
     expect(fetcher.post).toHaveBeenNthCalledWith(
       2,
       ADMIN_MEDIA_ENDPOINTS.MEDIA,
@@ -226,25 +244,26 @@ describe("AdminMediaStore", () => {
       type: "image/webp",
     });
 
-    (processor as unknown as { optimizePosterImage: ReturnType<typeof vi.fn> }).optimizePosterImage =
-      vi
-        .fn()
-        .mockResolvedValueOnce({
-          posterBlob: customPosterBlob,
-          videoWidth: 1280,
-          videoHeight: 720,
-          posterWidth: 1024,
-          posterHeight: 576,
-          posterMimeType: "image/webp",
-        })
-        .mockResolvedValueOnce({
-          posterBlob: replacementPosterBlob,
-          videoWidth: 1024,
-          videoHeight: 576,
-          posterWidth: 1024,
-          posterHeight: 576,
-          posterMimeType: "image/webp",
-        });
+    (
+      processor as unknown as { optimizePosterImage: ReturnType<typeof vi.fn> }
+    ).optimizePosterImage = vi
+      .fn()
+      .mockResolvedValueOnce({
+        posterBlob: customPosterBlob,
+        videoWidth: 1280,
+        videoHeight: 720,
+        posterWidth: 1024,
+        posterHeight: 576,
+        posterMimeType: "image/webp",
+      })
+      .mockResolvedValueOnce({
+        posterBlob: replacementPosterBlob,
+        videoWidth: 1024,
+        videoHeight: 576,
+        posterWidth: 1024,
+        posterHeight: 576,
+        posterMimeType: "image/webp",
+      });
 
     (fetcher.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       items: [
@@ -291,7 +310,8 @@ describe("AdminMediaStore", () => {
           creatorName: "",
           description: "Desc.",
           mediaUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/v2.mp4",
-          posterUrl: "https://pub.r2.dev/rooms/wixarika/cosmovision/v2-poster.webp",
+          posterUrl:
+            "https://pub.r2.dev/rooms/wixarika/cosmovision/v2-poster.webp",
           sortOrder: 1,
         },
       })
@@ -331,7 +351,9 @@ describe("AdminMediaStore", () => {
 
     // 1. Upload with customPosterFile bypasses extractVideoPoster and uploads optimized custom poster
     const videoFile = new File(["mp4"], "video.mp4", { type: "video/mp4" });
-    const customCoverFile = new File(["png"], "cover.png", { type: "image/png" });
+    const customCoverFile = new File(["png"], "cover.png", {
+      type: "image/png",
+    });
     await store.uploadMedia({
       roomId: RoomId.WIXARIKA,
       standId: StandId.COSMOVISION,
@@ -381,6 +403,46 @@ describe("AdminMediaStore", () => {
     store.setSelection(RoomId.WIXARIKA, StandId.COSMOVISION);
     expect(store.getSelectedItems()[0]?.posterUrl).toContain(
       "canto-new-poster.webp",
+    );
+  });
+
+  it("forwards cropHalfSbsLeft option in previewVideoPoster()", async () => {
+    const store = new AdminMediaStore({
+      fetcher,
+      getToken: () => "jwt-token",
+      onUnauthorized,
+      processor,
+    });
+    const videoFile = new File(["mp4"], "sbs.mp4", { type: "video/mp4" });
+
+    await (
+      store as unknown as {
+        previewVideoPoster: (
+          file: Blob,
+          seek?: number,
+          isHalfSbs?: boolean,
+        ) => Promise<Blob | null>;
+      }
+    ).previewVideoPoster(videoFile, 2.0, false);
+    expect(processor.extractVideoPoster).toHaveBeenLastCalledWith(
+      videoFile,
+      2.0,
+      { cropHalfSbsLeft: false },
+    );
+
+    await (
+      store as unknown as {
+        previewVideoPoster: (
+          file: Blob,
+          seek?: number,
+          isHalfSbs?: boolean,
+        ) => Promise<Blob | null>;
+      }
+    ).previewVideoPoster(videoFile, 2.0, true);
+    expect(processor.extractVideoPoster).toHaveBeenLastCalledWith(
+      videoFile,
+      2.0,
+      { cropHalfSbsLeft: true },
     );
   });
 

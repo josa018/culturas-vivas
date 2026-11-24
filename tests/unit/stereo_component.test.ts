@@ -209,4 +209,90 @@ describe("A-Frame Stereo Media Component", () => {
     expect(Array.from(leftEl.uvAttr!.array)).toEqual([0, 0, 1, 0, 0, 1, 1, 1]);
     expect(leftEl.uvAttr!.needsUpdate).toBe(true);
   });
+
+  it("propagates eye layers to descendant Mesh nodes, re-syncs on geometry componentchanged, and cleans up on remove", () => {
+    const def = createStereoMediaComponentDefinition();
+
+    const createGroupWithChildMesh = () => {
+      const el = document.createElement("a-plane") as unknown as StereoMediaEntity;
+      const meshLayers = {
+        currentLayer: 0,
+        set(ch: number) {
+          this.currentLayer = ch;
+        },
+      };
+      const uvAttr: MockUVAttribute = {
+        array: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+        needsUpdate: false,
+      };
+      const meshNode = {
+        layers: meshLayers,
+        geometry: {
+          attributes: {
+            uv: uvAttr,
+          },
+        },
+      };
+      const groupLayers = {
+        currentLayer: 0,
+        set(ch: number) {
+          this.currentLayer = ch;
+        },
+      };
+      el.object3D = {
+        layers: groupLayers as unknown as StereoMediaEntity["object3D"]["layers"],
+        visible: true,
+        traverse(cb: (node: unknown) => void) {
+          cb(el.object3D);
+          cb(meshNode);
+        },
+      };
+      return { el, groupLayers, meshLayers, meshNode };
+    };
+
+    const left = createGroupWithChildMesh();
+    const leftInstance: StereoMediaComponentInstance = Object.create(def);
+    leftInstance.el = left.el;
+    leftInstance.data = { eye: "LEFT", isHalfSBS: true, viewMode: "vr" };
+    leftInstance.init();
+
+    const right = createGroupWithChildMesh();
+    const rightInstance: StereoMediaComponentInstance = Object.create(def);
+    rightInstance.el = right.el;
+    rightInstance.data = { eye: "RIGHT", isHalfSBS: true, viewMode: "vr" };
+    rightInstance.init();
+
+    // (a) VR Half-SBS isolates layers on both root Group and descendant Mesh
+    expect(left.groupLayers.currentLayer).toBe(1);
+    expect(left.meshLayers.currentLayer).toBe(1);
+    expect(right.groupLayers.currentLayer).toBe(2);
+    expect(right.meshLayers.currentLayer).toBe(2);
+
+    // (b) Simulated A-Frame geometry swap resets mesh UVs & layer -> componentchanged("geometry") re-syncs
+    const freshRightUv: MockUVAttribute = {
+      array: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+      needsUpdate: false,
+    };
+    right.meshNode.geometry = { attributes: { uv: freshRightUv } };
+    right.meshLayers.currentLayer = 0;
+
+    right.el.dispatchEvent(
+      new CustomEvent("componentchanged", { detail: { name: "geometry" } }),
+    );
+    expect(right.meshLayers.currentLayer).toBe(2);
+    expect(Array.from(freshRightUv.array)).toEqual([0.5, 0, 1, 0, 0.5, 1, 1, 1]);
+    expect(freshRightUv.needsUpdate).toBe(true);
+
+    // (c) remove() unregisters componentchanged listener
+    rightInstance.remove?.();
+    const postRemoveUv: MockUVAttribute = {
+      array: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+      needsUpdate: false,
+    };
+    right.meshNode.geometry = { attributes: { uv: postRemoveUv } };
+    right.el.dispatchEvent(
+      new CustomEvent("componentchanged", { detail: { name: "geometry" } }),
+    );
+    expect(Array.from(postRemoveUv.array)).toEqual([0, 0, 1, 0, 0, 1, 1, 1]);
+  });
 });

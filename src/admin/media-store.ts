@@ -1,4 +1,5 @@
 import {
+  isHalfSbsMediaType,
   isVideoMediaType,
   type StandMediaItem,
   type StandMediaType,
@@ -232,6 +233,8 @@ export class AdminMediaStore {
         let videoWidth: number;
         let videoHeight: number;
 
+        const isHalfSbs = isHalfSbsMediaType(input.mediaKind);
+
         if (input.customPosterFile) {
           if (typeof this.processor.optimizePosterImage === "function") {
             const customPoster = await this.processor.optimizePosterImage(
@@ -249,6 +252,7 @@ export class AdminMediaStore {
           const extractedDims = await this.processor.extractVideoPoster(
             preparedVideo,
             input.posterSeekSeconds,
+            { cropHalfSbsLeft: isHalfSbs },
           );
           videoWidth = extractedDims.videoWidth;
           videoHeight = extractedDims.videoHeight;
@@ -256,6 +260,7 @@ export class AdminMediaStore {
           const extracted = await this.processor.extractVideoPoster(
             preparedVideo,
             input.posterSeekSeconds,
+            { cropHalfSbsLeft: isHalfSbs },
           );
           posterBlob = extracted.posterBlob;
           posterMimeType = extracted.posterMimeType;
@@ -378,11 +383,14 @@ export class AdminMediaStore {
   public async previewVideoPoster(
     file: Blob,
     seekSeconds?: number,
+    isHalfSbs = false,
   ): Promise<Blob | null> {
     if (typeof this.processor.extractVideoPoster !== "function") {
       return null;
     }
-    const extracted = await this.processor.extractVideoPoster(file, seekSeconds);
+    const extracted = await this.processor.extractVideoPoster(file, seekSeconds, {
+      cropHalfSbsLeft: isHalfSbs,
+    });
     return extracted.posterBlob;
   }
 

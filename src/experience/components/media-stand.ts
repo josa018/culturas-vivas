@@ -7,7 +7,6 @@ import {
   InspectionState,
   ROOM_CENTER_COORDINATE,
   ROOM_LAYOUT_TOKENS,
-  SHARED_VIDEO_ELEMENT_ID,
   STAND_ANIMATION_TOKENS,
   STAND_DICTIONARY,
   STAND_DIMENSIONS,
@@ -34,6 +33,19 @@ import { createContactShadowDecal } from "../shadow-baker";
 
 const STAND_VISUAL_TOKENS = {
   SURFACE_COLOR: "#0f172a",
+  MEDIA_ACTIVE_COLOR: "#ffffff",
+  MEDIA_ACTIVE_MATERIAL: "shader: flat; color: #ffffff; src: ",
+  MEDIA_PLANE_GEOMETRY_PRIMITIVE: "plane",
+  MEDIA_PLANE_SKIP_CACHE: true,
+  VR_MODE_VALUE: "vr",
+  SPINNER_Z_OFFSET: 0.03,
+  SPINNER_BACKDROP_RADIUS: 0.11,
+  SPINNER_BACKDROP_OPACITY: 0.72,
+  SPINNER_RING_RADIUS_INNER: 0.055,
+  SPINNER_RING_RADIUS_OUTER: 0.075,
+  SPINNER_RING_THETA_LENGTH_DEG: 270,
+  SPINNER_RING_SEGMENTS: 32,
+  SPINNER_ROTATE_DUR_MS: 900,
   HEADER_BG_COLOR: "#1e293b",
   TEXT_PRIMARY: "#EDE8DF",
   TEXT_MUTED: "#94a3b8",
@@ -85,6 +97,8 @@ export interface MediaStandComponentInstance {
   carousel: MediaCarouselController;
   localState: InspectionState;
   ownsActiveVideo: boolean;
+  isLoadingVideo: boolean;
+  isPlayingLiveVideo: boolean;
   inspectionTargetPosition?: Vector3D | null;
   unsubscribeInspection: (() => void) | null;
   cleanupListeners: Array<() => void>;
@@ -113,6 +127,7 @@ interface StandDomElements {
   headerText: HTMLElement;
   countBadge: HTMLElement;
   mediaGroup: HTMLElement;
+  loadingSpinner: HTMLElement;
   videoBadge: HTMLElement;
   emptyPlaceholder: HTMLElement;
   leftPlane: HTMLElement;
@@ -206,6 +221,71 @@ function createControlButton(
 
   btn.appendChild(label);
   return btn;
+}
+
+function buildMediaPlaneGeometryAttr(width: number, height: number): string {
+  return `primitive: ${STAND_VISUAL_TOKENS.MEDIA_PLANE_GEOMETRY_PRIMITIVE}; width: ${width}; height: ${height}; skipCache: ${STAND_VISUAL_TOKENS.MEDIA_PLANE_SKIP_CACHE}`;
+}
+
+/**
+ * Updates both direct non-cached A-Frame geometry and mapped width/height attributes synchronously.
+ */
+function applyMediaPlaneGeometry(
+  plane: HTMLElement,
+  width: number,
+  height: number,
+): void {
+  plane.setAttribute("geometry", buildMediaPlaneGeometryAttr(width, height));
+  plane.setAttribute("width", String(width));
+  plane.setAttribute("height", String(height));
+}
+
+function createMediaEyePlane(className: string): HTMLElement {
+  const plane = document.createElement("a-plane");
+  plane.setAttribute("class", className);
+  applyMediaPlaneGeometry(
+    plane,
+    STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M,
+    STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M,
+  );
+  plane.setAttribute("position", "0 0 0");
+  plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+  plane.setAttribute(
+    "material",
+    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+  );
+  plane.setAttribute("visible", "false");
+  return plane;
+}
+
+function createMediaSpinner(accentColor: string): HTMLElement {
+  const spinner = document.createElement("a-entity");
+  spinner.setAttribute("class", "cv-stand-loading-spinner");
+  spinner.setAttribute("position", `0 0 ${STAND_VISUAL_TOKENS.SPINNER_Z_OFFSET}`);
+  spinner.setAttribute("visible", "false");
+
+  const backdrop = document.createElement("a-circle");
+  backdrop.setAttribute("radius", String(STAND_VISUAL_TOKENS.SPINNER_BACKDROP_RADIUS));
+  backdrop.setAttribute("segments", String(STAND_VISUAL_TOKENS.SPINNER_RING_SEGMENTS));
+  backdrop.setAttribute(
+    "material",
+    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}; opacity: ${STAND_VISUAL_TOKENS.SPINNER_BACKDROP_OPACITY}; transparent: true; depthWrite: false`,
+  );
+
+  const ring = document.createElement("a-ring");
+  ring.setAttribute("position", "0 0 0.002");
+  ring.setAttribute("radius-inner", String(STAND_VISUAL_TOKENS.SPINNER_RING_RADIUS_INNER));
+  ring.setAttribute("radius-outer", String(STAND_VISUAL_TOKENS.SPINNER_RING_RADIUS_OUTER));
+  ring.setAttribute("theta-length", String(STAND_VISUAL_TOKENS.SPINNER_RING_THETA_LENGTH_DEG));
+  ring.setAttribute("segments-theta", String(STAND_VISUAL_TOKENS.SPINNER_RING_SEGMENTS));
+  ring.setAttribute("material", `shader: flat; color: ${accentColor}; side: double`);
+  ring.setAttribute(
+    "animation__spinner_rotate",
+    `property: rotation; from: 0 0 0; to: 0 0 -360; loop: true; dur: ${STAND_VISUAL_TOKENS.SPINNER_ROTATE_DUR_MS}; easing: linear`,
+  );
+
+  spinner.append(backdrop, ring);
+  return spinner;
 }
 
 function buildStandDom(
@@ -374,31 +454,11 @@ function buildStandDom(
   mediaGroup.setAttribute("position", STAND_VISUAL_TOKENS.MEDIA_GROUP_POS);
   mediaGroup.setAttribute("cv-interactive-feedback", "hoverScale: 1.03; hoverZLift: 0.02");
 
-  const leftPlane = document.createElement("a-plane");
-  leftPlane.setAttribute("class", "cv-stand-left-plane");
-  leftPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
-  leftPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  leftPlane.setAttribute("position", "0 0 0");
-  leftPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-  leftPlane.setAttribute(
-    "material",
-    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-  );
-  leftPlane.setAttribute("visible", "false");
+  const leftPlane = createMediaEyePlane("cv-stand-left-plane");
+  const rightPlane = createMediaEyePlane("cv-stand-right-plane");
+  const loadingSpinner = createMediaSpinner(accentColor);
 
-  const rightPlane = document.createElement("a-plane");
-  rightPlane.setAttribute("class", "cv-stand-right-plane");
-  rightPlane.setAttribute("width", String(STAND_DIMENSIONS.MAX_MEDIA_WIDTH_M));
-  rightPlane.setAttribute("height", String(STAND_DIMENSIONS.MAX_MEDIA_HEIGHT_M));
-  rightPlane.setAttribute("position", "0 0 0");
-  rightPlane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-  rightPlane.setAttribute(
-    "material",
-    `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-  );
-  rightPlane.setAttribute("visible", "false");
-
-  mediaGroup.append(leftPlane, rightPlane, videoBadge);
+  mediaGroup.append(leftPlane, rightPlane, loadingSpinner, videoBadge);
 
   const controlBar = document.createElement("a-entity");
   controlBar.setAttribute("class", "cv-stand-control-bar");
@@ -599,6 +659,7 @@ function buildStandDom(
     headerText,
     countBadge,
     mediaGroup,
+    loadingSpinner,
     videoBadge,
     emptyPlaceholder,
     leftPlane,
@@ -624,16 +685,19 @@ function applyMaterialTexture(
 ): void {
   const prevSrc = plane.getAttribute("src") ?? "";
   if (texture) {
-    plane.setAttribute("color", "#ffffff");
-    plane.setAttribute("material", "shader: flat; color: #ffffff");
-  } else if (fallbackSrc.length === 0 || prevSrc !== fallbackSrc) {
-    plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
-    plane.setAttribute(
-      "material",
-      `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
-    );
+    plane.setAttribute("color", STAND_VISUAL_TOKENS.MEDIA_ACTIVE_COLOR);
+    // Clear map src synchronously inside material so MutationObserver does not fire setMap(null) after VideoTexture assignment
+    plane.setAttribute("material", STAND_VISUAL_TOKENS.MEDIA_ACTIVE_MATERIAL);
+  } else {
+    if (fallbackSrc.length === 0 || prevSrc !== fallbackSrc) {
+      plane.setAttribute("color", STAND_VISUAL_TOKENS.SURFACE_COLOR);
+      plane.setAttribute(
+        "material",
+        `shader: flat; color: ${STAND_VISUAL_TOKENS.SURFACE_COLOR}`,
+      );
+    }
+    plane.setAttribute("src", fallbackSrc);
   }
-  plane.setAttribute("src", fallbackSrc);
   const obj3D = (plane as unknown as {
     object3D?: {
       traverse?: (cb: (node: unknown) => void) => void;
@@ -731,6 +795,7 @@ export function createMediaStandComponentDefinition(
       els.emptyPlaceholder.setAttribute("visible", "true");
       els.countBadge.setAttribute("visible", "false");
       els.videoBadge.setAttribute("visible", "false");
+      els.loadingSpinner.setAttribute("visible", "false");
       els.leftPlane.setAttribute("visible", "false");
       els.rightPlane.setAttribute("visible", "false");
       setToggleClass(els.leftPlane, "clickable", false);
@@ -769,9 +834,15 @@ export function createMediaStandComponentDefinition(
 
     const isVideo = instance.carousel.isCurrentVideo();
     const isHalfSBS = instance.carousel.isCurrentHalfSBS();
-    const isVR = instance.data.viewMode.toLowerCase() === "vr";
+    const effectiveHalfSBS = isHalfSBS && (!isVideo || instance.isPlayingLiveVideo);
+    const isVR =
+      instance.data.viewMode.toLowerCase() === STAND_VISUAL_TOKENS.VR_MODE_VALUE;
 
     els.videoBadge.setAttribute("visible", String(!isInspecting && isVideo));
+    els.loadingSpinner.setAttribute(
+      "visible",
+      String(isInspecting && isVideo && instance.isLoadingVideo),
+    );
 
     const dims = computeContainDimensions(
       item.width ?? 0,
@@ -786,22 +857,20 @@ export function createMediaStandComponentDefinition(
       `${badgePos.x} ${badgePos.y} ${badgePos.z}`,
     );
 
-    const stereoLeft = `eye: LEFT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
-    const stereoRight = `eye: RIGHT; isHalfSBS: ${isHalfSBS}; viewMode: ${instance.data.viewMode}`;
+    const stereoLeft = `eye: LEFT; isHalfSBS: ${effectiveHalfSBS}; viewMode: ${instance.data.viewMode}`;
+    const stereoRight = `eye: RIGHT; isHalfSBS: ${effectiveHalfSBS}; viewMode: ${instance.data.viewMode}`;
 
-    els.leftPlane.setAttribute("width", String(dims.width));
-    els.leftPlane.setAttribute("height", String(dims.height));
+    applyMediaPlaneGeometry(els.leftPlane, dims.width, dims.height);
     els.leftPlane.setAttribute("cv-stereo-media", stereoLeft);
     els.leftPlane.setAttribute("visible", "true");
     setToggleClass(els.leftPlane, "clickable", !isInspecting);
 
-    const showRightPlane = isHalfSBS && isVR;
-    els.rightPlane.setAttribute("width", String(dims.width));
-    els.rightPlane.setAttribute("height", String(dims.height));
+    const showRightPlane = effectiveHalfSBS && isVR;
+    applyMediaPlaneGeometry(els.rightPlane, dims.width, dims.height);
     els.rightPlane.setAttribute("cv-stereo-media", stereoRight);
     els.rightPlane.setAttribute("visible", String(showRightPlane));
 
-    if (!isInspecting || !isVideo) {
+    if (!isInspecting || !isVideo || !instance.isPlayingLiveVideo) {
       const staticSrc = isVideo ? (item.posterUrl ?? "") : item.mediaUrl;
       applyMaterialTexture(els.leftPlane, null, staticSrc);
       applyMaterialTexture(els.rightPlane, null, staticSrc);
@@ -970,32 +1039,48 @@ export function createMediaStandComponentDefinition(
         videoController.stopAndRelease();
         instance.ownsActiveVideo = false;
       }
+      instance.isLoadingVideo = false;
+      instance.isPlayingLiveVideo = false;
       instance.carousel.setPlaying(false);
       renderCarouselSlide(instance);
       return;
     }
 
     const activeSlideId = item.id;
+    const epoch = instance.transitionEpoch;
     instance.ownsActiveVideo = true;
+    instance.isLoadingVideo = true;
+    instance.isPlayingLiveVideo = false;
+    renderCarouselSlide(instance);
     resolveSpatialMediaAudio().setStandWorldPosition(
       instance.inspectionTargetPosition ?? resolveStandWorldPosition(instance.el),
     );
     const texture = await videoController.playVideo(item.mediaUrl);
 
     if (
+      instance.transitionEpoch !== epoch ||
       instance.localState !== InspectionState.INSPECTING ||
       instance.carousel.getCurrentItem()?.id !== activeSlideId
     ) {
       return;
     }
 
+    instance.isLoadingVideo = false;
+    instance.isPlayingLiveVideo = Boolean(texture);
     instance.carousel.setPlaying(videoController.isPlaying());
     instance.carousel.setMuted(videoController.isMuted());
 
     if (instance.elements) {
-      const videoSrcToken = `#${SHARED_VIDEO_ELEMENT_ID}`;
-      applyMaterialTexture(instance.elements.leftPlane, texture, videoSrcToken);
-      applyMaterialTexture(instance.elements.rightPlane, texture, videoSrcToken);
+      const isHalfSBS = instance.carousel.isCurrentHalfSBS();
+      const isVR =
+        instance.data.viewMode.toLowerCase() === STAND_VISUAL_TOKENS.VR_MODE_VALUE;
+      const fallbackPoster = item.posterUrl ?? "";
+      applyMaterialTexture(instance.elements.leftPlane, texture, fallbackPoster);
+      if (isHalfSBS && isVR && texture) {
+        applyMaterialTexture(instance.elements.rightPlane, texture, fallbackPoster);
+      } else {
+        applyMaterialTexture(instance.elements.rightPlane, null, "");
+      }
     }
     renderCarouselSlide(instance);
   }
@@ -1275,6 +1360,8 @@ export function createMediaStandComponentDefinition(
       );
       this.localState = InspectionState.IDLE;
       this.ownsActiveVideo = false;
+      this.isLoadingVideo = false;
+      this.isPlayingLiveVideo = false;
       this.cleanupListeners = [];
       this.transitionEpoch = 0;
       this.panelDelayTimer = null;
@@ -1355,6 +1442,8 @@ export function createMediaStandComponentDefinition(
             resolveVideoController().stopAndRelease();
             this.ownsActiveVideo = false;
           }
+          this.isLoadingVideo = false;
+          this.isPlayingLiveVideo = false;
           this.carousel.reset();
           this.localState = InspectionState.IDLE;
           restoreGalleryTransform(this);
@@ -1409,6 +1498,8 @@ export function createMediaStandComponentDefinition(
         resolveVideoController().stopAndRelease();
         this.ownsActiveVideo = false;
       }
+      this.isLoadingVideo = false;
+      this.isPlayingLiveVideo = false;
     },
 
     getLocalState: function (this: MediaStandComponentInstance) {
@@ -1453,6 +1544,8 @@ export function createMediaStandComponentDefinition(
         this.ownsActiveVideo = false;
       }
 
+      this.isLoadingVideo = false;
+      this.isPlayingLiveVideo = false;
       this.carousel.reset();
       this.inspectionTargetPosition = null;
       this.localState = InspectionState.IDLE;
@@ -1466,6 +1559,8 @@ export function createMediaStandComponentDefinition(
       if (this.carousel.isEmpty() || this.localState !== InspectionState.INSPECTING) {
         return;
       }
+      this.isLoadingVideo = false;
+      this.isPlayingLiveVideo = false;
       this.carousel.next();
       getSharedSfxPlayer().play(SfxId.CAROUSEL_STEP);
       renderCarouselSlide(this);
@@ -1478,6 +1573,8 @@ export function createMediaStandComponentDefinition(
       if (this.carousel.isEmpty() || this.localState !== InspectionState.INSPECTING) {
         return;
       }
+      this.isLoadingVideo = false;
+      this.isPlayingLiveVideo = false;
       this.carousel.prev();
       getSharedSfxPlayer().play(SfxId.CAROUSEL_STEP);
       renderCarouselSlide(this);
