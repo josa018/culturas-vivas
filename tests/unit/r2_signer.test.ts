@@ -129,26 +129,34 @@ describe("api/_r2-signer", () => {
     );
     expect(result.expiresInSeconds).toBe(300);
 
-    // Independently verify AWS SigV4 HMAC computation for GET with sorted query params
+    // Independently verify AWS SigV4 HMAC computation for GET using ASCII code-point order ('X' 0x58 < 'r' 0x72)
+    expect(Array.from(parsed.searchParams.keys())).toEqual([
+      "X-Amz-Algorithm",
+      "X-Amz-Credential",
+      "X-Amz-Date",
+      "X-Amz-Expires",
+      "X-Amz-SignedHeaders",
+      "response-content-disposition",
+      "X-Amz-Signature",
+    ]);
+
     const encodeRfc = (v: string) =>
       encodeURIComponent(v).replace(
         /[!'()*]/g,
         (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
       );
     const canonicalQuery = [
-      ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
-      ["X-Amz-Credential", "AKIAIOSFODNN7EXAMPLE/20261118/auto/s3/aws4_request"],
-      ["X-Amz-Date", "20261118T120000Z"],
-      ["X-Amz-Expires", "300"],
-      ["X-Amz-SignedHeaders", "host"],
-      [
-        "response-content-disposition",
-        'attachment; filename="estambre-ceremonial.webp"',
-      ],
-    ]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${encodeRfc(k)}=${encodeRfc(v)}`)
-      .join("&");
+      `X-Amz-Algorithm=${encodeRfc("AWS4-HMAC-SHA256")}`,
+      `X-Amz-Credential=${encodeRfc("AKIAIOSFODNN7EXAMPLE/20261118/auto/s3/aws4_request")}`,
+      `X-Amz-Date=${encodeRfc("20261118T120000Z")}`,
+      `X-Amz-Expires=${encodeRfc("300")}`,
+      `X-Amz-SignedHeaders=${encodeRfc("host")}`,
+      `response-content-disposition=${encodeRfc('attachment; filename="estambre-ceremonial.webp"')}`,
+    ].join("&");
+
+    expect(parsed.search.startsWith(`?${canonicalQuery}&X-Amz-Signature=`)).toBe(
+      true,
+    );
 
     const canonicalRequest = [
       "GET",
@@ -173,5 +181,52 @@ describe("api/_r2-signer", () => {
     const expectedSig = hmac(kSigning, stringToSign).toString("hex");
 
     expect(parsed.searchParams.get("X-Amz-Signature")).toBe(expectedSig);
+  });
+
+  it("matches Cloudflare R2 CanonicalRequest SHA-256 digest for real presigned attachment download parameters", () => {
+    const r2Download = signAwsV4PresignedDownloadUrl({
+      accountId: "82c53a4fbecf44d5072a8972d27cf15b",
+      accessKeyId: "5aa86895e633854558126c56e01b8407",
+      secretAccessKey: "test-secret-access-key",
+      bucket: "culturas-vivas-media",
+      objectKey:
+        "rooms/wixarika/cosmovision/6a5c3969-8edf-4387-b9de-b3530874b2ea.webp",
+      filename: "altar-y-figura-ceremonial-en-xiriki.webp",
+      expiresSeconds: 300,
+      now: () => new Date("2026-11-24T19:14:43.000Z"),
+    });
+
+    const parsed = new URL(r2Download.url);
+    const rawQueryWithoutSig = parsed.search
+      .slice(1)
+      .replace(/&X-Amz-Signature=[0-9a-f]+$/, "");
+
+    const canonicalRequest = [
+      "GET",
+      parsed.pathname,
+      rawQueryWithoutSig,
+      `host:${parsed.host}\n`,
+      "host",
+      "UNSIGNED-PAYLOAD",
+    ].join("\n");
+
+    const digest = sha256Hex(canonicalRequest);
+    expect(digest).toBe(
+      "b9801b038d98686528376cd57c3d1e8ef850f9075992a87706ca4b155121f08d",
+    );
+
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      "20261124T191443Z",
+      "20261124/auto/s3/aws4_request",
+      digest,
+    ].join("\n");
+    const kDate = hmac("AWS4test-secret-access-key", "20261124");
+    const kRegion = hmac(kDate, "auto");
+    const kService = hmac(kRegion, "s3");
+    const kSigning = hmac(kService, "aws4_request");
+    expect(parsed.searchParams.get("X-Amz-Signature")).toBe(
+      hmac(kSigning, stringToSign).toString("hex"),
+    );
   });
 });

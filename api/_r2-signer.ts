@@ -71,6 +71,10 @@ function encodeRfc3986(value: string): string {
   );
 }
 
+function compareAscii(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function encodeUriPath(path: string): string {
   return path
     .split("/")
@@ -133,25 +137,29 @@ function buildPresignedUrlCore(params: {
   const credentialScope = `${dateStamp}/${AWS_SIGV4_CONSTANTS.REGION}/${AWS_SIGV4_CONSTANTS.SERVICE}/${AWS_SIGV4_CONSTANTS.REQUEST_TYPE}`;
 
   const sortedHeaderPairs = [...signedHeaderPairs].sort(([a], [b]) =>
-    a.localeCompare(b),
+    compareAscii(a, b),
   );
   const signedHeaders = sortedHeaderPairs.map(([k]) => k).join(";");
   const canonicalHeaders = sortedHeaderPairs
     .map(([k, v]) => `${k}:${v}\n`)
     .join("");
 
-  const queryParams: Array<[string, string]> = [
+  const encodedQueryParams: Array<[string, string]> = [
     ["X-Amz-Algorithm", AWS_SIGV4_CONSTANTS.ALGORITHM],
     ["X-Amz-Credential", `${credentials.accessKeyId}/${credentialScope}`],
     ["X-Amz-Date", amzDate],
     ["X-Amz-Expires", String(expiresSeconds)],
     ["X-Amz-SignedHeaders", signedHeaders],
     ...(params.extraQueryParams ?? []),
-  ];
-  queryParams.sort(([a], [b]) => a.localeCompare(b));
+  ].map(([k, v]) => [encodeRfc3986(k), encodeRfc3986(v)]);
 
-  const canonicalQuery = queryParams
-    .map(([k, v]) => `${encodeRfc3986(k)}=${encodeRfc3986(v)}`)
+  // AWS SigV4 requires ASCII/UTF-8 byte-order sorting by encoded parameter name, then value
+  encodedQueryParams.sort(
+    ([ak, av], [bk, bv]) => compareAscii(ak, bk) || compareAscii(av, bv),
+  );
+
+  const canonicalQuery = encodedQueryParams
+    .map(([k, v]) => `${k}=${v}`)
     .join("&");
 
   const canonicalRequest = [
