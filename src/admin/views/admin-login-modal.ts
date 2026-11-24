@@ -48,11 +48,7 @@ export class AdminLoginModalView {
     title.className = ADMIN_UI_CLASSES.TITLE;
     title.textContent = ADMIN_UI_TEXT.LOGIN_TITLE;
 
-    const subtitle = document.createElement("p");
-    subtitle.className = ADMIN_UI_CLASSES.SUBTITLE;
-    subtitle.textContent = ADMIN_UI_TEXT.LOGIN_SUBTITLE;
-
-    header.append(title, subtitle);
+    header.append(title);
 
     const form = document.createElement("form");
     form.className = ADMIN_UI_CLASSES.FORM;
@@ -115,7 +111,10 @@ export class AdminLoginModalView {
     togglePasswordBtn.className = ADMIN_UI_CLASSES.PASSWORD_TOGGLE_BTN;
     togglePasswordBtn.textContent = ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
     togglePasswordBtn.setAttribute("data-action", "toggle-password");
-    togglePasswordBtn.setAttribute("aria-label", ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA);
+    togglePasswordBtn.setAttribute(
+      "aria-label",
+      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
     togglePasswordBtn.setAttribute("aria-pressed", "false");
     togglePasswordBtn.addEventListener("click", () => {
       const shouldReveal = passwordInput.type === "password";

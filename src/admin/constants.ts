@@ -125,17 +125,15 @@ export const ADMIN_HTTP_ERROR_TEXT = {
 
 export const ADMIN_UI_TEXT = {
   // Modal
-  LOGIN_TITLE: "Panel de la Biblioteca",
-  LOGIN_SUBTITLE:
-    "Ingresa con tu usuario para consultar visitas y actualizar fotos, videos o música del museo.",
+  LOGIN_TITLE: "Acceso Administrativo",
   LOGIN_USER_LABEL: "Usuario",
   LOGIN_PASSWORD_LABEL: "Contraseña",
   LOGIN_SHOW_PASSWORD: "Mostrar",
   LOGIN_HIDE_PASSWORD: "Ocultar",
   LOGIN_SHOW_PASSWORD_ARIA: "Mostrar u ocultar contraseña",
-  LOGIN_SUBMIT_LABEL: "Entrar al panel",
+  LOGIN_SUBMIT_LABEL: "Entrar",
   LOGIN_SUBMITTING_LABEL: "Verificando acceso...",
-  LOGIN_RETURN_LINK: "← Volver al recorrido del museo",
+  LOGIN_RETURN_LINK: "← Volver a la experiencia VR",
   LOGIN_ERROR_MESSAGE:
     "El usuario o la contraseña no coinciden. Revísalos e inténtalo de nuevo.",
   LOGIN_SERVICE_ERROR_MESSAGE:
@@ -143,7 +141,7 @@ export const ADMIN_UI_TEXT = {
 
   // Header
   HEADER_TITLE: "Culturas Vivas",
-  HEADER_SUBTITLE: "Panel de Biblioteca",
+  HEADER_SUBTITLE: "Panel de Administración",
   HEADER_USER_PREFIX: "Sesión: ",
   HEADER_LOGOUT_BTN: "Cerrar sesión",
   HEADER_EXIT_BTN: "Ver recorrido",
@@ -166,12 +164,12 @@ export const ADMIN_UI_TEXT = {
   SURVEY_AVG_PREFIX: "★",
   SURVEY_NO_RATINGS: "Sin calificaciones",
   TABLE_COL_TIME: "Fecha y hora",
-  TABLE_COL_MODE: "Dispositivo",
+  TABLE_COL_MODE: "Modo",
   TABLE_COL_RATING: "Calificación",
   TABLE_COL_FEEDBACK: "Comentario",
   NO_SURVEYS: "Aún no hay opiniones registradas.",
-  VIEW_MODE_VR: "Visor VR",
-  VIEW_MODE_2D: "Celular / PC",
+  VIEW_MODE_VR: "VR",
+  VIEW_MODE_2D: "Táctil",
   VIEW_MODE_UNKNOWN: "—",
   STAR_FILLED: "★",
   STAR_EMPTY: "☆",
@@ -179,29 +177,29 @@ export const ADMIN_UI_TEXT = {
   RATING_SCALE_SUFFIX: " / 5.0",
 
   // Tabs & Multimedia CMS
-  TAB_TELEMETRY: "Visitas y Opiniones",
+  TAB_TELEMETRY: "Estadísticas",
   TAB_MEDIA: "Fotos y Videos",
   TAB_PLAYLISTS: "Música de Salas",
   MEDIA_SECTION_TITLE: "Fotos y Videos de los Stands",
   MEDIA_SECTION_SUBTITLE:
-    "Elige primero la sala y la sección donde quieres agregar o revisar archivos.",
+    "Elige primero la sala y la sección que quieres gestionar.",
   MEDIA_QUOTA_SUFFIX: " usados",
-  MEDIA_ROOM_LABEL: "Sala / Cultura",
-  MEDIA_STAND_LABEL: "Sección (Stand)",
+  MEDIA_ROOM_LABEL: "Sala",
+  MEDIA_STAND_LABEL: "Stand",
   MEDIA_FILE_LABEL: "Foto (JPG, PNG, WebP) o Video (MP4)",
   MEDIA_FILE_HINT: "Máximo 5 MB para fotos y 100 MB para videos.",
   MEDIA_TITLE_LABEL: "Título que verá el visitante",
   MEDIA_TITLE_PLACEHOLDER: "Ej. Tejido tradicional de chaquira",
-  MEDIA_CREATOR_LABEL: "Autor o fotógrafo (opcional)",
+  MEDIA_CREATOR_LABEL: "Créditos (opcional)",
   MEDIA_CREATOR_PLACEHOLDER: "Ej. María Cruz",
   MEDIA_DESC_LABEL: "Descripción breve",
   MEDIA_DESC_PLACEHOLDER: "Explica brevemente qué muestra esta pieza",
   MEDIA_FORMAT_LABEL: "Tipo de vista",
   MEDIA_FORMAT_2D: "Normal (foto o video común)",
   MEDIA_FORMAT_HALF_SBS: "Vista 3D para Visor VR (pantalla dividida)",
-  MEDIA_TECH_HINT_SUMMARY: "¿Qué significa Vista 3D y qué archivos acepta?",
+  MEDIA_TECH_HINT_SUMMARY: "¿Qué es el tipo de vista?",
   MEDIA_TECH_HINT_BODY:
-    "Elige 'Normal' para cualquier foto o video común. Usa 'Vista 3D (Half-SBS)' solo si la imagen o video MP4 viene dividido en dos mitades iguales (izquierda y derecha). Las fotos se optimizan automáticamente a WebP (hasta 2048 px) y los videos MP4 deben pesar máximo 100 MB.",
+    "Elige 'Normal' para cualquier foto o video común. Usa 'Vista 3D (Half-SBS)' solo si la imagen o video MP4 viene dividido en dos mitades iguales (izquierda y derecha).",
   MEDIA_KIND_IMAGE_2D: "Foto normal",
   MEDIA_KIND_IMAGE_SBS: "Foto 3D (Visor VR)",
   MEDIA_KIND_VIDEO_2D: "Video normal",
@@ -241,13 +239,13 @@ export const ADMIN_UI_TEXT = {
   MEDIA_ERROR_DOWNLOAD: "No se pudo preparar la descarga del archivo.",
 
   // Room Music Playlists CMS
-  AUDIO_SECTION_TITLE: "Música Ambiental por Sala",
+  AUDIO_SECTION_TITLE: "Música Ambiental para las Salas",
   AUDIO_SECTION_SUBTITLE:
     "Si una sala no tiene canciones propias, sonará automáticamente la música del Vestíbulo.",
-  AUDIO_ROOM_LABEL: "Sala / Cultura",
+  AUDIO_ROOM_LABEL: "Sala",
   AUDIO_PLAYBACK_MODE_LABEL: "Orden de reproducción",
-  AUDIO_MODE_SEQUENTIAL: "En orden (1, 2, 3...)",
-  AUDIO_MODE_SHUFFLE: "Mezclado (sin repetir seguida)",
+  AUDIO_MODE_SEQUENTIAL: "Fijo",
+  AUDIO_MODE_SHUFFLE: "Aleatorio",
   AUDIO_FILE_LABEL: "Archivo de música (.mp3 o .m4a, máx. 20 MB)",
   AUDIO_TITLE_LABEL: "Nombre de la canción o pieza",
   AUDIO_TITLE_PLACEHOLDER: "Ej. Son ceremonial de bienvenida",
@@ -255,11 +253,9 @@ export const ADMIN_UI_TEXT = {
   AUDIO_CREDIT_PLACEHOLDER: "Ej. Colectivo Musical Nayar",
   AUDIO_LICENSE_LABEL: "Permiso o nota de autorización (opcional)",
   AUDIO_LICENSE_PLACEHOLDER: "Ej. Autorización de la comunidad",
-  AUDIO_GUIDANCE_TEXT:
-    "Sube música en formato MP3 o M4A (máximo 20 MB por canción) para acompañar el recorrido de esta sala.",
-  AUDIO_TECH_HINT_SUMMARY: "Recomendaciones técnicas para exportar audio",
+  AUDIO_TECH_HINT_SUMMARY: "Recomendaciones técnicas para los audios",
   AUDIO_TECH_HINT_BODY:
-    "Recomendación VR: exporta en AAC-LC (.m4a) o MP3 a 128-192 kbps (máx. 20 MiB) normalizado a -16 LUFS.",
+    "Usar archivos AAC-LC (.m4a) o MP3 a 128-192 kbps normalizado a -16 LUFS.",
   AUDIO_FORMAT_MP3: "Audio MP3",
   AUDIO_FORMAT_M4A: "Audio M4A",
   AUDIO_UPLOAD_BTN: "Agregar canción",

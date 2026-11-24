@@ -158,10 +158,6 @@ export class PlaylistManagerWidget {
       }),
     );
 
-    const guidance = document.createElement("p");
-    guidance.className = ADMIN_UI_CLASSES.AUDIO_GUIDANCE;
-    guidance.textContent = ADMIN_UI_TEXT.AUDIO_GUIDANCE_TEXT;
-
     const techDetails = createTechnicalHintDetails(
       ADMIN_UI_TEXT.AUDIO_TECH_HINT_SUMMARY,
       ADMIN_UI_TEXT.AUDIO_TECH_HINT_BODY,
@@ -279,7 +275,6 @@ export class PlaylistManagerWidget {
       errorBanner,
       successBanner,
       controlsRow,
-      guidance,
       form,
       listEl,
     );
