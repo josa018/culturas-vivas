@@ -990,6 +990,52 @@ describe("Admin UI Widgets & AdminController", () => {
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     expect(posterControls.hidden).toBe(false);
 
+    // Capturing preview passes cropHalfSbsLeft: false in 2D mode, and toggling format to SBS auto-refreshes preview
+    const captureBtn = parent.querySelector(
+      '[data-action="capture-poster-preview"]',
+    ) as HTMLButtonElement;
+    const formatSelect = parent.querySelector(
+      '[data-upload-field="format"]',
+    ) as HTMLSelectElement;
+    const customPosterInput = parent.querySelector(
+      '[data-upload-field="customPoster"]',
+    ) as HTMLInputElement;
+    captureBtn.click();
+    await vi.waitFor(() => {
+      expect(mockProcessor.extractVideoPoster).toHaveBeenCalledWith(
+        videoFile,
+        0.5,
+        { cropHalfSbsLeft: false },
+      );
+    });
+
+    formatSelect.value = "SBS";
+    formatSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(mockProcessor.extractVideoPoster).toHaveBeenLastCalledWith(
+        videoFile,
+        0.5,
+        { cropHalfSbsLeft: true },
+      );
+    });
+
+    // When custom poster is chosen, toggling format must not overwrite custom preview
+    const callsBeforeCustom = (
+      mockProcessor.extractVideoPoster as ReturnType<typeof vi.fn>
+    ).mock.calls.length;
+    const customThumb = new File(["img"], "custom.png", { type: "image/png" });
+    Object.defineProperty(customPosterInput, "files", {
+      value: [customThumb],
+      configurable: true,
+    });
+    formatSelect.value = "2D";
+    formatSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+    expect(
+      (mockProcessor.extractVideoPoster as ReturnType<typeof vi.fn>).mock.calls
+        .length,
+    ).toBe(callsBeforeCustom);
+
     // Inline edit on video reveals poster file replacement
     mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
     const editBtn = parent.querySelector(

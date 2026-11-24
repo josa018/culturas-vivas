@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { SHARED_VIDEO_ELEMENT_ID } from "../../src/experience/constants";
+import {
+  RENDERER_QUALITY_TOKENS,
+  SHARED_VIDEO_ELEMENT_ID,
+} from "../../src/experience/constants";
 import {
   SharedVideoController,
   type DisposableVideoTexture,
@@ -239,5 +242,123 @@ describe("SharedVideoController", () => {
     active = false;
     expect(await controller.togglePause()).toBe(false);
     expect(controller.isPlaying()).toBe(false);
+  });
+
+  it("assigns SRGBColorSpace and needsUpdate on VideoTexture created by default factory", async () => {
+    const { video } = createMockVideoElement();
+    const createdTextures: Array<{ colorSpace?: string; needsUpdate: boolean }> = [];
+    class MockVideoTexture {
+      public colorSpace = "";
+      public needsUpdate = false;
+      public dispose = vi.fn();
+      constructor(_el: VideoElementLike) {
+        createdTextures.push(this);
+      }
+    }
+
+    const previousAframe = (globalThis as { AFRAME?: unknown }).AFRAME;
+    (globalThis as { AFRAME?: unknown }).AFRAME = {
+      THREE: {
+        SRGBColorSpace: "srgb",
+        VideoTexture: MockVideoTexture,
+      },
+    };
+
+    try {
+      const controller = new SharedVideoController({
+        createVideoElement: () => video,
+      });
+      const texture = await controller.playVideo("https://cdn.example.com/sbs.mp4");
+
+      expect(texture).not.toBeNull();
+      expect(createdTextures).toHaveLength(1);
+      expect(createdTextures[0]?.colorSpace).toBe("srgb");
+      expect(createdTextures[0]?.needsUpdate).toBe(true);
+    } finally {
+      if (previousAframe === undefined) {
+        delete (globalThis as { AFRAME?: unknown }).AFRAME;
+      } else {
+        (globalThis as { AFRAME?: unknown }).AFRAME = previousAframe;
+      }
+    }
+  });
+
+  it("configures trilinear mipmap filtering and anisotropy on VideoTexture with token fallbacks", async () => {
+    const previousAframe = (globalThis as { AFRAME?: unknown }).AFRAME;
+    const createdTextures: Array<{
+      colorSpace?: string;
+      minFilter: number;
+      magFilter: number;
+      generateMipmaps: boolean;
+      anisotropy: number;
+      needsUpdate: boolean;
+    }> = [];
+
+    class MockVideoTexture {
+      public colorSpace = "";
+      public minFilter = 0;
+      public magFilter = 0;
+      public generateMipmaps = false;
+      public anisotropy = 1;
+      public needsUpdate = false;
+      public dispose = vi.fn();
+      constructor(_el: VideoElementLike) {
+        createdTextures.push(this);
+      }
+    }
+
+    try {
+      (globalThis as { AFRAME?: unknown }).AFRAME = {
+        THREE: {
+          SRGBColorSpace: "srgb",
+          LinearMipmapLinearFilter: 2008,
+          LinearFilter: 2006,
+          VideoTexture: MockVideoTexture,
+        },
+      };
+
+      const { video: videoWithConstants } = createMockVideoElement();
+      const controllerWithConstants = new SharedVideoController({
+        createVideoElement: () => videoWithConstants,
+      });
+      await controllerWithConstants.playVideo("https://cdn.example.com/clip-trilinear.mp4");
+
+      expect(createdTextures[0]).toMatchObject({
+        colorSpace: "srgb",
+        minFilter: 2008,
+        magFilter: 2006,
+        generateMipmaps: true,
+        anisotropy: RENDERER_QUALITY_TOKENS.TEXTURE_ANISOTROPY,
+        needsUpdate: true,
+      });
+
+      (globalThis as { AFRAME?: unknown }).AFRAME = {
+        THREE: {
+          SRGBColorSpace: "srgb",
+          VideoTexture: MockVideoTexture,
+        },
+      };
+
+      const { video: videoWithFallbacks } = createMockVideoElement();
+      const controllerWithFallbacks = new SharedVideoController({
+        createVideoElement: () => videoWithFallbacks,
+      });
+      await controllerWithFallbacks.playVideo("https://cdn.example.com/clip-fallback.mp4");
+
+      expect(createdTextures[1]).toMatchObject({
+        colorSpace: "srgb",
+        minFilter: RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_MIPMAP_LINEAR_FILTER,
+        magFilter: RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_FILTER,
+        generateMipmaps: true,
+        anisotropy: RENDERER_QUALITY_TOKENS.TEXTURE_ANISOTROPY,
+        needsUpdate: true,
+      });
+    } finally {
+      if (previousAframe === undefined) {
+        delete (globalThis as { AFRAME?: unknown }).AFRAME;
+      } else {
+        (globalThis as { AFRAME?: unknown }).AFRAME = previousAframe;
+      }
+    }
   });
 });

@@ -27,11 +27,26 @@ export interface ExtractedVideoPosterResult {
   readonly posterMimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
 }
 
+export interface ExtractVideoPosterOptions {
+  readonly cropHalfSbsLeft?: boolean;
+}
+
 export interface ProcessorCanvas {
   width: number;
   height: number;
   drawImage(
     source: CanvasImageSource,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void;
+  drawImage(
+    source: CanvasImageSource,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
     dx: number,
     dy: number,
     dw: number,
@@ -64,6 +79,7 @@ export interface AdminMediaProcessorDeps {
 }
 
 const BYTES_PER_MIB = 1024 * 1024;
+const HALF_SBS_EYE_DIVISOR = 2;
 
 export function computeScaledDimensions(
   width: number,
@@ -105,8 +121,27 @@ function defaultCreateCanvas(width: number, height: number): ProcessorCanvas {
     set height(value: number) {
       canvas.height = value;
     },
-    drawImage: (source, dx, dy, dw, dh) => {
-      ctx.drawImage(source, dx, dy, dw, dh);
+    drawImage: (
+      source: CanvasImageSource,
+      a: number,
+      b: number,
+      c: number,
+      d: number,
+      e?: number,
+      f?: number,
+      g?: number,
+      h?: number,
+    ) => {
+      if (
+        e !== undefined &&
+        f !== undefined &&
+        g !== undefined &&
+        h !== undefined
+      ) {
+        ctx.drawImage(source, a, b, c, d, e, f, g, h);
+      } else {
+        ctx.drawImage(source, a, b, c, d);
+      }
     },
     toBlob: (mimeType, quality) =>
       new Promise<Blob>((resolve, reject) => {
@@ -323,6 +358,7 @@ export class AdminMediaProcessor {
   public async extractVideoPoster(
     file: Blob,
     seekSeconds?: number,
+    options: ExtractVideoPosterOptions = {},
   ): Promise<ExtractedVideoPosterResult> {
     this.validateMp4File(file);
 
@@ -334,13 +370,31 @@ export class AdminMediaProcessor {
         ADMIN_MEDIA_LIMITS.POSTER_MAX_WIDTH_PX,
       );
       const canvas = this.createCanvas(posterScaled.width, posterScaled.height);
-      canvas.drawImage(
-        handle.source,
-        0,
-        0,
-        posterScaled.width,
-        posterScaled.height,
-      );
+      if (options.cropHalfSbsLeft) {
+        const leftEyeWidth = Math.max(
+          1,
+          Math.floor(handle.videoWidth / HALF_SBS_EYE_DIVISOR),
+        );
+        canvas.drawImage(
+          handle.source,
+          0,
+          0,
+          leftEyeWidth,
+          handle.videoHeight,
+          0,
+          0,
+          posterScaled.width,
+          posterScaled.height,
+        );
+      } else {
+        canvas.drawImage(
+          handle.source,
+          0,
+          0,
+          posterScaled.width,
+          posterScaled.height,
+        );
+      }
       const posterBlob = await canvas.toBlob(
         ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME,
         ADMIN_MEDIA_LIMITS.IMAGE_WEBP_QUALITY,

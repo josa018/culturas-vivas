@@ -18,6 +18,10 @@ import type {
 
 const BYTES_PER_MIB = 1_048_576;
 const PERCENT_MAX = 100;
+const ADMIN_MEDIA_FORMAT = {
+  STANDARD_2D: "2D",
+  HALF_SBS: "SBS",
+} as const;
 
 function resolveMediaKind(
   isVideo: boolean,
@@ -258,7 +262,18 @@ export class MediaManagerWidget {
       }
     });
 
-    capturePreviewBtn.addEventListener("click", () => {
+    const formatSelect = document.createElement("select");
+    formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
+    formatSelect.setAttribute("data-upload-field", "format");
+    const opt2D = document.createElement("option");
+    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
+    opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
+    const optSbs = document.createElement("option");
+    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
+    optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
+    formatSelect.append(opt2D, optSbs);
+
+    const refreshVideoPosterPreview = () => {
       const selectedFile = fileInput.files?.[0];
       if (!selectedFile || !selectedFile.type.startsWith("video/")) {
         return;
@@ -268,14 +283,26 @@ export class MediaManagerWidget {
         Number.isFinite(parsedSeek) && parsedSeek >= 0
           ? parsedSeek
           : ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS;
+      const isHalfSbs = formatSelect.value === ADMIN_MEDIA_FORMAT.HALF_SBS;
       void this.store
-        .previewVideoPoster(selectedFile, seekSeconds)
+        .previewVideoPoster(selectedFile, seekSeconds, isHalfSbs)
         .then((blob) => {
           if (blob) {
             setPreviewBlob(blob);
           }
         })
         .catch(() => {});
+    };
+
+    capturePreviewBtn.addEventListener("click", refreshVideoPosterPreview);
+
+    formatSelect.addEventListener("change", () => {
+      const hasCustomPoster = Boolean(
+        customPosterInput.files && customPosterInput.files.length > 0,
+      );
+      if (!hasCustomPoster) {
+        refreshVideoPosterPreview();
+      }
     });
 
     customPosterInput.addEventListener("change", () => {
@@ -291,17 +318,6 @@ export class MediaManagerWidget {
       customPosterInput,
       posterPreviewImg,
     );
-
-    const formatSelect = document.createElement("select");
-    formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    formatSelect.setAttribute("data-upload-field", "format");
-    const opt2D = document.createElement("option");
-    opt2D.value = "2D";
-    opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
-    const optSbs = document.createElement("option");
-    optSbs.value = "SBS";
-    optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
-    formatSelect.append(opt2D, optSbs);
 
     const submitBtn = document.createElement("button");
     submitBtn.type = "submit";
@@ -328,7 +344,7 @@ export class MediaManagerWidget {
 
       const state = this.store.getState();
       const isVideo = selectedFile.type.startsWith("video/");
-      const isHalfSbs = formatSelect.value === "SBS";
+      const isHalfSbs = formatSelect.value === ADMIN_MEDIA_FORMAT.HALF_SBS;
       const parsedSeek = Number(seekInput.value);
       const posterSeekSeconds =
         Number.isFinite(parsedSeek) && parsedSeek >= 0

@@ -843,4 +843,256 @@ describe("cv-media-stand A-Frame Component", () => {
 
     instance.remove();
   });
+
+  it("configures non-cached plane geometry and binds sRGB VideoTexture directly across 2D to Half-SBS transitions", async () => {
+    const tex0: DisposableVideoTexture = {
+      colorSpace: "srgb",
+      needsUpdate: true,
+      dispose: vi.fn(),
+    };
+    const tex1: DisposableVideoTexture = {
+      colorSpace: "srgb",
+      needsUpdate: true,
+      dispose: vi.fn(),
+    };
+    const textureFactory = vi
+      .fn<() => DisposableVideoTexture>()
+      .mockReturnValueOnce(tex0)
+      .mockReturnValueOnce(tex1);
+
+    const attributes = new Map<string, string>();
+    const video: VideoElementLike = {
+      id: "",
+      src: "",
+      muted: true,
+      paused: true,
+      loop: false,
+      playsInline: true,
+      crossOrigin: null,
+      preload: "metadata",
+      style: {},
+      setAttribute: vi.fn((k: string, v: string) => {
+        attributes.set(k, v);
+      }),
+      removeAttribute: vi.fn((k: string) => {
+        attributes.delete(k);
+        if (k === "src") {
+          video.src = "";
+        }
+      }),
+      play: vi.fn(async () => {
+        video.paused = false;
+      }),
+      pause: vi.fn(() => {
+        video.paused = true;
+      }),
+      load: vi.fn(),
+    };
+    const videoController = new SharedVideoController({
+      createVideoElement: () => video,
+      createVideoTexture: textureFactory,
+    });
+
+    const items: StandMediaItem[] = [
+      {
+        id: "vid-2d",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        title: "Video 2D",
+        creatorName: "",
+        description: "Desc 2D",
+        mediaUrl: "https://cdn.example.com/2d.mp4",
+        posterUrl: "https://cdn.example.com/p0.webp",
+        width: 1920,
+        height: 1080,
+        sortOrder: 0,
+      },
+      {
+        id: "vid-sbs",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+        title: "Video Half-SBS",
+        creatorName: "",
+        description: "Desc SBS",
+        mediaUrl: "https://cdn.example.com/sbs.mp4",
+        posterUrl: "https://cdn.example.com/p1.webp",
+        width: 1080,
+        height: 1920,
+        sortOrder: 1,
+      },
+    ];
+
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+      videoController,
+    });
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Desc",
+        mediaType: ExhibitMediaType.VIDEO_2D,
+        galleryPosition: { x: 0, y: 1.76, z: -3.2 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const leftPlane = el.querySelector(".cv-stand-left-plane") as HTMLElement & {
+      object3D?: { traverse?: (cb: (node: unknown) => void) => void };
+    };
+    const rightPlane = el.querySelector(".cv-stand-right-plane") as HTMLElement & {
+      object3D?: { traverse?: (cb: (node: unknown) => void) => void };
+    };
+
+    const leftMaterial = { map: null as unknown, needsUpdate: false };
+    const rightMaterial = { map: null as unknown, needsUpdate: false };
+    leftPlane.object3D = {
+      traverse: (cb) => cb({ material: leftMaterial }),
+    };
+    rightPlane.object3D = {
+      traverse: (cb) => cb({ material: rightMaterial }),
+    };
+
+    // (a) Initial IDLE geometry includes skipCache: true with 16:9 dimensions
+    expect(leftPlane.getAttribute("geometry")).toContain("primitive: plane");
+    expect(leftPlane.getAttribute("geometry")).toContain("width: 1.5");
+    expect(leftPlane.getAttribute("geometry")).toContain("height: 0.844");
+    expect(leftPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("geometry")).toContain("skipCache: true");
+
+    // (b) Inspecting VIDEO_2D binds tex0 directly on leftPlane via synchronous material src clear
+    const leftSetAttrSpy = vi.spyOn(leftPlane, "setAttribute");
+    const rightSetAttrSpy = vi.spyOn(rightPlane, "setAttribute");
+    await instance.inspect();
+    expect(leftSetAttrSpy).not.toHaveBeenCalledWith("src", "");
+    expect(leftPlane.getAttribute("material")).toContain("shader: flat; color: #ffffff; src: ");
+    expect(leftMaterial.map).toBe(tex0);
+    expect(leftMaterial.needsUpdate).toBe(true);
+    expect(rightPlane.getAttribute("visible")).toBe("false");
+    expect(rightMaterial.map).toBeNull();
+
+    // (c) Advancing to VIDEO_STEREO_SBS updates geometry with skipCache and binds tex1 on both eyes
+    leftSetAttrSpy.mockClear();
+    rightSetAttrSpy.mockClear();
+    await instance.nextSlide();
+    expect(leftPlane.getAttribute("geometry")).toContain("width: 0.534");
+    expect(leftPlane.getAttribute("geometry")).toContain("height: 0.95");
+    expect(leftPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("geometry")).toContain("width: 0.534");
+    expect(rightPlane.getAttribute("geometry")).toContain("height: 0.95");
+    expect(rightPlane.getAttribute("geometry")).toContain("skipCache: true");
+    expect(rightPlane.getAttribute("visible")).toBe("true");
+    expect(leftSetAttrSpy).not.toHaveBeenCalledWith("src", "");
+    expect(rightSetAttrSpy).not.toHaveBeenCalledWith("src", "");
+    expect(leftPlane.getAttribute("material")).toContain("shader: flat; color: #ffffff; src: ");
+    expect(rightPlane.getAttribute("material")).toContain("shader: flat; color: #ffffff; src: ");
+    expect(leftMaterial.map).toBe(tex1);
+    expect(rightMaterial.map).toBe(tex1);
+    expect((leftMaterial.map as DisposableVideoTexture).colorSpace).toBe("srgb");
+    expect(leftMaterial.needsUpdate).toBe(true);
+    expect(rightMaterial.needsUpdate).toBe(true);
+
+    instance.remove();
+  });
+
+  it("renders Half-SBS video poster in 2D mode and toggles loading spinner while playVideo is pending", async () => {
+    let resolvePlay!: (tex: DisposableVideoTexture | null) => void;
+    const deferredTex: DisposableVideoTexture = {
+      colorSpace: "srgb",
+      needsUpdate: true,
+      dispose: vi.fn(),
+    };
+    const playVideoMock = vi.fn(
+      () =>
+        new Promise<DisposableVideoTexture | null>((resolve) => {
+          resolvePlay = resolve;
+        }),
+    );
+
+    const mockVideoController = {
+      playVideo: playVideoMock,
+      stopAndRelease: vi.fn(),
+      togglePause: vi.fn(async () => false),
+      toggleMute: vi.fn(() => true),
+      isPlaying: vi.fn(() => true),
+      isMuted: vi.fn(() => true),
+      subscribeStateChange: vi.fn(() => () => {}),
+    } as unknown as SharedVideoController;
+
+    const items: StandMediaItem[] = [
+      {
+        id: "vid-sbs-loading",
+        roomId: RoomId.WIXARIKA,
+        standId: StandId.ARTE,
+        mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+        title: "Danza SBS",
+        creatorName: "",
+        description: "Desc",
+        mediaUrl: "https://cdn.example.com/sbs.mp4",
+        posterUrl: "https://cdn.example.com/sbs-poster.webp",
+        width: 1920,
+        height: 1080,
+        sortOrder: 0,
+      },
+    ];
+
+    const { el, instance } = createStandHost(items, StandId.ARTE, RoomId.WIXARIKA, {
+      inspectionController,
+      videoController: mockVideoController,
+    });
+    inspectionController.setExhibits([
+      {
+        id: `${RoomId.WIXARIKA}:${StandId.ARTE}`,
+        title: "Arte",
+        description: "Desc",
+        mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+        galleryPosition: { x: 0, y: 1.76, z: -3.2 },
+        galleryRotation: { x: 0, y: 0, z: 0 },
+        autoRotate: false,
+        rotationSpeed: 0,
+      },
+    ]);
+
+    const leftPlane = el.querySelector(".cv-stand-left-plane")!;
+    const rightPlane = el.querySelector(".cv-stand-right-plane")!;
+    const spinner = el.querySelector(".cv-stand-loading-spinner");
+
+    // (a) IDLE shows 2D poster and hidden spinner
+    expect(spinner).not.toBeNull();
+    expect(spinner?.getAttribute("visible")).toBe("false");
+    expect(leftPlane.getAttribute("src")).toBe("https://cdn.example.com/sbs-poster.webp");
+    expect(leftPlane.getAttribute("cv-stereo-media")).toContain("isHalfSBS: false");
+    expect(rightPlane.getAttribute("visible")).toBe("false");
+
+    // (b) Pending playVideo shows spinner over 2D poster
+    const inspectPromise = instance.inspect();
+    await Promise.resolve();
+    expect(spinner?.getAttribute("visible")).toBe("true");
+    expect(leftPlane.getAttribute("cv-stereo-media")).toContain("isHalfSBS: false");
+    expect(rightPlane.getAttribute("visible")).toBe("false");
+
+    // (c) Resolving playVideo hides spinner and enables Half-SBS stereo playback
+    resolvePlay(deferredTex);
+    await inspectPromise;
+    expect(spinner?.getAttribute("visible")).toBe("false");
+    expect(leftPlane.getAttribute("cv-stereo-media")).toContain("isHalfSBS: true");
+    expect(rightPlane.getAttribute("visible")).toBe("true");
+
+    // Re-inspect while pending then returnToGallery clears spinner immediately
+    instance.returnToGallery();
+    const secondInspect = instance.inspect();
+    await Promise.resolve();
+    expect(spinner?.getAttribute("visible")).toBe("true");
+    instance.returnToGallery();
+    expect(spinner?.getAttribute("visible")).toBe("false");
+    resolvePlay(deferredTex);
+    await secondInspect;
+    expect(spinner?.getAttribute("visible")).toBe("false");
+
+    instance.remove();
+  });
 });

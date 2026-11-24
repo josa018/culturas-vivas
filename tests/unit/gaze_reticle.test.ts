@@ -427,4 +427,45 @@ describe("Gaze-Fuse Radial Progress Reticle (cv-gaze-reticle)", () => {
       }),
     ).toBe("CINEMA_HIDDEN");
   });
+
+  it("enables StereoTextureMapper.THREE_LAYER_LEFT on cursor raycaster during init, componentchanged, and tick", async () => {
+    const { StereoTextureMapper } = await import(
+      "../../src/experience/stereo-mapper"
+    );
+    const enableLayer = vi.fn();
+    const cursorEl = document.createElement("a-cursor") as unknown as GazeReticleEntity;
+    cursorEl.components = {
+      raycaster: {
+        raycaster: {
+          layers: {
+            enable: enableLayer,
+          },
+        },
+      },
+    };
+
+    const def = createGazeReticleComponentDefinition({
+      getInspectionState: () => InspectionState.IDLE,
+    });
+    const instance = Object.create(def) as GazeReticleComponentInstance;
+    instance.el = cursorEl;
+    instance.data = {
+      fuseTimeout: INSPECTION_TIMINGS.FUSE_TIMEOUT_MS,
+      accentColor: RETICLE_TOKENS.DEFAULT_ACCENT_COLOR,
+    };
+    instance.init();
+    expect(enableLayer).toHaveBeenCalledWith(StereoTextureMapper.THREE_LAYER_LEFT);
+
+    enableLayer.mockClear();
+    cursorEl.dispatchEvent(
+      new CustomEvent("componentchanged", { detail: { name: "raycaster" } }),
+    );
+    expect(enableLayer).toHaveBeenCalledWith(StereoTextureMapper.THREE_LAYER_LEFT);
+
+    enableLayer.mockClear();
+    instance.tick();
+    expect(enableLayer).toHaveBeenCalledWith(StereoTextureMapper.THREE_LAYER_LEFT);
+
+    instance.remove();
+  });
 });
