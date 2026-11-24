@@ -120,7 +120,7 @@ export class AdminDashboardView {
     telemetryPanel.setAttribute("data-admin-panel", "telemetry");
 
     const grid = document.createElement("div");
-    grid.className = ADMIN_UI_CLASSES.GRID_LAYOUT;
+    grid.className = `${ADMIN_UI_CLASSES.GRID_LAYOUT} ${ADMIN_UI_CLASSES.GRID_TELEMETRY}`;
 
     this.chartWidget = new AttendanceChartWidget(this.dashboardStore);
     this.chartWidget.mount(grid);

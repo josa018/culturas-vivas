@@ -9,12 +9,21 @@ import {
   RoomId,
   StandId,
 } from "../shared/room-catalog";
+import { mapAdminErrorMessage } from "./admin-error-mapper";
 import {
   AdminHttpError,
   createDefaultAdminFetcher,
   type AdminNetworkFetcher,
 } from "./admin-http-client";
-import { ADMIN_MEDIA_ENDPOINTS, ADMIN_MEDIA_LIMITS } from "./constants";
+import {
+  ADMIN_MEDIA_ENDPOINTS,
+  ADMIN_MEDIA_LIMITS,
+  ADMIN_UI_TEXT,
+} from "./constants";
+import {
+  createDefaultAdminDownloadTrigger,
+  type AdminDownloadTrigger,
+} from "./download-trigger";
 import { AdminMediaProcessor } from "./media-processor";
 
 export interface AdminMediaItemRecord extends StandMediaItem {
@@ -28,6 +37,7 @@ export interface AdminMediaState {
   readonly isLoading: boolean;
   readonly isUploading: boolean;
   readonly error: string | null;
+  readonly successMessage: string | null;
   readonly selectedRoomId: RoomId;
   readonly selectedStandId: StandId;
   readonly storageUsageBytes: number;
@@ -60,6 +70,12 @@ export interface AdminMediaStoreOptions {
   readonly onUnauthorized: () => void;
   readonly fetcher?: AdminNetworkFetcher;
   readonly processor?: AdminMediaProcessor;
+  readonly downloadTrigger?: AdminDownloadTrigger;
+}
+
+interface MediaDownloadResponsePayload {
+  readonly downloadUrl?: string;
+  readonly filename?: string;
 }
 
 interface PresignTargetPayload {
@@ -103,6 +119,7 @@ function getDefaultStandForRoom(roomId: RoomId): StandId {
 export class AdminMediaStore {
   private readonly fetcher: AdminNetworkFetcher;
   private readonly processor: AdminMediaProcessor;
+  private readonly downloadTrigger: AdminDownloadTrigger;
   private readonly getToken: () => string | null;
   private readonly onUnauthorized: () => void;
   private readonly listeners = new Set<AdminMediaListener>();
@@ -112,6 +129,7 @@ export class AdminMediaStore {
     isLoading: false,
     isUploading: false,
     error: null,
+    successMessage: null,
     selectedRoomId: DEFAULT_ROOM_ID,
     selectedStandId: getDefaultStandForRoom(DEFAULT_ROOM_ID),
     storageUsageBytes: 0,
@@ -123,6 +141,8 @@ export class AdminMediaStore {
     this.onUnauthorized = options.onUnauthorized;
     this.fetcher = options.fetcher ?? createDefaultAdminFetcher();
     this.processor = options.processor ?? new AdminMediaProcessor();
+    this.downloadTrigger =
+      options.downloadTrigger ?? createDefaultAdminDownloadTrigger();
   }
 
   public getState(): AdminMediaState {
@@ -147,7 +167,12 @@ export class AdminMediaStore {
       selectedRoomId: roomId,
       selectedStandId: resolvedStandId,
       error: null,
+      successMessage: null,
     });
+  }
+
+  public setValidationError(message: string): void {
+    this.updateState({ error: message, successMessage: null });
   }
 
   public getSelectedItems(): AdminMediaItemRecord[] {
@@ -166,7 +191,7 @@ export class AdminMediaStore {
       return;
     }
 
-    this.updateState({ isLoading: true, error: null });
+    this.updateState({ isLoading: true, error: null, successMessage: null });
     try {
       const payload = await this.fetcher.get<MediaCatalogResponsePayload>(
         ADMIN_MEDIA_ENDPOINTS.MEDIA,
@@ -192,7 +217,7 @@ export class AdminMediaStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null });
+    this.updateState({ isUploading: true, error: null, successMessage: null });
     try {
       const isVideo = isVideoMediaType(input.mediaKind);
 
@@ -292,6 +317,7 @@ export class AdminMediaStore {
           maxStorageBytes:
             created.maxStorageBytes ?? this.state.maxStorageBytes,
           isUploading: false,
+          successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_UPLOAD,
         });
         return;
       }
@@ -340,6 +366,7 @@ export class AdminMediaStore {
           this.state.storageUsageBytes + optimized.blob.size,
         maxStorageBytes: created.maxStorageBytes ?? this.state.maxStorageBytes,
         isUploading: false,
+        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_UPLOAD,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo subir el archivo multimedia.", {
@@ -372,7 +399,7 @@ export class AdminMediaStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null });
+    this.updateState({ isUploading: true, error: null, successMessage: null });
     try {
       let posterBlob: Blob;
       let posterMimeType: typeof ADMIN_MEDIA_LIMITS.OUTPUT_IMAGE_MIME;
@@ -427,6 +454,7 @@ export class AdminMediaStore {
           item.id === id && response?.item ? response.item : item,
         ),
         isUploading: false,
+        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_POSTER,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo actualizar la miniatura.", {
@@ -455,6 +483,7 @@ export class AdminMediaStore {
             item.id === input.id ? response.item : item,
           ),
           error: null,
+          successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT,
         });
       }
     } catch (error) {
@@ -515,6 +544,7 @@ export class AdminMediaStore {
           return item;
         }),
         error: null,
+        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_REORDER,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo reordenar el stand.");
@@ -539,9 +569,35 @@ export class AdminMediaStore {
         maxStorageBytes:
           response?.maxStorageBytes ?? this.state.maxStorageBytes,
         error: null,
+        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_DELETE,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo eliminar el elemento.");
+    }
+  }
+
+  public async requestDownload(id: string): Promise<void> {
+    const headers = this.buildAuthHeaders();
+    if (!headers) {
+      return;
+    }
+
+    this.updateState({ error: null, successMessage: null });
+    try {
+      const payload = await this.fetcher.get<MediaDownloadResponsePayload>(
+        `${ADMIN_MEDIA_ENDPOINTS.MEDIA}?downloadId=${encodeURIComponent(id)}`,
+        headers,
+      );
+      if (!payload?.downloadUrl) {
+        throw new Error(ADMIN_UI_TEXT.MEDIA_ERROR_DOWNLOAD);
+      }
+      this.downloadTrigger(payload.downloadUrl, payload.filename ?? "archivo");
+      this.updateState({
+        error: null,
+        successMessage: ADMIN_UI_TEXT.MEDIA_SUCCESS_DOWNLOAD,
+      });
+    } catch (error) {
+      this.handleApiError(error, ADMIN_UI_TEXT.MEDIA_ERROR_DOWNLOAD);
     }
   }
 
@@ -563,12 +619,12 @@ export class AdminMediaStore {
       error instanceof AdminHttpError &&
       error.status === HTTP_STATUS_UNAUTHORIZED
     ) {
-      this.updateState({ ...extraPatch, error: null });
+      this.updateState({ ...extraPatch, error: null, successMessage: null });
       this.onUnauthorized();
       return;
     }
-    const message = error instanceof Error ? error.message : fallbackMessage;
-    this.updateState({ ...extraPatch, error: message });
+    const message = mapAdminErrorMessage(error, fallbackMessage);
+    this.updateState({ ...extraPatch, error: message, successMessage: null });
   }
 
   private updateState(patch: Partial<AdminMediaState>): void {

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminHttpError, type AdminNetworkFetcher } from "../../src/admin/admin-http-client";
-import { ADMIN_MEDIA_ENDPOINTS } from "../../src/admin/constants";
+import {
+  ADMIN_HTTP_ERROR_TEXT,
+  ADMIN_MEDIA_ENDPOINTS,
+  ADMIN_UI_TEXT,
+} from "../../src/admin/constants";
 import type { AdminMediaProcessor } from "../../src/admin/media-processor";
 import { AdminMediaStore } from "../../src/admin/media-store";
 import { ExhibitMediaType } from "../../src/experience/constants";
@@ -378,5 +382,53 @@ describe("AdminMediaStore", () => {
     expect(store.getSelectedItems()[0]?.posterUrl).toContain(
       "canto-new-poster.webp",
     );
+  });
+
+  it("maps HTTP errors to plain Spanish and triggers presigned cross-origin downloads via requestDownload", async () => {
+    const downloadTrigger = vi.fn();
+    (fetcher.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      downloadUrl: "https://r2.example.com/signed-get",
+      filename: "estambre.webp",
+      expiresInSeconds: 300,
+    });
+
+    const store = new AdminMediaStore({
+      fetcher,
+      getToken: () => "jwt-token",
+      onUnauthorized,
+      processor,
+      downloadTrigger,
+    });
+
+    await store.requestDownload("m1");
+    expect(fetcher.get).toHaveBeenCalledWith(
+      `${ADMIN_MEDIA_ENDPOINTS.MEDIA}?downloadId=m1`,
+      { Authorization: "Bearer jwt-token" },
+    );
+    expect(downloadTrigger).toHaveBeenCalledWith(
+      "https://r2.example.com/signed-get",
+      "estambre.webp",
+    );
+    expect(store.getState().successMessage).toBe(
+      ADMIN_UI_TEXT.MEDIA_SUCCESS_DOWNLOAD,
+    );
+
+    (fetcher.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdminHttpError(413, "HTTP 413 from /api/admin/media/presign"),
+    );
+    await store.uploadMedia({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      file: new Blob(["img"], { type: "image/jpeg" }),
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Prueba",
+      creatorName: "",
+      description: "",
+    });
+    expect(store.getState().error).toBe(
+      ADMIN_HTTP_ERROR_TEXT.PAYLOAD_TOO_LARGE,
+    );
+    expect(store.getState().error).not.toContain("HTTP 413");
+    expect(store.getState().error).not.toContain("/api/");
   });
 });

@@ -14,6 +14,7 @@ import {
   validateQuotaCapacity,
 } from "../_media-validation.js";
 import {
+  AUDIO_MIME_TO_EXTENSION,
   fetchCombinedStorageUsageBytes,
   fetchRoomAudioTracks,
   fetchRoomPlaybackMode,
@@ -25,7 +26,9 @@ import {
   type AudioTrackRow,
 } from "../_audio-validation.js";
 import {
+  buildSafeDownloadFilename,
   createMediaStorageProviderFromEnv,
+  resolveDownloadTargetPayload,
   type MediaStorageProvider,
 } from "../_storage.js";
 import { isValidRoomId } from "../../src/shared/room-catalog.js";
@@ -79,6 +82,53 @@ export function createAdminAudioHandler(deps: AdminAudioHandlerDeps = {}) {
     req: ServerlessRequest,
     res: ServerlessResponse,
   ): Promise<void> {
+    const downloadId = extractQueryParam(req, "downloadId");
+    if (downloadId !== null) {
+      const cleanId = downloadId.trim();
+      if (!cleanId) {
+        res
+          .status(API_HTTP_STATUS.BAD_REQUEST)
+          .json({ error: "Invalid downloadId." });
+        return;
+      }
+
+      const db = resolveDb();
+      const rowRes = await db.execute({
+        sql: "SELECT title, media_key, mime_type FROM room_audio_tracks WHERE id = ?",
+        args: [cleanId],
+      });
+      if (rowRes.rows.length === 0) {
+        res
+          .status(API_HTTP_STATUS.NOT_FOUND)
+          .json({ error: "Audio track not found." });
+        return;
+      }
+
+      const row = rowRes.rows[0] as {
+        title?: unknown;
+        media_key?: unknown;
+        mime_type?: unknown;
+      };
+      const mimeType = String(row.mime_type ?? "");
+      const ext = AUDIO_MIME_TO_EXTENSION[mimeType] ?? "mp3";
+      const filename = buildSafeDownloadFilename(
+        String(row.title ?? ""),
+        ext,
+        "pista",
+      );
+      const payload = await resolveDownloadTargetPayload({
+        storage: resolveStorage(),
+        objectKey: String(row.media_key ?? ""),
+        filename,
+        publicBaseUrl: resolvePublicBaseUrl(),
+        expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+      });
+
+      res.setHeader?.("Cache-Control", ADMIN_AUDIO_CACHE_HEADER);
+      res.status(API_HTTP_STATUS.OK).json(payload);
+      return;
+    }
+
     const roomId = extractQueryParam(req, "roomId");
     if (!roomId || !isValidRoomId(roomId)) {
       res

@@ -11,6 +11,7 @@ export class AdminLoginModalView {
   private container: HTMLElement | null = null;
   private userInput: HTMLInputElement | null = null;
   private passwordInput: HTMLInputElement | null = null;
+  private passwordToggleBtn: HTMLButtonElement | null = null;
   private submitButton: HTMLButtonElement | null = null;
   private errorElement: HTMLElement | null = null;
   private errorTextElement: HTMLElement | null = null;
@@ -47,11 +48,15 @@ export class AdminLoginModalView {
     title.className = ADMIN_UI_CLASSES.TITLE;
     title.textContent = ADMIN_UI_TEXT.LOGIN_TITLE;
 
-    header.appendChild(title);
+    const subtitle = document.createElement("p");
+    subtitle.className = ADMIN_UI_CLASSES.SUBTITLE;
+    subtitle.textContent = ADMIN_UI_TEXT.LOGIN_SUBTITLE;
+
+    header.append(title, subtitle);
 
     const form = document.createElement("form");
     form.className = ADMIN_UI_CLASSES.FORM;
-    form.setAttribute("autocomplete", "off");
+    form.setAttribute("autocomplete", "on");
 
     // Error feedback element
     const errorContainer = document.createElement("div");
@@ -78,6 +83,7 @@ export class AdminLoginModalView {
     const userInput = document.createElement("input");
     userInput.id = "cv-admin-username";
     userInput.type = "text";
+    userInput.autocomplete = "username";
     userInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     userInput.setAttribute("required", "true");
     this.userInput = userInput;
@@ -93,14 +99,36 @@ export class AdminLoginModalView {
     passLabel.htmlFor = "cv-admin-password";
     passLabel.textContent = ADMIN_UI_TEXT.LOGIN_PASSWORD_LABEL;
 
+    const passwordWrapper = document.createElement("div");
+    passwordWrapper.className = ADMIN_UI_CLASSES.PASSWORD_WRAPPER;
+
     const passwordInput = document.createElement("input");
     passwordInput.id = "cv-admin-password";
     passwordInput.type = "password";
+    passwordInput.autocomplete = "current-password";
     passwordInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     passwordInput.setAttribute("required", "true");
     this.passwordInput = passwordInput;
 
-    passGroup.append(passLabel, passwordInput);
+    const togglePasswordBtn = document.createElement("button");
+    togglePasswordBtn.type = "button";
+    togglePasswordBtn.className = ADMIN_UI_CLASSES.PASSWORD_TOGGLE_BTN;
+    togglePasswordBtn.textContent = ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
+    togglePasswordBtn.setAttribute("data-action", "toggle-password");
+    togglePasswordBtn.setAttribute("aria-label", ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA);
+    togglePasswordBtn.setAttribute("aria-pressed", "false");
+    togglePasswordBtn.addEventListener("click", () => {
+      const shouldReveal = passwordInput.type === "password";
+      passwordInput.type = shouldReveal ? "text" : "password";
+      togglePasswordBtn.textContent = shouldReveal
+        ? ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD
+        : ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
+      togglePasswordBtn.setAttribute("aria-pressed", String(shouldReveal));
+    });
+    this.passwordToggleBtn = togglePasswordBtn;
+
+    passwordWrapper.append(passwordInput, togglePasswordBtn);
+    passGroup.append(passLabel, passwordWrapper);
 
     // Submit button
     const submitBtn = document.createElement("button");
@@ -146,6 +174,7 @@ export class AdminLoginModalView {
     }
     this.userInput = null;
     this.passwordInput = null;
+    this.passwordToggleBtn = null;
     this.submitButton = null;
     this.errorElement = null;
     this.errorTextElement = null;
@@ -259,6 +288,11 @@ export class AdminLoginModalView {
     }
     if (this.passwordInput) {
       this.passwordInput.value = "";
+      this.passwordInput.type = "password";
+    }
+    if (this.passwordToggleBtn) {
+      this.passwordToggleBtn.textContent = ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD;
+      this.passwordToggleBtn.setAttribute("aria-pressed", "false");
     }
   }
 }

@@ -33,6 +33,18 @@ export interface PresignedUploadResult {
   readonly expiresInSeconds: number;
 }
 
+export interface PresignDownloadUrlInput extends R2Credentials {
+  readonly objectKey: string;
+  readonly filename: string;
+  readonly expiresSeconds: number;
+  readonly now?: () => Date;
+}
+
+export interface PresignedDownloadResult {
+  readonly url: string;
+  readonly expiresInSeconds: number;
+}
+
 export interface SignHeadersInput extends R2Credentials {
   readonly method: "DELETE" | "HEAD" | "GET";
   readonly objectKey: string;
@@ -102,35 +114,39 @@ export function buildR2ObjectUrl(
   return `https://${host}${canonicalPath}`;
 }
 
-/**
- * Generates an AWS SigV4 presigned URL for direct client-to-R2 PUT uploads.
- */
-export function signAwsV4PresignedUrl(
-  input: PresignUrlInput,
-): PresignedUploadResult {
-  const nowDate = input.now ? input.now() : new Date();
+function buildPresignedUrlCore(params: {
+  readonly credentials: R2Credentials;
+  readonly method: "PUT" | "GET";
+  readonly objectKey: string;
+  readonly expiresSeconds: number;
+  readonly signedHeaderPairs: Array<[string, string]>;
+  readonly extraQueryParams?: Array<[string, string]>;
+  readonly now?: () => Date;
+}): string {
+  const { credentials, method, objectKey, expiresSeconds, signedHeaderPairs } =
+    params;
+  const nowDate = params.now ? params.now() : new Date();
   const { dateStamp, amzDate } = formatAmzTimestamps(nowDate);
-  const host = getR2Host(input.accountId);
-  const cleanKey = normalizeObjectKey(input.objectKey);
-  const canonicalUri = encodeUriPath(`/${input.bucket}/${cleanKey}`);
+  const host = getR2Host(credentials.accountId);
+  const cleanKey = normalizeObjectKey(objectKey);
+  const canonicalUri = encodeUriPath(`/${credentials.bucket}/${cleanKey}`);
   const credentialScope = `${dateStamp}/${AWS_SIGV4_CONSTANTS.REGION}/${AWS_SIGV4_CONSTANTS.SERVICE}/${AWS_SIGV4_CONSTANTS.REQUEST_TYPE}`;
 
-  const signedHeaderPairs: Array<[string, string]> = [
-    ["content-length", String(input.contentLength)],
-    ["content-type", input.contentType],
-    ["host", host],
-  ];
-  const signedHeaders = signedHeaderPairs.map(([k]) => k).join(";");
-  const canonicalHeaders = signedHeaderPairs
+  const sortedHeaderPairs = [...signedHeaderPairs].sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const signedHeaders = sortedHeaderPairs.map(([k]) => k).join(";");
+  const canonicalHeaders = sortedHeaderPairs
     .map(([k, v]) => `${k}:${v}\n`)
     .join("");
 
   const queryParams: Array<[string, string]> = [
     ["X-Amz-Algorithm", AWS_SIGV4_CONSTANTS.ALGORITHM],
-    ["X-Amz-Credential", `${input.accessKeyId}/${credentialScope}`],
+    ["X-Amz-Credential", `${credentials.accessKeyId}/${credentialScope}`],
     ["X-Amz-Date", amzDate],
-    ["X-Amz-Expires", String(input.expiresSeconds)],
+    ["X-Amz-Expires", String(expiresSeconds)],
     ["X-Amz-SignedHeaders", signedHeaders],
+    ...(params.extraQueryParams ?? []),
   ];
   queryParams.sort(([a], [b]) => a.localeCompare(b));
 
@@ -139,7 +155,7 @@ export function signAwsV4PresignedUrl(
     .join("&");
 
   const canonicalRequest = [
-    input.method,
+    method,
     canonicalUri,
     canonicalQuery,
     canonicalHeaders,
@@ -154,15 +170,64 @@ export function signAwsV4PresignedUrl(
     sha256Hex(canonicalRequest),
   ].join("\n");
 
-  const signingKey = deriveSigningKey(input.secretAccessKey, dateStamp);
+  const signingKey = deriveSigningKey(credentials.secretAccessKey, dateStamp);
   const signature = hmacSha256(signingKey, stringToSign).toString("hex");
 
+  return `https://${host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+
+/**
+ * Generates an AWS SigV4 presigned URL for direct client-to-R2 PUT uploads.
+ */
+export function signAwsV4PresignedUrl(
+  input: PresignUrlInput,
+): PresignedUploadResult {
+  const host = getR2Host(input.accountId);
+  const url = buildPresignedUrlCore({
+    credentials: input,
+    method: input.method,
+    objectKey: input.objectKey,
+    expiresSeconds: input.expiresSeconds,
+    signedHeaderPairs: [
+      ["content-length", String(input.contentLength)],
+      ["content-type", input.contentType],
+      ["host", host],
+    ],
+    now: input.now,
+  });
+
   return {
-    url: `https://${host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`,
+    url,
     headers: {
       "Content-Type": input.contentType,
       "Content-Length": String(input.contentLength),
     },
+    expiresInSeconds: input.expiresSeconds,
+  };
+}
+
+/**
+ * Generates an AWS SigV4 presigned GET URL with Content-Disposition attachment for direct downloads.
+ */
+export function signAwsV4PresignedDownloadUrl(
+  input: PresignDownloadUrlInput,
+): PresignedDownloadResult {
+  const host = getR2Host(input.accountId);
+  const safeFilename = input.filename.replace(/["\r\n\\/]/g, "_").trim() || "archivo";
+  const url = buildPresignedUrlCore({
+    credentials: input,
+    method: "GET",
+    objectKey: input.objectKey,
+    expiresSeconds: input.expiresSeconds,
+    signedHeaderPairs: [["host", host]],
+    extraQueryParams: [
+      ["response-content-disposition", `attachment; filename="${safeFilename}"`],
+    ],
+    now: input.now,
+  });
+
+  return {
+    url,
     expiresInSeconds: input.expiresSeconds,
   };
 }

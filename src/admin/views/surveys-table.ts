@@ -2,6 +2,22 @@ import { AdminDashboardStore } from "../admin-dashboard-store";
 import type { SurveyLogEntry } from "../admin-dashboard-store";
 import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
 
+const MUSEUM_UTC_OFFSET_MS = -7 * 3_600_000;
+const SPANISH_MONTH_ABBR = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+] as const;
+
 export class SurveysTableWidget {
   private container: HTMLElement | null = null;
   private tbodyElement: HTMLElement | null = null;
@@ -24,15 +40,24 @@ export class SurveysTableWidget {
     const header = document.createElement("header");
     header.className = ADMIN_UI_CLASSES.CARD_HEADER;
 
+    const titleGroup = document.createElement("div");
+    titleGroup.className = ADMIN_UI_CLASSES.CARD_TITLE_GROUP;
+
     const title = document.createElement("h2");
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.SURVEY_TITLE;
+
+    const subtitle = document.createElement("p");
+    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
+    subtitle.textContent = ADMIN_UI_TEXT.SURVEY_SUBTITLE;
+
+    titleGroup.append(title, subtitle);
 
     const avgBadge = document.createElement("span");
     avgBadge.className = ADMIN_UI_CLASSES.SURVEY_AVG_BADGE;
     this.avgBadgeElement = avgBadge;
 
-    header.append(title, avgBadge);
+    header.append(titleGroup, avgBadge);
 
     const body = document.createElement("div");
     body.className = `${ADMIN_UI_CLASSES.CARD_BODY} ${ADMIN_UI_CLASSES.SURVEY_TABLE_WRAPPER}`;
@@ -96,6 +121,10 @@ export class SurveysTableWidget {
 
   private renderAverage(): void {
     if (!this.avgBadgeElement) {
+      return;
+    }
+    if (this.store.getState().surveys.length === 0) {
+      this.avgBadgeElement.textContent = ADMIN_UI_TEXT.SURVEY_NO_RATINGS;
       return;
     }
     const avg = this.store.getAverageRating();
@@ -169,9 +198,11 @@ export class SurveysTableWidget {
   }
 
   private formatTime(timestamp: number): string {
-    const date = new Date(timestamp);
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${hours}:${minutes}`;
+    const shifted = new Date(timestamp + MUSEUM_UTC_OFFSET_MS);
+    const day = shifted.getUTCDate();
+    const month = SPANISH_MONTH_ABBR[shifted.getUTCMonth()] ?? "";
+    const hours = String(shifted.getUTCHours()).padStart(2, "0");
+    const minutes = String(shifted.getUTCMinutes()).padStart(2, "0");
+    return `${day} ${month} ${hours}:${minutes}`;
   }
 }
