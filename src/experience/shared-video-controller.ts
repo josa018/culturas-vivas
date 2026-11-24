@@ -1,4 +1,4 @@
-import { SHARED_VIDEO_ELEMENT_ID } from "./constants";
+import { RENDERER_QUALITY_TOKENS, SHARED_VIDEO_ELEMENT_ID } from "./constants";
 import {
   AudioPreferencesStore,
   getSharedAudioPreferencesStore,
@@ -35,6 +35,10 @@ export interface VideoElementLike {
 
 export interface DisposableVideoTexture {
   colorSpace?: string;
+  minFilter?: number;
+  magFilter?: number;
+  generateMipmaps?: boolean;
+  anisotropy?: number;
   needsUpdate: boolean;
   dispose(): void;
 }
@@ -81,6 +85,8 @@ function defaultCreateVideoTexture(
       AFRAME?: {
         THREE?: {
           SRGBColorSpace?: string;
+          LinearMipmapLinearFilter?: number;
+          LinearFilter?: number;
           VideoTexture?: new (el: VideoElementLike) => DisposableVideoTexture;
         };
       };
@@ -91,11 +97,20 @@ function defaultCreateVideoTexture(
     return null;
   }
   const texture = new VideoTextureCtor(video);
+  // Restore A-Frame's trilinear mipmap defaults bypassed by direct VideoTexture binding.
+  texture.minFilter =
+    aframeGlobal?.THREE?.LinearMipmapLinearFilter ??
+    RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_MIPMAP_LINEAR_FILTER;
+  texture.magFilter =
+    aframeGlobal?.THREE?.LinearFilter ??
+    RENDERER_QUALITY_TOKENS.DEFAULT_LINEAR_FILTER;
+  texture.generateMipmaps = true;
+  texture.anisotropy = RENDERER_QUALITY_TOKENS.TEXTURE_ANISOTROPY;
   const srgbColorSpace = aframeGlobal?.THREE?.SRGBColorSpace;
   if (srgbColorSpace) {
     texture.colorSpace = srgbColorSpace;
-    texture.needsUpdate = true;
   }
+  texture.needsUpdate = true;
   return texture;
 }
 
