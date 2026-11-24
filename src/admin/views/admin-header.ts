@@ -40,12 +40,7 @@ export class AdminHeaderWidget {
 
     titleGroup.append(appTitle, appSubtitle);
 
-    const userBadge = document.createElement("span");
-    userBadge.className = ADMIN_UI_CLASSES.HEADER_USER_BADGE;
-    userBadge.setAttribute("data-admin-user", "true");
-    userBadge.textContent = `${ADMIN_UI_TEXT.HEADER_USER_PREFIX}${this.options.username}`;
-
-    brand.append(titleGroup, userBadge);
+    brand.append(titleGroup);
 
     // Right actions group
     const actions = document.createElement("div");

@@ -18,7 +18,7 @@ import type {
 } from "../media-store";
 import {
   createCounterField,
-  createInlineDeleteControls,
+  createItemActionMenu,
   createLabeledField,
   createModernFileInput,
   createStatusBanners,
@@ -85,6 +85,7 @@ export class MediaManagerWidget {
   private editingItemId: string | null = null;
   private confirmingDeleteId: string | null = null;
   private posterPreviewObjectUrl: string | null = null;
+  private cardCleanupFns: Array<() => void> = [];
 
   constructor(store: AdminMediaStore) {
     this.store = store;
@@ -495,6 +496,7 @@ export class MediaManagerWidget {
   }
 
   public unmount(): void {
+    this.clearCardCleanups();
     this.unsubscribe?.();
     this.unsubscribe = null;
     if (
@@ -572,7 +574,15 @@ export class MediaManagerWidget {
     this.renderStandList(this.store.getSelectedItems());
   }
 
+  private clearCardCleanups(): void {
+    for (const cleanup of this.cardCleanupFns) {
+      cleanup();
+    }
+    this.cardCleanupFns = [];
+  }
+
   private renderStandList(items: readonly AdminMediaItemRecord[]): void {
+    this.clearCardCleanups();
     if (!this.listEl) {
       return;
     }
@@ -621,71 +631,43 @@ export class MediaManagerWidget {
       info.appendChild(creatorEl);
     }
 
-    const actions = document.createElement("div");
-    actions.className = ADMIN_UI_CLASSES.MEDIA_ITEM_ACTIONS;
-
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_UP;
-    upBtn.disabled = isFirst;
-    upBtn.setAttribute("data-action", "move-up");
-    upBtn.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_MOVE_UP_ARIA);
-    upBtn.addEventListener("click", () => {
-      void this.store.moveItem(item.id, "up");
-    });
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_DOWN;
-    downBtn.disabled = isLast;
-    downBtn.setAttribute("data-action", "move-down");
-    downBtn.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_MOVE_DOWN_ARIA);
-    downBtn.addEventListener("click", () => {
-      void this.store.moveItem(item.id, "down");
-    });
-
-    const downloadBtn = document.createElement("button");
-    downloadBtn.type = "button";
-    downloadBtn.className = ADMIN_UI_CLASSES.BUTTON_DOWNLOAD;
-    downloadBtn.textContent = ADMIN_UI_TEXT.MEDIA_DOWNLOAD_BTN;
-    downloadBtn.setAttribute("data-action", "download");
-    downloadBtn.addEventListener("click", () => {
-      void this.store.requestDownload(item.id);
-    });
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.textContent = ADMIN_UI_TEXT.MEDIA_EDIT_BTN;
-    editBtn.setAttribute("data-action", "edit");
-    editBtn.addEventListener("click", () => {
-      this.confirmingDeleteId = null;
-      this.editingItemId = this.editingItemId === item.id ? null : item.id;
-      this.renderStandList(this.store.getSelectedItems());
-    });
-
-    const deleteControl = createInlineDeleteControls({
+    const actions = createItemActionMenu({
       itemId: item.id,
-      isConfirming: this.confirmingDeleteId === item.id,
+      isFirst,
+      isLast,
+      isConfirmingDelete: this.confirmingDeleteId === item.id,
       actionAttr: "data-action",
-      promptText: ADMIN_UI_TEXT.MEDIA_DELETE_CONFIRM_PROMPT,
-      deleteLabel: ADMIN_UI_TEXT.MEDIA_DELETE_BTN,
-      confirmLabel: ADMIN_UI_TEXT.MEDIA_DELETE_CONFIRM_BTN,
-      cancelLabel: ADMIN_UI_TEXT.MEDIA_CANCEL_BTN,
-      onRequestConfirm: () => {
+      onMoveUp: () => {
+        void this.store.moveItem(item.id, "up");
+      },
+      onMoveDown: () => {
+        void this.store.moveItem(item.id, "down");
+      },
+      onDownload: () => {
+        void this.store.requestDownload(item.id);
+      },
+      onEdit: () => {
+        this.confirmingDeleteId = null;
+        this.editingItemId = this.editingItemId === item.id ? null : item.id;
+        this.renderStandList(this.store.getSelectedItems());
+      },
+      deletePromptText: ADMIN_UI_TEXT.MEDIA_DELETE_CONFIRM_PROMPT,
+      onRequestDelete: () => {
         this.confirmingDeleteId = item.id;
         this.renderStandList(this.store.getSelectedItems());
       },
-      onConfirm: () => {
+      onConfirmDelete: () => {
         this.confirmingDeleteId = null;
         void this.store.deleteItem(item.id);
       },
-      onCancel: () => {
+      onCancelDelete: () => {
         this.confirmingDeleteId = null;
         this.renderStandList(this.store.getSelectedItems());
       },
+      onCleanup: (fn) => {
+        this.cardCleanupFns.push(fn);
+      },
     });
-
-    actions.append(upBtn, downBtn, downloadBtn, editBtn, deleteControl);
     card.append(thumb, info, actions);
 
     const itemSuccess = this.store.getState().itemSuccess;

@@ -290,7 +290,12 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
       playbackMode: "SHUFFLE",
     });
 
-    // Delete track button uses two-step inline confirmation -> DELETE
+    // Delete track via compact ⋯ menu -> two-step inline confirmation -> DELETE
+    const t2MoreBtn = root.querySelector(
+      '[data-audio-action="more-actions"][data-track-id="t2"]',
+    ) as HTMLButtonElement;
+    expect(t2MoreBtn).not.toBeNull();
+    t2MoreBtn.click();
     const deleteBtn = root.querySelector(
       '[data-audio-action="delete"][data-track-id="t2"]',
     ) as HTMLButtonElement;
@@ -379,7 +384,18 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(root.textContent).toContain(ADMIN_UI_TEXT.AUDIO_MISSING_FILE_ERROR);
 
-    // Two-step delete cancel restores actions
+    // Compact overflow menu hides Edit/Download/Delete until clicked; two-step delete cancel restores compact strip
+    const t1MoreBtn = root.querySelector(
+      '[data-audio-action="more-actions"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    const t1Menu = root.querySelector(
+      '[data-track-id="t1"] [role="menu"]',
+    ) as HTMLElement;
+    expect(t1MoreBtn).not.toBeNull();
+    expect(t1Menu.hidden).toBe(true);
+    t1MoreBtn.click();
+    expect(t1Menu.hidden).toBe(false);
+
     const delBtn = root.querySelector(
       '[data-audio-action="delete"][data-track-id="t1"]',
     ) as HTMLButtonElement;
@@ -391,7 +407,7 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     cancelBtn.click();
     expect(fetcher.deleteCalls.length).toBe(0);
 
-    // Reorder aria-label and download action
+    // Reorder aria-label and download action inside overflow menu
     const moveDownBtn = root.querySelector(
       '[data-audio-action="move-down"][data-track-id="t1"]',
     ) as HTMLButtonElement;
@@ -399,6 +415,11 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
       ADMIN_UI_TEXT.MEDIA_MOVE_DOWN_ARIA,
     );
 
+    (
+      root.querySelector(
+        '[data-audio-action="more-actions"][data-track-id="t1"]',
+      ) as HTMLButtonElement
+    ).click();
     const dlBtn = root.querySelector(
       '[data-audio-action="download"][data-track-id="t1"]',
     ) as HTMLButtonElement;

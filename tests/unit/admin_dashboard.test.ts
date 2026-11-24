@@ -923,7 +923,20 @@ describe("Admin UI Widgets & AdminController", () => {
       );
     });
 
-    // Inline edit on item w-1
+    // Inline edit on item w-1 via compact ⋯ menu
+    const w1MoreBtn = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    expect(w1MoreBtn).not.toBeNull();
+    expect(w1MoreBtn.getAttribute("aria-expanded")).toBe("false");
+    const w1Menu = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [role="menu"]',
+    ) as HTMLElement;
+    expect(w1Menu.hidden).toBe(true);
+    w1MoreBtn.click();
+    expect(w1MoreBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(w1Menu.hidden).toBe(false);
+
     const editBtn = mediaPanel.querySelector(
       '[data-item-id="w-1"] [data-action="edit"]',
     ) as HTMLButtonElement;
@@ -944,7 +957,11 @@ describe("Admin UI Widgets & AdminController", () => {
       );
     });
 
-    // Delete item w-2 via two-step inline confirmation
+    // Delete item w-2 via ⋯ menu -> two-step inline confirmation
+    const w2MoreBtn = mediaPanel.querySelector(
+      '[data-item-id="w-2"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    w2MoreBtn.click();
     const deleteBtn = mediaPanel.querySelector(
       '[data-item-id="w-2"] [data-action="delete"]',
     ) as HTMLButtonElement;
@@ -1189,6 +1206,10 @@ describe("Admin UI Widgets & AdminController", () => {
 
     // Inline edit on video reveals poster file replacement
     mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+    const v1MoreBtn = parent.querySelector(
+      '[data-item-id="v-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    v1MoreBtn.click();
     const editBtn = parent.querySelector(
       '[data-item-id="v-1"] [data-action="edit"]',
     ) as HTMLButtonElement;
@@ -1340,11 +1361,7 @@ describe("Admin UI Widgets & AdminController", () => {
     dashboardView.mount(parent);
 
     const el = dashboardView.getElement()!;
-    const userBadge = el.querySelector(
-      `.${ADMIN_UI_CLASSES.HEADER_USER_BADGE}`,
-    );
-    expect(userBadge).not.toBeNull();
-    expect(userBadge?.textContent).toContain("maria_biblio");
+    expect(el.textContent).toContain(ADMIN_UI_TEXT.HEADER_TITLE);
     expect(el.textContent).toContain(ADMIN_UI_TEXT.HEADER_SUBTITLE);
 
     expect(
@@ -1406,7 +1423,7 @@ describe("Admin UI Widgets & AdminController", () => {
       ADMIN_UI_TEXT.CHART_SUBTITLE,
     );
     expect(surveyWidget.getElement()!.textContent).toContain(
-      ADMIN_UI_TEXT.SURVEY_SUBTITLE,
+      ADMIN_UI_TEXT.SURVEY_TITLE,
     );
 
     await store.fetchStats();
@@ -1575,7 +1592,68 @@ describe("Admin UI Widgets & AdminController", () => {
     );
     expect(parent.textContent).toContain(ADMIN_UI_TEXT.MEDIA_MISSING_FILE_ERROR);
 
-    // Two-step delete cancel restores normal actions without calling DELETE
+    // Compact overflow menu hides Edit/Download/Delete until triggered; only one open at a time and dismisses on outside click / Escape
+    const moreW1 = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    const moreW2 = parent.querySelector(
+      '[data-item-id="w-2"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    const menuW1 = parent.querySelector(
+      '[data-item-id="w-1"] [role="menu"]',
+    ) as HTMLElement;
+    const menuW2 = parent.querySelector(
+      '[data-item-id="w-2"] [role="menu"]',
+    ) as HTMLElement;
+    expect(moreW1).not.toBeNull();
+    expect(menuW1.hidden).toBe(true);
+    moreW1.click();
+    expect(menuW1.hidden).toBe(false);
+
+    // Menu near bottom of viewport flips upward automatically so it stays visible without scrolling
+    vi.spyOn(moreW2, "getBoundingClientRect").mockReturnValue({
+      top: 720,
+      bottom: 760,
+      left: 300,
+      right: 340,
+      width: 40,
+      height: 40,
+      x: 300,
+      y: 720,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(menuW2, "getBoundingClientRect").mockReturnValue({
+      top: 766,
+      bottom: 916,
+      left: 170,
+      right: 340,
+      width: 170,
+      height: 150,
+      x: 170,
+      y: 766,
+      toJSON: () => ({}),
+    });
+    const origInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", {
+      value: 800,
+      configurable: true,
+    });
+    moreW2.click();
+    expect(menuW1.hidden).toBe(true);
+    expect(menuW2.hidden).toBe(false);
+    expect(menuW2.classList.contains("cv-admin-action-menu-list--up")).toBe(
+      true,
+    );
+    Object.defineProperty(window, "innerHeight", {
+      value: origInnerHeight,
+      configurable: true,
+    });
+
+    document.body.click();
+    expect(menuW2.hidden).toBe(true);
+
+    // Two-step delete cancel restores compact action strip without calling DELETE
+    moreW1.click();
     const firstDeleteBtn = parent.querySelector(
       '[data-item-id="w-1"] [data-action="delete"]',
     ) as HTMLButtonElement;
@@ -1586,11 +1664,16 @@ describe("Admin UI Widgets & AdminController", () => {
     expect(cancelDeleteBtn).not.toBeNull();
     cancelDeleteBtn.click();
     expect(
-      parent.querySelector('[data-item-id="w-1"] [data-action="delete"]'),
+      parent.querySelector('[data-item-id="w-1"] [data-action="more-actions"]'),
     ).not.toBeNull();
     expect(mediaFetcher.delete).not.toHaveBeenCalled();
 
-    // Download button triggers presigned GET and downloadTrigger
+    // Download button inside overflow menu triggers presigned GET and downloadTrigger
+    (
+      parent.querySelector(
+        '[data-item-id="w-1"] [data-action="more-actions"]',
+      ) as HTMLButtonElement
+    ).click();
     const downloadBtn = parent.querySelector(
       '[data-item-id="w-1"] [data-action="download"]',
     ) as HTMLButtonElement;
@@ -1748,6 +1831,11 @@ describe("Admin UI Widgets & AdminController", () => {
       await mediaStore.fetchCatalog();
       mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
 
+      (
+        parent.querySelector(
+          '[data-item-id="w-1"] [data-action="more-actions"]',
+        ) as HTMLButtonElement
+      ).click();
       const editBtn = parent.querySelector(
         '[data-item-id="w-1"] [data-action="edit"]',
       ) as HTMLButtonElement;

@@ -13,7 +13,7 @@ import type {
 } from "../audio-store";
 import {
   createCounterField,
-  createInlineDeleteControls,
+  createItemActionMenu,
   createLabeledField,
   createModernFileInput,
   createStatusBanners,
@@ -66,6 +66,7 @@ export class PlaylistManagerWidget {
   private unsubscribe: (() => void) | null = null;
   private editingTrackId: string | null = null;
   private confirmingDeleteId: string | null = null;
+  private cardCleanupFns: Array<() => void> = [];
 
   constructor(store: AdminAudioStore) {
     this.store = store;
@@ -347,7 +348,15 @@ export class PlaylistManagerWidget {
     this.renderTrackList(state);
   }
 
+  private clearCardCleanups(): void {
+    for (const cleanup of this.cardCleanupFns) {
+      cleanup();
+    }
+    this.cardCleanupFns = [];
+  }
+
   private renderTrackList(state: AdminAudioState): void {
+    this.clearCardCleanups();
     if (!this.listEl) {
       return;
     }
@@ -410,76 +419,44 @@ export class PlaylistManagerWidget {
       info.appendChild(licenseEl);
     }
 
-    const actions = document.createElement("div");
-    actions.className = ADMIN_UI_CLASSES.MEDIA_ITEM_ACTIONS;
-
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_UP;
-    upBtn.disabled = isFirst;
-    upBtn.setAttribute("data-audio-action", "move-up");
-    upBtn.setAttribute("data-track-id", track.id);
-    upBtn.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_MOVE_UP_ARIA);
-    upBtn.addEventListener("click", () => {
-      void this.store.moveTrack(track.id, "up");
-    });
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_DOWN;
-    downBtn.disabled = isLast;
-    downBtn.setAttribute("data-audio-action", "move-down");
-    downBtn.setAttribute("data-track-id", track.id);
-    downBtn.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_MOVE_DOWN_ARIA);
-    downBtn.addEventListener("click", () => {
-      void this.store.moveTrack(track.id, "down");
-    });
-
-    const downloadBtn = document.createElement("button");
-    downloadBtn.type = "button";
-    downloadBtn.className = ADMIN_UI_CLASSES.BUTTON_DOWNLOAD;
-    downloadBtn.textContent = ADMIN_UI_TEXT.MEDIA_DOWNLOAD_BTN;
-    downloadBtn.setAttribute("data-audio-action", "download");
-    downloadBtn.setAttribute("data-track-id", track.id);
-    downloadBtn.addEventListener("click", () => {
-      void this.store.requestDownload(track.id);
-    });
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.textContent = ADMIN_UI_TEXT.MEDIA_EDIT_BTN;
-    editBtn.setAttribute("data-audio-action", "edit");
-    editBtn.setAttribute("data-track-id", track.id);
-    editBtn.addEventListener("click", () => {
-      this.confirmingDeleteId = null;
-      this.editingTrackId = this.editingTrackId === track.id ? null : track.id;
-      this.renderTrackList(this.store.getState());
-    });
-
-    const deleteControl = createInlineDeleteControls({
+    const actions = createItemActionMenu({
       itemId: track.id,
-      isConfirming: this.confirmingDeleteId === track.id,
+      isFirst,
+      isLast,
+      isConfirmingDelete: this.confirmingDeleteId === track.id,
       actionAttr: "data-audio-action",
       idAttr: "data-track-id",
-      promptText: ADMIN_UI_TEXT.AUDIO_DELETE_CONFIRM_PROMPT,
-      deleteLabel: ADMIN_UI_TEXT.MEDIA_DELETE_BTN,
-      confirmLabel: ADMIN_UI_TEXT.MEDIA_DELETE_CONFIRM_BTN,
-      cancelLabel: ADMIN_UI_TEXT.MEDIA_CANCEL_BTN,
-      onRequestConfirm: () => {
+      onMoveUp: () => {
+        void this.store.moveTrack(track.id, "up");
+      },
+      onMoveDown: () => {
+        void this.store.moveTrack(track.id, "down");
+      },
+      onDownload: () => {
+        void this.store.requestDownload(track.id);
+      },
+      onEdit: () => {
+        this.confirmingDeleteId = null;
+        this.editingTrackId = this.editingTrackId === track.id ? null : track.id;
+        this.renderTrackList(this.store.getState());
+      },
+      deletePromptText: ADMIN_UI_TEXT.AUDIO_DELETE_CONFIRM_PROMPT,
+      onRequestDelete: () => {
         this.confirmingDeleteId = track.id;
         this.renderTrackList(this.store.getState());
       },
-      onConfirm: () => {
+      onConfirmDelete: () => {
         this.confirmingDeleteId = null;
         void this.store.deleteTrack(track.id);
       },
-      onCancel: () => {
+      onCancelDelete: () => {
         this.confirmingDeleteId = null;
         this.renderTrackList(this.store.getState());
       },
+      onCleanup: (fn) => {
+        this.cardCleanupFns.push(fn);
+      },
     });
-
-    actions.append(upBtn, downBtn, downloadBtn, editBtn, deleteControl);
     card.append(preview, info, actions);
 
     if (this.editingTrackId === track.id) {
@@ -582,6 +559,7 @@ export class PlaylistManagerWidget {
   }
 
   public unmount(): void {
+    this.clearCardCleanups();
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
@@ -594,6 +572,7 @@ export class PlaylistManagerWidget {
     this.quotaFillEl = null;
     this.roomSelectEl = null;
     this.modeSelectEl = null;
+    this.syncProgressFn = null;
     this.syncBannersFn = null;
     this.submitBtnEl = null;
     this.listEl = null;
