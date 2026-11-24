@@ -17,12 +17,17 @@ export type {
 export {
   ADMIN_AUDIO_ENDPOINTS,
   ADMIN_AUDIO_LIMITS,
+  ADMIN_HTTP_ERROR_TEXT,
   ADMIN_MEDIA_ENDPOINTS,
   ADMIN_MEDIA_LIMITS,
   ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
   ADMIN_THRESHOLDS,
 } from "./constants";
+
+export { mapAdminErrorMessage } from "./admin-error-mapper";
+export { createDefaultAdminDownloadTrigger } from "./download-trigger";
+export type { AdminDownloadTrigger } from "./download-trigger";
 
 export {
   AdminAudioStore,

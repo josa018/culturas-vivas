@@ -7,8 +7,15 @@ import {
   Tooltip,
 } from "chart.js";
 import { AdminDashboardStore } from "../admin-dashboard-store";
-import type { DashboardState } from "../admin-dashboard-store";
+import type { ChartTimeRange, DashboardState } from "../admin-dashboard-store";
 import { ADMIN_UI_CLASSES, ADMIN_UI_TEXT } from "../constants";
+
+const CHART_RANGE_ORDER: readonly ChartTimeRange[] = [
+  "day",
+  "week",
+  "month",
+  "year",
+];
 
 // Strict tree-shaking registration
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip);
@@ -34,6 +41,9 @@ export class AttendanceChartWidget {
   private connectionTextElement: HTMLElement | null = null;
   private container: HTMLElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
+  private titleElement: HTMLElement | null = null;
+  private subtitleElement: HTMLElement | null = null;
+  private rangeButtons = new Map<ChartTimeRange, HTMLButtonElement>();
   private valueElement: HTMLElement | null = null;
   private peakElement: HTMLElement | null = null;
   private chartInstance: Chart | null = null;
@@ -62,14 +72,44 @@ export class AttendanceChartWidget {
     const title = document.createElement("h2");
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.CHART_TITLE;
+    this.titleElement = title;
 
-    titleGroup.appendChild(title);
+    const subtitle = document.createElement("p");
+    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
+    subtitle.textContent = ADMIN_UI_TEXT.CHART_SUBTITLE;
+    this.subtitleElement = subtitle;
+
+    titleGroup.append(title, subtitle);
+
+    const headerMeta = document.createElement("div");
+    headerMeta.className = ADMIN_UI_CLASSES.CHART_HEADER_META;
+
+    const rangeGroup = document.createElement("div");
+    rangeGroup.className = ADMIN_UI_CLASSES.CHART_RANGE_GROUP;
+    rangeGroup.setAttribute("role", "group");
+    rangeGroup.setAttribute("aria-label", ADMIN_UI_TEXT.CHART_RANGE_ARIA);
+    this.rangeButtons.clear();
+
+    for (const range of CHART_RANGE_ORDER) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = ADMIN_UI_CLASSES.CHART_RANGE_BTN;
+      btn.textContent = ADMIN_UI_TEXT.CHART_RANGE_LABELS[range];
+      btn.setAttribute("data-chart-range", range);
+      btn.setAttribute("aria-pressed", String(range === "day"));
+      btn.addEventListener("click", () => {
+        void this.store.setRange(range);
+      });
+      this.rangeButtons.set(range, btn);
+      rangeGroup.appendChild(btn);
+    }
 
     const peakBadge = document.createElement("span");
     peakBadge.className = ADMIN_UI_CLASSES.CHART_PEAK_BADGE;
     this.peakElement = peakBadge;
 
-    header.append(titleGroup, peakBadge);
+    headerMeta.append(rangeGroup, peakBadge);
+    header.append(titleGroup, headerMeta);
 
     // KPI Summary Row: Number + Label + Connection status
     const kpiRow = document.createElement("div");
@@ -143,6 +183,9 @@ export class AttendanceChartWidget {
       this.container = null;
     }
     this.canvasElement = null;
+    this.titleElement = null;
+    this.subtitleElement = null;
+    this.rangeButtons.clear();
     this.valueElement = null;
     this.peakElement = null;
   }
@@ -156,6 +199,20 @@ export class AttendanceChartWidget {
   }
 
   private updateMetrics(state: DashboardState): void {
+    if (this.titleElement) {
+      this.titleElement.textContent =
+        ADMIN_UI_TEXT.CHART_TITLE_BY_RANGE[state.selectedRange];
+    }
+    if (this.subtitleElement) {
+      this.subtitleElement.textContent =
+        ADMIN_UI_TEXT.CHART_SUBTITLE_BY_RANGE[state.selectedRange];
+    }
+    for (const [range, btn] of this.rangeButtons.entries()) {
+      const isSelected = state.selectedRange === range;
+      btn.classList.toggle(ADMIN_UI_CLASSES.CHART_RANGE_BTN_ACTIVE, isSelected);
+      btn.setAttribute("aria-pressed", String(isSelected));
+    }
+
     if (this.valueElement) {
       this.valueElement.textContent = String(state.activeVisitorsCount);
     }
@@ -166,21 +223,23 @@ export class AttendanceChartWidget {
           ? Math.max(...state.hourlyAttendance.values)
           : 0,
       );
-      this.peakElement.textContent = `${ADMIN_UI_TEXT.PEAK_LABEL_PREFIX}${peak}${ADMIN_UI_TEXT.PEAK_LABEL_SUFFIX}`;
+      this.peakElement.textContent = `${ADMIN_UI_TEXT.PEAK_PREFIX_BY_RANGE[state.selectedRange]}${peak}${ADMIN_UI_TEXT.PEAK_LABEL_SUFFIX}`;
     }
 
     if (this.connectionElement && this.connectionTextElement) {
+      const isOffline = state.connectionStatus === "offline";
+      this.connectionElement.hidden = !isOffline;
       this.connectionElement.classList.toggle(
         ADMIN_UI_CLASSES.CONNECTION_ONLINE,
-        state.connected,
+        false,
       );
       this.connectionElement.classList.toggle(
         ADMIN_UI_CLASSES.CONNECTION_OFFLINE,
-        !state.connected,
+        isOffline,
       );
-      this.connectionTextElement.textContent = state.connected
-        ? ADMIN_UI_TEXT.CONNECTION_ONLINE
-        : ADMIN_UI_TEXT.CONNECTION_OFFLINE;
+      this.connectionTextElement.textContent = isOffline
+        ? ADMIN_UI_TEXT.CONNECTION_OFFLINE
+        : "";
     }
   }
 

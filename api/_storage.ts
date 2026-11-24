@@ -2,6 +2,7 @@ import { MEDIA_STORAGE_LIMITS } from "./_media-validation.js";
 import {
   normalizeObjectKey,
   signAwsV4Headers,
+  signAwsV4PresignedDownloadUrl,
   signAwsV4PresignedUrl,
 } from "./_r2-signer.js";
 
@@ -12,10 +13,23 @@ export interface PresignedUploadTarget {
   readonly expiresInSeconds: number;
 }
 
+export interface PresignedDownloadTarget {
+  readonly key: string;
+  readonly downloadUrl: string;
+  readonly filename: string;
+  readonly expiresInSeconds: number;
+}
+
 export interface CreatePresignedUploadInput {
   readonly objectKey: string;
   readonly contentType: string;
   readonly contentLength: number;
+  readonly expiresInSeconds?: number;
+}
+
+export interface CreatePresignedDownloadInput {
+  readonly objectKey: string;
+  readonly filename: string;
   readonly expiresInSeconds?: number;
 }
 
@@ -27,6 +41,9 @@ export interface MediaStorageProvider {
   createPresignedUpload(
     input: CreatePresignedUploadInput,
   ): Promise<PresignedUploadTarget>;
+  createPresignedDownload?(
+    input: CreatePresignedDownloadInput,
+  ): Promise<PresignedDownloadTarget>;
   deleteObject(objectKey: string): Promise<void>;
 }
 
@@ -37,6 +54,56 @@ export interface R2StorageProviderConfig {
   readonly bucket: string;
   readonly now?: () => Date;
   readonly fetchImpl?: typeof fetch;
+}
+
+export function buildSafeDownloadFilename(
+  title: string,
+  extension: string,
+  fallbackBase: string = "archivo",
+): string {
+  const normalizedBase = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  const cleanExt = extension.replace(/^\.+/, "").toLowerCase() || "bin";
+  return `${normalizedBase || fallbackBase}.${cleanExt}`;
+}
+
+export async function resolveDownloadTargetPayload(params: {
+  readonly storage: MediaStorageProvider;
+  readonly objectKey: string;
+  readonly filename: string;
+  readonly publicBaseUrl: string | undefined;
+  readonly expiresInSeconds?: number;
+}): Promise<{
+  readonly downloadUrl: string;
+  readonly filename: string;
+  readonly expiresInSeconds: number;
+}> {
+  const expiresInSeconds =
+    params.expiresInSeconds ?? MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS;
+  if (typeof params.storage.createPresignedDownload === "function") {
+    const presigned = await params.storage.createPresignedDownload({
+      objectKey: params.objectKey,
+      filename: params.filename,
+      expiresInSeconds,
+    });
+    return {
+      downloadUrl: presigned.downloadUrl,
+      filename: presigned.filename,
+      expiresInSeconds: presigned.expiresInSeconds,
+    };
+  }
+
+  return {
+    downloadUrl:
+      resolvePublicMediaUrl(params.publicBaseUrl, params.objectKey) ?? "",
+    filename: params.filename,
+    expiresInSeconds,
+  };
 }
 
 /**
@@ -93,6 +160,31 @@ export class R2StorageProvider implements MediaStorageProvider {
       key: cleanKey,
       uploadUrl: signed.url,
       headers: signed.headers,
+      expiresInSeconds: signed.expiresInSeconds,
+    };
+  }
+
+  public async createPresignedDownload(
+    input: CreatePresignedDownloadInput,
+  ): Promise<PresignedDownloadTarget> {
+    const cleanKey = normalizeObjectKey(input.objectKey);
+    const expiresSeconds =
+      input.expiresInSeconds ?? MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS;
+    const signed = signAwsV4PresignedDownloadUrl({
+      accountId: this.config.accountId,
+      accessKeyId: this.config.accessKeyId,
+      secretAccessKey: this.config.secretAccessKey,
+      bucket: this.config.bucket,
+      objectKey: cleanKey,
+      filename: input.filename,
+      expiresSeconds,
+      now: this.config.now,
+    });
+
+    return {
+      key: cleanKey,
+      downloadUrl: signed.url,
+      filename: input.filename,
       expiresInSeconds: signed.expiresInSeconds,
     };
   }

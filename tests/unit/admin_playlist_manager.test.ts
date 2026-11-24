@@ -23,11 +23,15 @@ vi.mock("chart.js", () => {
   };
 });
 import {
+  ADMIN_AUDIO_ENDPOINTS,
   ADMIN_AUDIO_LIMITS,
+  ADMIN_HTTP_ERROR_TEXT,
+  ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
   AdminAuthStore,
   AdminDashboardStore,
   AdminDashboardView,
+  AdminHttpError,
   type AdminNetworkFetcher,
 } from "../../src/admin/index";
 import { AdminAudioStore } from "../../src/admin/audio-store";
@@ -286,16 +290,147 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
       playbackMode: "SHUFFLE",
     });
 
-    // Delete track button -> DELETE
+    // Delete track via compact ⋯ menu -> two-step inline confirmation -> DELETE
+    const t2MoreBtn = root.querySelector(
+      '[data-audio-action="more-actions"][data-track-id="t2"]',
+    ) as HTMLButtonElement;
+    expect(t2MoreBtn).not.toBeNull();
+    t2MoreBtn.click();
     const deleteBtn = root.querySelector(
       '[data-audio-action="delete"][data-track-id="t2"]',
     ) as HTMLButtonElement;
     expect(deleteBtn).not.toBeNull();
     deleteBtn.click();
+    expect(fetcher.deleteCalls.length).toBe(0);
+
+    const confirmDeleteBtn = root.querySelector(
+      '[data-audio-action="confirm-delete"][data-track-id="t2"]',
+    ) as HTMLButtonElement;
+    expect(confirmDeleteBtn).not.toBeNull();
+    confirmDeleteBtn.click();
     await vi.waitFor(() => {
       expect(fetcher.deleteCalls.length).toBe(1);
     });
     expect(fetcher.deleteCalls[0]).toContain("id=t2");
+  });
+
+  it("PlaylistManagerWidget renders visible labels, friendly MP3/M4A chips, collapsible -16 LUFS details, validation, cancelable delete, and download button", async () => {
+    const downloadTrigger = vi.fn();
+    const fetcher = new StubAudioFetcher();
+    const origGet = fetcher.get.bind(fetcher);
+    fetcher.get = vi.fn(async (url: string) => {
+      if (url.includes("downloadId=t1")) {
+        return {
+          downloadUrl: "https://r2.example/t1.m4a",
+          filename: "bienvenida-sierra.m4a",
+          expiresInSeconds: 300,
+        } as never;
+      }
+      return origGet(url);
+    });
+
+    const store = new AdminAudioStore({
+      getToken: () => "jwt-token",
+      onUnauthorized: vi.fn(),
+      fetcher,
+      downloadTrigger,
+    });
+    const widget = new PlaylistManagerWidget(store);
+    widget.mount(root);
+    await store.fetchPlaylist(RoomId.LOBBY);
+
+    // Visible labels for filters & inputs
+    const labelsText = Array.from(root.querySelectorAll("label")).map(
+      (l) => l.textContent,
+    );
+    expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_ROOM_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_PLAYBACK_MODE_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_FILE_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.AUDIO_TITLE_LABEL);
+
+    // Audio upload uses modern custom file picker with SVG button
+    const audioFileInput = root.querySelector(
+      '[data-audio-upload="file"]',
+    ) as HTMLInputElement;
+    const audioPicker = audioFileInput.closest(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER}`,
+    ) as HTMLElement;
+    expect(audioPicker).not.toBeNull();
+    expect(
+      audioPicker.querySelector(`.${ADMIN_UI_CLASSES.FILE_PICKER_BTN} svg`),
+    ).not.toBeNull();
+    expect(
+      audioPicker.querySelector('[data-file-name="true"]')?.textContent,
+    ).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
+    // Collapsible technical details preserves -16 LUFS and AAC-LC
+    const detailsEl = root.querySelector("details");
+    expect(detailsEl).not.toBeNull();
+    expect(detailsEl?.textContent).toContain("-16 LUFS");
+
+    // Friendly format chips instead of raw MIME strings
+    const chips = Array.from(
+      root.querySelectorAll(`.${ADMIN_UI_CLASSES.MEDIA_FORMAT_CHIP}`),
+    ).map((el) => el.textContent);
+    expect(chips).toEqual([
+      ADMIN_UI_TEXT.AUDIO_FORMAT_M4A,
+      ADMIN_UI_TEXT.AUDIO_FORMAT_MP3,
+    ]);
+    expect(root.textContent).not.toContain("audio/mp4");
+    expect(root.textContent).not.toContain("audio/mpeg");
+
+    // Empty-file form submit shows inline validation message
+    const form = root.querySelector("form") as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(root.textContent).toContain(ADMIN_UI_TEXT.AUDIO_MISSING_FILE_ERROR);
+
+    // Compact overflow menu hides Edit/Download/Delete until clicked; two-step delete cancel restores compact strip
+    const t1MoreBtn = root.querySelector(
+      '[data-audio-action="more-actions"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    const t1Menu = root.querySelector(
+      '[data-track-id="t1"] [role="menu"]',
+    ) as HTMLElement;
+    expect(t1MoreBtn).not.toBeNull();
+    expect(t1Menu.hidden).toBe(true);
+    t1MoreBtn.click();
+    expect(t1Menu.hidden).toBe(false);
+
+    const delBtn = root.querySelector(
+      '[data-audio-action="delete"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    delBtn.click();
+    const cancelBtn = root.querySelector(
+      '[data-audio-action="cancel-delete"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    expect(cancelBtn).not.toBeNull();
+    cancelBtn.click();
+    expect(fetcher.deleteCalls.length).toBe(0);
+
+    // Reorder aria-label and download action inside overflow menu
+    const moveDownBtn = root.querySelector(
+      '[data-audio-action="move-down"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    expect(moveDownBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.MEDIA_MOVE_DOWN_ARIA,
+    );
+
+    (
+      root.querySelector(
+        '[data-audio-action="more-actions"][data-track-id="t1"]',
+      ) as HTMLButtonElement
+    ).click();
+    const dlBtn = root.querySelector(
+      '[data-audio-action="download"][data-track-id="t1"]',
+    ) as HTMLButtonElement;
+    expect(dlBtn).not.toBeNull();
+    dlBtn.click();
+    await vi.waitFor(() => {
+      expect(downloadTrigger).toHaveBeenCalledWith(
+        "https://r2.example/t1.m4a",
+        "bienvenida-sierra.m4a",
+      );
+    });
   });
 
   it("mounts a third playlists tab in AdminDashboardView and fetches lobby playlist when activated", async () => {
@@ -326,5 +461,102 @@ describe("AdminAudioStore & PlaylistManagerWidget", () => {
     await vi.waitFor(() => {
       expect(audioFetcher.getCalls.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  it("AdminAudioStore maps HTTP/network errors to plain Spanish and triggers presigned downloads", async () => {
+    const downloadTrigger = vi.fn();
+    const fetcher = new StubAudioFetcher();
+    const getSpy = vi.spyOn(fetcher, "get").mockResolvedValueOnce({
+      downloadUrl: "https://r2.example/audio-get",
+      filename: "bienvenida-sierra.m4a",
+      expiresInSeconds: 300,
+    });
+
+    const store = new AdminAudioStore({
+      getToken: () => "jwt",
+      onUnauthorized: vi.fn(),
+      fetcher,
+      downloadTrigger,
+    });
+
+    await store.requestDownload("t1");
+    expect(getSpy).toHaveBeenCalledWith(
+      `${ADMIN_AUDIO_ENDPOINTS.AUDIO}?downloadId=t1`,
+      { Authorization: "Bearer jwt" },
+    );
+    expect(downloadTrigger).toHaveBeenCalledWith(
+      "https://r2.example/audio-get",
+      "bienvenida-sierra.m4a",
+    );
+    expect(store.getState().successMessage).toBe(
+      ADMIN_UI_TEXT.AUDIO_SUCCESS_DOWNLOAD,
+    );
+
+    vi.spyOn(fetcher, "post").mockRejectedValueOnce(
+      new AdminHttpError(413, "HTTP 413 from /api/admin/media/presign"),
+    );
+    await store.uploadTrack({
+      roomId: RoomId.LOBBY,
+      file: new File(["bytes"], "canto.mp3", { type: "audio/mpeg" }),
+      title: "Canto",
+      artistCredit: "",
+      licenseNote: "",
+    });
+    expect(store.getState().error).toBe(
+      ADMIN_HTTP_ERROR_TEXT.PAYLOAD_TOO_LARGE,
+    );
+    expect(store.getState().error).not.toContain("HTTP 413");
+    expect(store.getState().error).not.toContain("/api/");
+  });
+
+  it("PlaylistManagerWidget renders real-time audio upload progress bar and hides it on completion", async () => {
+    const fetcher = new StubAudioFetcher();
+    let resolveUpload: (() => void) | null = null;
+    fetcher.putBinary = async (
+      _url: string,
+      _body: Blob,
+      _headers?: Record<string, string>,
+      onProgress?: (p: { loaded: number; total: number; percent: number }) => void,
+    ) => {
+      onProgress?.({ loaded: 70, total: 100, percent: 70 });
+      await new Promise<void>((resolve) => {
+        resolveUpload = resolve;
+      });
+    };
+
+    const store = new AdminAudioStore({
+      getToken: () => "jwt",
+      onUnauthorized: vi.fn(),
+      fetcher,
+      probeDurationMs: vi.fn(async () => 60_000),
+    });
+    const widget = new PlaylistManagerWidget(store);
+    widget.mount(root);
+    await store.fetchPlaylist(RoomId.LOBBY);
+
+    const progressEl = root.querySelector(
+      '[data-upload-progress="audio"]',
+    ) as HTMLElement;
+    expect(progressEl).not.toBeNull();
+    expect(progressEl.hidden).toBe(true);
+
+    const uploadPromise = store.uploadTrack({
+      roomId: RoomId.LOBBY,
+      file: new File(["audio"], "tema.mp3", { type: "audio/mpeg" }),
+      title: "Tema de Sala",
+      artistCredit: "",
+      licenseNote: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(resolveUpload).not.toBeNull();
+      expect(progressEl.hidden).toBe(false);
+      expect(progressEl.getAttribute("aria-valuenow")).toBe("70");
+      expect(progressEl.textContent).toContain("70%");
+    });
+
+    resolveUpload?.();
+    await uploadPromise;
+    expect(progressEl.hidden).toBe(true);
   });
 });

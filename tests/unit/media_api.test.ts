@@ -505,4 +505,107 @@ describe("Media Catalog & Admin Media CMS API", () => {
       "rooms/wixarika/arte/old-poster.webp",
     ]);
   });
+
+  it("supports authenticated GET /api/admin/media?downloadId=<id> with presigned attachment URL and local fallback", async () => {
+    const createPresignedDownload = vi.fn(async (input) => ({
+      key: input.objectKey,
+      downloadUrl: `https://acct123.r2.cloudflarestorage.com/bucket/${input.objectKey}?response-content-disposition=attachment&X-Amz-Signature=dl123`,
+      filename: input.filename,
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    }));
+    const storageWithDownload: MediaStorageProvider = {
+      ...storageProvider,
+      createPresignedDownload,
+    };
+    const adminMedia = createAdminMediaHandler({
+      resolveDb: () => db,
+      resolveStorage: () => storageWithDownload,
+      resolvePublicBaseUrl: () => PUBLIC_BASE_URL,
+      now: () => ++clockMs,
+    });
+
+    // Seed item
+    await adminMedia(
+      {
+        method: "POST",
+        headers: { authorization: authHeader },
+        body: {
+          id: "dl-1",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaKind: "IMAGE_2D",
+          title: "Estambre Ceremonial!",
+          mediaKey: "rooms/wixarika/arte/dl-1.webp",
+          mimeType: "image/webp",
+          fileSizeBytes: 120_000,
+        },
+      },
+      createMockResponse().res,
+    );
+
+    // Unauthenticated -> 401
+    const unauthMock = createMockResponse();
+    await adminMedia(
+      { method: "GET", url: "/api/admin/media?downloadId=dl-1", headers: {} },
+      unauthMock.res,
+    );
+    expect(unauthMock.getStatus()).toBe(401);
+
+    // Missing -> 404
+    const missingMock = createMockResponse();
+    await adminMedia(
+      {
+        method: "GET",
+        url: "/api/admin/media?downloadId=missing",
+        headers: { authorization: authHeader },
+      },
+      missingMock.res,
+    );
+    expect(missingMock.getStatus()).toBe(404);
+
+    // Valid -> 200 with presigned download URL and sanitized filename
+    const okMock = createMockResponse();
+    await adminMedia(
+      {
+        method: "GET",
+        url: "/api/admin/media?downloadId=dl-1",
+        headers: { authorization: authHeader },
+      },
+      okMock.res,
+    );
+    expect(okMock.getStatus()).toBe(200);
+    expect(okMock.getHeader("cache-control")).toBe("no-store");
+    expect(createPresignedDownload).toHaveBeenCalledWith({
+      objectKey: "rooms/wixarika/arte/dl-1.webp",
+      filename: "estambre-ceremonial.webp",
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    });
+    expect(okMock.getBody()).toEqual({
+      downloadUrl:
+        "https://acct123.r2.cloudflarestorage.com/bucket/rooms/wixarika/arte/dl-1.webp?response-content-disposition=attachment&X-Amz-Signature=dl123",
+      filename: "estambre-ceremonial.webp",
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    });
+
+    // Fallback when storageProvider omits createPresignedDownload
+    const fallbackHandler = createAdminMediaHandler({
+      resolveDb: () => db,
+      resolveStorage: () => storageProvider,
+      resolvePublicBaseUrl: () => PUBLIC_BASE_URL,
+    });
+    const fallbackMock = createMockResponse();
+    await fallbackHandler(
+      {
+        method: "GET",
+        url: "/api/admin/media?downloadId=dl-1",
+        headers: { authorization: authHeader },
+      },
+      fallbackMock.res,
+    );
+    expect(fallbackMock.getStatus()).toBe(200);
+    expect(fallbackMock.getBody()).toMatchObject({
+      downloadUrl: `${PUBLIC_BASE_URL}/rooms/wixarika/arte/dl-1.webp`,
+      filename: "estambre-ceremonial.webp",
+    });
+  });
 });

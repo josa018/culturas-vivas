@@ -376,5 +376,245 @@ describe("Admin Login, Access Logs & Stats API", () => {
       expect(payload.surveys[1].viewMode).toBe("2d");
       expect(payload.surveys[1].feedback).toBe("Excelente");
     });
+
+    it("aggregates week (7 days), month (30 days), and year (12 months) ranges in UTC-7", async () => {
+      // Museum clock: 2026-01-10 18:00:00 UTC-7 = 2026-01-11T01:00:00Z
+      const fixedNowMs = Date.UTC(2026, 0, 11, 1, 0, 0);
+      const sixDaysAgoMs = Date.UTC(2026, 0, 4, 20, 0, 0); // 2026-01-04 13:00 UTC-7 (in week & month)
+      const twentyDaysAgoMs = Date.UTC(2025, 11, 21, 19, 0, 0); // 2025-12-21 12:00 UTC-7 (month + year Dec 25)
+      const prevYearMs = Date.UTC(2025, 1, 15, 19, 0, 0); // 2025-02-15 12:00 UTC-7 (year Feb 25)
+      const outsideYearMs = Date.UTC(2025, 0, 15, 19, 0, 0); // 2025-01-15 12:00 UTC-7 (excluded from 12-month window)
+
+      await client.batch(
+        [
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: [SESSION_A, fixedNowMs - 60_000, fixedNowMs],
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: [SESSION_B, sixDaysAgoMs, sixDaysAgoMs],
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: [SESSION_C, twentyDaysAgoMs, twentyDaysAgoMs],
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: ["00000000-0000-4000-8000-000000000004", prevYearMs, prevYearMs],
+          },
+          {
+            sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+            args: ["00000000-0000-4000-8000-000000000005", outsideYearMs, outsideYearMs],
+          },
+        ],
+        "write",
+      );
+
+      const handler = createAdminStatsHandler({
+        resolveDb: () => client,
+        verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
+        now: () => fixedNowMs,
+      });
+      const token = await signAdminToken(
+        { id: 1, username: "admin", role: "admin" },
+        TEST_JWT_SECRET,
+      );
+
+      // Week (7 days: Jan 4..Jan 10)
+      const weekMock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          url: "/api/admin/stats?range=week",
+          headers: { authorization: `Bearer ${token}` },
+        },
+        weekMock.res,
+      );
+      expect(weekMock.getStatus()).toBe(200);
+      const weekBody = weekMock.getBody() as {
+        range: string;
+        hourlyAttendance: { labels: string[]; values: number[]; peak: number };
+      };
+      expect(weekBody.range).toBe("week");
+      expect(weekBody.hourlyAttendance.labels).toHaveLength(7);
+      expect(weekBody.hourlyAttendance.values[0]).toBe(1); // Jan 4
+      expect(weekBody.hourlyAttendance.values[6]).toBe(1); // Jan 10
+      expect(
+        weekBody.hourlyAttendance.values.reduce((a, b) => a + b, 0),
+      ).toBe(2);
+
+      // Month (30 days)
+      const monthMock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          query: { range: "month" },
+          headers: { authorization: `Bearer ${token}` },
+        },
+        monthMock.res,
+      );
+      const monthBody = monthMock.getBody() as {
+        range: string;
+        hourlyAttendance: { labels: string[]; values: number[]; peak: number };
+      };
+      expect(monthBody.range).toBe("month");
+      expect(monthBody.hourlyAttendance.labels).toHaveLength(30);
+      expect(
+        monthBody.hourlyAttendance.values.reduce((a, b) => a + b, 0),
+      ).toBe(3);
+
+      // Year (12 months: Feb 2025..Jan 2026)
+      const yearMock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          query: { range: "year" },
+          headers: { authorization: `Bearer ${token}` },
+        },
+        yearMock.res,
+      );
+      const yearBody = yearMock.getBody() as {
+        range: string;
+        hourlyAttendance: { labels: string[]; values: number[]; peak: number };
+      };
+      expect(yearBody.range).toBe("year");
+      expect(yearBody.hourlyAttendance.labels).toHaveLength(12);
+      expect(yearBody.hourlyAttendance.values[0]).toBe(1); // Feb 2025
+      expect(yearBody.hourlyAttendance.values[10]).toBe(1); // Dec 2025
+      expect(yearBody.hourlyAttendance.values[11]).toBe(2); // Jan 2026 (fixedNowMs + sixDaysAgoMs)
+      expect(yearBody.hourlyAttendance.peak).toBe(2);
+
+      // Invalid range falls back safely to day (24h)
+      const invalidMock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          query: { range: "invalid" },
+          headers: { authorization: `Bearer ${token}` },
+        },
+        invalidMock.res,
+      );
+      const invalidBody = invalidMock.getBody() as {
+        range: string;
+        hourlyAttendance: { labels: string[]; values: number[]; peak: number };
+      };
+      expect(invalidBody.range).toBe("day");
+      expect(invalidBody.hourlyAttendance.labels).toHaveLength(24);
+    });
+
+    it("supports server-backed survey filtering, sorting, and pagination (10 per page) while preserving global average", async () => {
+      const fixedNowMs = Date.UTC(2026, 10, 18, 18, 0, 0);
+      const setupStatements: Array<{ sql: string; args: (string | number | null)[] }> = [];
+
+      // Insert 12 distinct visitor_sessions (1 survey per session) across vr (1..7), 2d (8..10), and unknown (11..12)
+      for (let i = 1; i <= 12; i += 1) {
+        const sessionId = `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`;
+        setupStatements.push({
+          sql: "INSERT INTO visitor_sessions (id, created_at, last_ping, ping_count) VALUES (?, ?, ?, 1)",
+          args: [sessionId, fixedNowMs, fixedNowMs],
+        });
+        if (i <= 7) {
+          setupStatements.push({
+            sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'headset', 'vr')",
+            args: [sessionId],
+          });
+        } else if (i <= 10) {
+          setupStatements.push({
+            sql: "INSERT INTO access_logs (session_uuid, device_type, mode) VALUES (?, 'mobile', '2d')",
+            args: [sessionId],
+          });
+        }
+        const rating = i % 2 === 0 ? 5 : i === 3 ? 2 : 4;
+        const feedback = i % 3 === 0 ? `Comentario ${i}` : null;
+        setupStatements.push({
+          sql: "INSERT INTO surveys (session_uuid, rating, feedback) VALUES (?, ?, ?)",
+          args: [sessionId, rating, feedback],
+        });
+      }
+      await client.batch(setupStatements, "write");
+
+      const handler = createAdminStatsHandler({
+        resolveDb: () => client,
+        verifyToken: (h) => verifyAdminBearerToken(h, TEST_JWT_SECRET),
+        now: () => fixedNowMs,
+      });
+      const token = await signAdminToken(
+        { id: 1, username: "admin", role: "admin" },
+        TEST_JWT_SECRET,
+      );
+
+      // Default page 1 => 10 items, totalItems 12, totalPages 2
+      const page1Mock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          url: "/api/admin/stats",
+          headers: { authorization: `Bearer ${token}` },
+        },
+        page1Mock.res,
+      );
+      const page1Body = page1Mock.getBody() as {
+        surveys: Array<{ id: string; rating: number; viewMode: string | null }>;
+        totalSurveys: number;
+        averageRating: number;
+        surveysPagination: {
+          page: number;
+          pageSize: number;
+          totalItems: number;
+          totalPages: number;
+        };
+      };
+      expect(page1Body.surveys).toHaveLength(10);
+      expect(page1Body.surveysPagination).toEqual({
+        page: 1,
+        pageSize: 10,
+        totalItems: 12,
+        totalPages: 2,
+      });
+      expect(page1Body.totalSurveys).toBe(12);
+
+      // Page 2 => remaining 2 oldest surveys
+      const page2Mock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          url: "/api/admin/stats?surveyPage=2",
+          headers: { authorization: `Bearer ${token}` },
+        },
+        page2Mock.res,
+      );
+      const page2Body = page2Mock.getBody() as {
+        surveys: Array<{ id: string }>;
+        surveysPagination: { page: number; totalItems: number; totalPages: number };
+      };
+      expect(page2Body.surveys).toHaveLength(2);
+      expect(page2Body.surveysPagination.page).toBe(2);
+
+      // Filter by VR + feedback only + sort oldest, preserving global averageRating
+      const filteredMock = createMockResponse();
+      await handler(
+        {
+          method: "GET",
+          url: "/api/admin/stats?surveyMode=vr&surveyHasFeedback=1&surveySort=rating_asc",
+          headers: { authorization: `Bearer ${token}` },
+        },
+        filteredMock.res,
+      );
+      const filteredBody = filteredMock.getBody() as {
+        surveys: Array<{ id: string; rating: number; feedback: string; viewMode: string | null }>;
+        averageRating: number;
+        totalSurveys: number;
+        surveysPagination: { page: number; totalItems: number; totalPages: number };
+      };
+      // Session A has i=1..7 -> with comment i%3===0 => i=3 (rating 2) and i=6 (rating 5)
+      expect(filteredBody.surveys).toHaveLength(2);
+      expect(filteredBody.surveys[0].rating).toBe(2);
+      expect(filteredBody.surveys[1].rating).toBe(5);
+      expect(filteredBody.surveys.every((s) => s.viewMode === "vr" && s.feedback.length > 0)).toBe(true);
+      expect(filteredBody.surveysPagination.totalItems).toBe(2);
+      expect(filteredBody.totalSurveys).toBe(12);
+      expect(filteredBody.averageRating).toBe(page1Body.averageRating);
+    });
   });
 });

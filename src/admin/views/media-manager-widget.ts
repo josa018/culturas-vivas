@@ -14,7 +14,16 @@ import type {
   AdminMediaItemRecord,
   AdminMediaState,
   AdminMediaStore,
+  UploadProgressState,
 } from "../media-store";
+import {
+  createCounterField,
+  createItemActionMenu,
+  createLabeledField,
+  createModernFileInput,
+  createStatusBanners,
+  createUploadProgressBar,
+} from "./admin-form-helpers";
 
 const BYTES_PER_MIB = 1_048_576;
 const PERCENT_MAX = 100;
@@ -37,36 +46,26 @@ function resolveMediaKind(
     : ExhibitMediaType.IMAGE_2D;
 }
 
+function getFriendlyMediaTypeLabel(mediaType: StandMediaType): string {
+  switch (mediaType) {
+    case ExhibitMediaType.IMAGE_STEREO_SBS:
+      return ADMIN_UI_TEXT.MEDIA_KIND_IMAGE_SBS;
+    case ExhibitMediaType.VIDEO_2D:
+      return ADMIN_UI_TEXT.MEDIA_KIND_VIDEO_2D;
+    case ExhibitMediaType.VIDEO_STEREO_SBS:
+      return ADMIN_UI_TEXT.MEDIA_KIND_VIDEO_SBS;
+    case ExhibitMediaType.IMAGE_2D:
+    default:
+      return ADMIN_UI_TEXT.MEDIA_KIND_IMAGE_2D;
+  }
+}
+
 function formatMegabytes(bytes: number): number {
   return Math.round(bytes / BYTES_PER_MIB);
 }
 
-function createFieldWithCounter(
-  input: HTMLInputElement,
-  fieldName: string,
-  maxLength: number,
-): { wrapper: HTMLElement; syncCounter: () => void } {
-  input.maxLength = maxLength;
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "cv-admin-media-field";
-
-  const counter = document.createElement("span");
-  counter.className = ADMIN_UI_CLASSES.MEDIA_FIELD_COUNTER;
-  counter.setAttribute("data-counter-for", fieldName);
-
-  const syncCounter = () => {
-    counter.textContent = `${input.value.length} / ${maxLength}`;
-  };
-  syncCounter();
-
-  input.addEventListener("input", syncCounter);
-  wrapper.append(input, counter);
-  return { wrapper, syncCounter };
-}
-
 /**
- * Interactive /admin panel widget for uploading, editing, reordering, and deleting stand media.
+ * Interactive /admin panel widget for uploading, downloading, editing, reordering, and deleting stand media.
  */
 export class MediaManagerWidget {
   private readonly store: AdminMediaStore;
@@ -75,12 +74,18 @@ export class MediaManagerWidget {
   private quotaFillEl: HTMLElement | null = null;
   private roomSelectEl: HTMLSelectElement | null = null;
   private standSelectEl: HTMLSelectElement | null = null;
-  private errorBannerEl: HTMLElement | null = null;
+  private syncBannersFn:
+    | ((error: string | null, success: string | null) => void)
+    | null = null;
+  private syncProgressFn: ((progress: UploadProgressState | null) => void) | null =
+    null;
   private submitBtnEl: HTMLButtonElement | null = null;
   private listEl: HTMLElement | null = null;
   private unsubscribe: (() => void) | null = null;
   private editingItemId: string | null = null;
+  private confirmingDeleteId: string | null = null;
   private posterPreviewObjectUrl: string | null = null;
+  private cardCleanupFns: Array<() => void> = [];
 
   constructor(store: AdminMediaStore) {
     this.store = store;
@@ -97,9 +102,18 @@ export class MediaManagerWidget {
     const header = document.createElement("div");
     header.className = ADMIN_UI_CLASSES.CARD_HEADER;
 
+    const titleGroup = document.createElement("div");
+    titleGroup.className = ADMIN_UI_CLASSES.CARD_TITLE_GROUP;
+
     const title = document.createElement("h2");
     title.className = ADMIN_UI_CLASSES.CARD_TITLE;
     title.textContent = ADMIN_UI_TEXT.MEDIA_SECTION_TITLE;
+
+    const subtitle = document.createElement("p");
+    subtitle.className = ADMIN_UI_CLASSES.CARD_SUBTITLE;
+    subtitle.textContent = ADMIN_UI_TEXT.MEDIA_SECTION_SUBTITLE;
+
+    titleGroup.append(title, subtitle);
 
     const quotaContainer = document.createElement("div");
     quotaContainer.className = ADMIN_UI_CLASSES.MEDIA_QUOTA_BAR;
@@ -113,19 +127,18 @@ export class MediaManagerWidget {
     quotaTrack.appendChild(quotaFill);
     quotaContainer.append(quotaLabel, quotaTrack);
 
-    header.append(title, quotaContainer);
+    header.append(titleGroup, quotaContainer);
 
-    const errorBanner = document.createElement("p");
-    errorBanner.className = `${ADMIN_UI_CLASSES.ERROR_TEXT} ${ADMIN_UI_CLASSES.ERROR_HIDDEN}`;
+    const { errorBanner, successBanner, syncBanners } = createStatusBanners();
+    this.syncBannersFn = syncBanners;
 
-    // Filters
+    // Filters with visible labels
     const filtersRow = document.createElement("div");
     filtersRow.className = ADMIN_UI_CLASSES.MEDIA_FILTERS;
 
     const roomSelect = document.createElement("select");
     roomSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     roomSelect.setAttribute("data-media-filter", "room");
-    roomSelect.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_ROOM_LABEL);
 
     for (const roomEntry of Object.values(ROOM_CATALOG)) {
       const opt = document.createElement("option");
@@ -137,71 +150,132 @@ export class MediaManagerWidget {
     const standSelect = document.createElement("select");
     standSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     standSelect.setAttribute("data-media-filter", "stand");
-    standSelect.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_STAND_LABEL);
 
     roomSelect.addEventListener("change", () => {
       this.editingItemId = null;
+      this.confirmingDeleteId = null;
       this.store.setSelection(roomSelect.value as RoomId);
     });
 
     standSelect.addEventListener("change", () => {
       this.editingItemId = null;
+      this.confirmingDeleteId = null;
       this.store.setSelection(
         roomSelect.value as RoomId,
         standSelect.value as StandId,
       );
     });
 
-    filtersRow.append(roomSelect, standSelect);
+    filtersRow.append(
+      createLabeledField({
+        id: "cv-media-filter-room",
+        labelText: ADMIN_UI_TEXT.MEDIA_ROOM_LABEL,
+        control: roomSelect,
+      }),
+      createLabeledField({
+        id: "cv-media-filter-stand",
+        labelText: ADMIN_UI_TEXT.MEDIA_STAND_LABEL,
+        control: standSelect,
+      }),
+    );
 
-    // Upload Form
+    // Upload Form with visible labels and collapsible technical hint
     const form = document.createElement("form");
     form.className = ADMIN_UI_CLASSES.MEDIA_FORM;
+    form.noValidate = true;
 
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "image/jpeg,image/png,image/webp,video/mp4";
-    fileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    fileInput.setAttribute("data-upload-field", "file");
+    const filePicker = createModernFileInput({
+      id: "cv-media-upload-file",
+      accept: "image/jpeg,image/png,image/webp,video/mp4",
+      dataAttrName: "data-upload-field",
+      dataAttrValue: "file",
+      form,
+    });
+    const fileInput = filePicker.input;
+
+    const fileField = createLabeledField({
+      id: "cv-media-upload-file",
+      labelText: ADMIN_UI_TEXT.MEDIA_FILE_LABEL,
+      control: filePicker.wrapper,
+      controlTargetForId: fileInput,
+      hintText: ADMIN_UI_TEXT.MEDIA_FILE_HINT,
+    });
+
+    const formatSelect = document.createElement("select");
+    formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
+    formatSelect.setAttribute("data-upload-field", "format");
+    const opt2D = document.createElement("option");
+    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
+    opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
+    const optSbs = document.createElement("option");
+    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
+    optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
+    formatSelect.append(opt2D, optSbs);
+
+    const formatField = createLabeledField({
+      id: "cv-media-upload-format",
+      labelText: ADMIN_UI_TEXT.MEDIA_FORMAT_LABEL,
+      control: formatSelect,
+      help: {
+        toggleKey: "format",
+        popoverId: "cv-media-format-help",
+        ariaLabel: ADMIN_UI_TEXT.MEDIA_FORMAT_HELP_ARIA,
+        bodyText: ADMIN_UI_TEXT.MEDIA_TECH_HINT_BODY,
+      },
+    });
 
     const titleInput = document.createElement("input");
     titleInput.type = "text";
-    titleInput.placeholder = ADMIN_UI_TEXT.MEDIA_TITLE_LABEL;
+    titleInput.placeholder = ADMIN_UI_TEXT.MEDIA_TITLE_PLACEHOLDER;
     titleInput.required = true;
     titleInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     titleInput.setAttribute("data-upload-field", "title");
-    const titleField = createFieldWithCounter(
-      titleInput,
-      "title",
-      ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
-    );
+    const titleField = createCounterField({
+      id: "cv-media-upload-title",
+      labelText: ADMIN_UI_TEXT.MEDIA_TITLE_LABEL,
+      input: titleInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "title",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
+    });
 
     const creatorInput = document.createElement("input");
     creatorInput.type = "text";
-    creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL;
+    creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_PLACEHOLDER;
     creatorInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     creatorInput.setAttribute("data-upload-field", "creatorName");
-    const creatorField = createFieldWithCounter(
-      creatorInput,
-      "creatorName",
-      ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
-    );
+    const creatorField = createCounterField({
+      id: "cv-media-upload-creator",
+      labelText: ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL,
+      input: creatorInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "creatorName",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
+    });
 
     const descInput = document.createElement("input");
     descInput.type = "text";
-    descInput.placeholder = ADMIN_UI_TEXT.MEDIA_DESC_LABEL;
+    descInput.placeholder = ADMIN_UI_TEXT.MEDIA_DESC_PLACEHOLDER;
     descInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     descInput.setAttribute("data-upload-field", "description");
-    const descField = createFieldWithCounter(
-      descInput,
-      "description",
-      ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
-    );
+    const descField = createCounterField({
+      id: "cv-media-upload-description",
+      labelText: ADMIN_UI_TEXT.MEDIA_DESC_LABEL,
+      input: descInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "description",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
+      fullWidth: true,
+    });
 
     const posterControls = document.createElement("div");
-    posterControls.className = ADMIN_UI_CLASSES.MEDIA_POSTER_CONTROLS;
+    posterControls.className = `${ADMIN_UI_CLASSES.MEDIA_POSTER_CONTROLS} ${ADMIN_UI_CLASSES.MEDIA_FORM_FULL}`;
     posterControls.setAttribute("data-video-poster-controls", "true");
     posterControls.hidden = true;
+
+    const posterSectionHeading = document.createElement("strong");
+    posterSectionHeading.className = ADMIN_UI_CLASSES.MEDIA_FIELD_LABEL;
+    posterSectionHeading.textContent = ADMIN_UI_TEXT.MEDIA_POSTER_SECTION_LABEL;
 
     const seekInput = document.createElement("input");
     seekInput.type = "number";
@@ -210,22 +284,34 @@ export class MediaManagerWidget {
     seekInput.value = String(ADMIN_MEDIA_LIMITS.POSTER_SEEK_SECONDS);
     seekInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     seekInput.setAttribute("data-upload-field", "posterSeekSeconds");
-    seekInput.setAttribute("aria-label", ADMIN_UI_TEXT.MEDIA_POSTER_TIME_LABEL);
+
+    const seekField = createLabeledField({
+      id: "cv-media-poster-seek",
+      labelText: ADMIN_UI_TEXT.MEDIA_POSTER_TIME_LABEL,
+      control: seekInput,
+    });
 
     const capturePreviewBtn = document.createElement("button");
     capturePreviewBtn.type = "button";
+    capturePreviewBtn.className = "cv-btn cv-btn--outline cv-admin-btn-inline";
     capturePreviewBtn.textContent = ADMIN_UI_TEXT.MEDIA_POSTER_CAPTURE_BTN;
     capturePreviewBtn.setAttribute("data-action", "capture-poster-preview");
 
-    const customPosterInput = document.createElement("input");
-    customPosterInput.type = "file";
-    customPosterInput.accept = "image/jpeg,image/png,image/webp";
-    customPosterInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    customPosterInput.setAttribute("data-upload-field", "customPoster");
-    customPosterInput.setAttribute(
-      "aria-label",
-      ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
-    );
+    const customPosterPicker = createModernFileInput({
+      id: "cv-media-poster-custom",
+      accept: "image/jpeg,image/png,image/webp",
+      dataAttrName: "data-upload-field",
+      dataAttrValue: "customPoster",
+      form,
+    });
+    const customPosterInput = customPosterPicker.input;
+
+    const customPosterField = createLabeledField({
+      id: "cv-media-poster-custom",
+      labelText: ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
+      control: customPosterPicker.wrapper,
+      controlTargetForId: customPosterInput,
+    });
 
     const posterPreviewImg = document.createElement("img");
     posterPreviewImg.className = ADMIN_UI_CLASSES.MEDIA_POSTER_PREVIEW;
@@ -234,7 +320,10 @@ export class MediaManagerWidget {
     posterPreviewImg.hidden = true;
 
     const setPreviewBlob = (blob: Blob) => {
-      if (this.posterPreviewObjectUrl && typeof URL.revokeObjectURL === "function") {
+      if (
+        this.posterPreviewObjectUrl &&
+        typeof URL.revokeObjectURL === "function"
+      ) {
         URL.revokeObjectURL(this.posterPreviewObjectUrl);
       }
       if (typeof URL.createObjectURL === "function") {
@@ -245,7 +334,10 @@ export class MediaManagerWidget {
     };
 
     const clearPreview = () => {
-      if (this.posterPreviewObjectUrl && typeof URL.revokeObjectURL === "function") {
+      if (
+        this.posterPreviewObjectUrl &&
+        typeof URL.revokeObjectURL === "function"
+      ) {
         URL.revokeObjectURL(this.posterPreviewObjectUrl);
       }
       this.posterPreviewObjectUrl = null;
@@ -261,17 +353,6 @@ export class MediaManagerWidget {
         clearPreview();
       }
     });
-
-    const formatSelect = document.createElement("select");
-    formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-    formatSelect.setAttribute("data-upload-field", "format");
-    const opt2D = document.createElement("option");
-    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
-    opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
-    const optSbs = document.createElement("option");
-    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
-    optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
-    formatSelect.append(opt2D, optSbs);
 
     const refreshVideoPosterPreview = () => {
       const selectedFile = fileInput.files?.[0];
@@ -313,32 +394,42 @@ export class MediaManagerWidget {
     });
 
     posterControls.append(
-      seekInput,
+      posterSectionHeading,
+      seekField,
       capturePreviewBtn,
-      customPosterInput,
+      customPosterField,
       posterPreviewImg,
     );
 
+    const progressBar = createUploadProgressBar("media");
+    this.syncProgressFn = progressBar.syncProgress;
+
     const submitBtn = document.createElement("button");
     submitBtn.type = "submit";
-    submitBtn.className = ADMIN_UI_CLASSES.BUTTON_SUBMIT;
+    submitBtn.className = `${ADMIN_UI_CLASSES.BUTTON_SUBMIT} ${ADMIN_UI_CLASSES.MEDIA_FORM_FULL}`;
     submitBtn.textContent = ADMIN_UI_TEXT.MEDIA_UPLOAD_BTN;
 
     form.append(
-      fileInput,
+      fileField,
+      formatField,
       titleField.wrapper,
       creatorField.wrapper,
       descField.wrapper,
       posterControls,
-      formatSelect,
+      progressBar.container,
       submitBtn,
     );
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const selectedFile = fileInput.files?.[0];
+      if (!selectedFile) {
+        this.store.setValidationError(ADMIN_UI_TEXT.MEDIA_MISSING_FILE_ERROR);
+        return;
+      }
       const cleanTitle = titleInput.value.trim();
-      if (!selectedFile || !cleanTitle) {
+      if (!cleanTitle) {
+        this.store.setValidationError(ADMIN_UI_TEXT.MEDIA_MISSING_TITLE_ERROR);
         return;
       }
 
@@ -347,9 +438,7 @@ export class MediaManagerWidget {
       const isHalfSbs = formatSelect.value === ADMIN_MEDIA_FORMAT.HALF_SBS;
       const parsedSeek = Number(seekInput.value);
       const posterSeekSeconds =
-        Number.isFinite(parsedSeek) && parsedSeek >= 0
-          ? parsedSeek
-          : undefined;
+        Number.isFinite(parsedSeek) && parsedSeek >= 0 ? parsedSeek : undefined;
       const customPosterFile = isVideo
         ? (customPosterInput.files?.[0] ?? null)
         : null;
@@ -369,6 +458,8 @@ export class MediaManagerWidget {
         .then(() => {
           if (!this.store.getState().error) {
             form.reset();
+            filePicker.syncFileName();
+            customPosterPicker.syncFileName();
             titleField.syncCounter();
             creatorField.syncCounter();
             descField.syncCounter();
@@ -381,7 +472,14 @@ export class MediaManagerWidget {
     const listEl = document.createElement("div");
     listEl.className = ADMIN_UI_CLASSES.MEDIA_LIST;
 
-    section.append(header, errorBanner, filtersRow, form, listEl);
+    section.append(
+      header,
+      errorBanner,
+      successBanner,
+      filtersRow,
+      form,
+      listEl,
+    );
     parent.appendChild(section);
 
     this.container = section;
@@ -389,7 +487,6 @@ export class MediaManagerWidget {
     this.quotaFillEl = quotaFill;
     this.roomSelectEl = roomSelect;
     this.standSelectEl = standSelect;
-    this.errorBannerEl = errorBanner;
     this.submitBtnEl = submitBtn;
     this.listEl = listEl;
 
@@ -399,6 +496,7 @@ export class MediaManagerWidget {
   }
 
   public unmount(): void {
+    this.clearCardCleanups();
     this.unsubscribe?.();
     this.unsubscribe = null;
     if (
@@ -416,9 +514,12 @@ export class MediaManagerWidget {
     this.quotaFillEl = null;
     this.roomSelectEl = null;
     this.standSelectEl = null;
-    this.errorBannerEl = null;
+    this.syncBannersFn = null;
+    this.syncProgressFn = null;
     this.submitBtnEl = null;
     this.listEl = null;
+    this.confirmingDeleteId = null;
+    this.editingItemId = null;
   }
 
   public getElement(): HTMLElement | null {
@@ -436,7 +537,7 @@ export class MediaManagerWidget {
             PERCENT_MAX,
         ),
       );
-      this.quotaLabelEl.textContent = `${usedMb} MB / ${maxMb} MB`;
+      this.quotaLabelEl.textContent = `${usedMb} MB / ${maxMb} MB (${pct}%)`;
       this.quotaFillEl.style.width = `${pct}%`;
     }
 
@@ -460,15 +561,8 @@ export class MediaManagerWidget {
       this.standSelectEl.value = state.selectedStandId;
     }
 
-    if (this.errorBannerEl) {
-      if (state.error) {
-        this.errorBannerEl.textContent = state.error;
-        this.errorBannerEl.classList.remove(ADMIN_UI_CLASSES.ERROR_HIDDEN);
-      } else {
-        this.errorBannerEl.textContent = "";
-        this.errorBannerEl.classList.add(ADMIN_UI_CLASSES.ERROR_HIDDEN);
-      }
-    }
+    this.syncBannersFn?.(state.error, state.successMessage);
+    this.syncProgressFn?.(state.uploadProgress);
 
     if (this.submitBtnEl) {
       this.submitBtnEl.disabled = state.isUploading;
@@ -480,7 +574,15 @@ export class MediaManagerWidget {
     this.renderStandList(this.store.getSelectedItems());
   }
 
+  private clearCardCleanups(): void {
+    for (const cleanup of this.cardCleanupFns) {
+      cleanup();
+    }
+    this.cardCleanupFns = [];
+  }
+
   private renderStandList(items: readonly AdminMediaItemRecord[]): void {
+    this.clearCardCleanups();
     if (!this.listEl) {
       return;
     }
@@ -519,7 +621,7 @@ export class MediaManagerWidget {
 
     const chipEl = document.createElement("span");
     chipEl.className = ADMIN_UI_CLASSES.MEDIA_FORMAT_CHIP;
-    chipEl.textContent = item.mediaType;
+    chipEl.textContent = getFriendlyMediaTypeLabel(item.mediaType);
 
     info.append(titleEl, chipEl);
 
@@ -529,46 +631,54 @@ export class MediaManagerWidget {
       info.appendChild(creatorEl);
     }
 
-    const actions = document.createElement("div");
-    actions.className = ADMIN_UI_CLASSES.MEDIA_ITEM_ACTIONS;
-
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_UP;
-    upBtn.disabled = isFirst;
-    upBtn.setAttribute("data-action", "move-up");
-    upBtn.addEventListener("click", () => {
-      void this.store.moveItem(item.id, "up");
+    const actions = createItemActionMenu({
+      itemId: item.id,
+      isFirst,
+      isLast,
+      isConfirmingDelete: this.confirmingDeleteId === item.id,
+      actionAttr: "data-action",
+      onMoveUp: () => {
+        void this.store.moveItem(item.id, "up");
+      },
+      onMoveDown: () => {
+        void this.store.moveItem(item.id, "down");
+      },
+      onDownload: () => {
+        void this.store.requestDownload(item.id);
+      },
+      onEdit: () => {
+        this.confirmingDeleteId = null;
+        this.editingItemId = this.editingItemId === item.id ? null : item.id;
+        this.renderStandList(this.store.getSelectedItems());
+      },
+      deletePromptText: ADMIN_UI_TEXT.MEDIA_DELETE_CONFIRM_PROMPT,
+      onRequestDelete: () => {
+        this.confirmingDeleteId = item.id;
+        this.renderStandList(this.store.getSelectedItems());
+      },
+      onConfirmDelete: () => {
+        this.confirmingDeleteId = null;
+        void this.store.deleteItem(item.id);
+      },
+      onCancelDelete: () => {
+        this.confirmingDeleteId = null;
+        this.renderStandList(this.store.getSelectedItems());
+      },
+      onCleanup: (fn) => {
+        this.cardCleanupFns.push(fn);
+      },
     });
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.textContent = ADMIN_UI_TEXT.MEDIA_MOVE_DOWN;
-    downBtn.disabled = isLast;
-    downBtn.setAttribute("data-action", "move-down");
-    downBtn.addEventListener("click", () => {
-      void this.store.moveItem(item.id, "down");
-    });
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.textContent = ADMIN_UI_TEXT.MEDIA_EDIT_BTN;
-    editBtn.setAttribute("data-action", "edit");
-    editBtn.addEventListener("click", () => {
-      this.editingItemId = this.editingItemId === item.id ? null : item.id;
-      this.renderStandList(this.store.getSelectedItems());
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.textContent = ADMIN_UI_TEXT.MEDIA_DELETE_BTN;
-    deleteBtn.setAttribute("data-action", "delete");
-    deleteBtn.addEventListener("click", () => {
-      void this.store.deleteItem(item.id);
-    });
-
-    actions.append(upBtn, downBtn, editBtn, deleteBtn);
     card.append(thumb, info, actions);
+
+    const itemSuccess = this.store.getState().itemSuccess;
+    if (itemSuccess && itemSuccess.itemId === item.id) {
+      const itemBanner = document.createElement("p");
+      itemBanner.className = `${ADMIN_UI_CLASSES.SUCCESS_CONTAINER} ${ADMIN_UI_CLASSES.SUCCESS_TEXT} ${ADMIN_UI_CLASSES.ITEM_SUCCESS_BANNER}`;
+      itemBanner.setAttribute("role", "status");
+      itemBanner.setAttribute("data-item-success", "true");
+      itemBanner.textContent = itemSuccess.message;
+      card.appendChild(itemBanner);
+    }
 
     if (this.editingItemId === item.id) {
       card.appendChild(this.buildInlineEditForm(item));
@@ -584,62 +694,91 @@ export class MediaManagerWidget {
     const titleInput = document.createElement("input");
     titleInput.type = "text";
     titleInput.value = item.title;
+    titleInput.placeholder = ADMIN_UI_TEXT.MEDIA_TITLE_PLACEHOLDER;
     titleInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     titleInput.setAttribute("data-edit-field", "title");
-    const titleField = createFieldWithCounter(
-      titleInput,
-      "edit-title",
-      ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
-    );
+    const titleField = createCounterField({
+      id: `cv-media-edit-title-${item.id}`,
+      labelText: ADMIN_UI_TEXT.MEDIA_TITLE_LABEL,
+      input: titleInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "edit-title",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_TITLE_LENGTH,
+    });
 
     const creatorInput = document.createElement("input");
     creatorInput.type = "text";
     creatorInput.value = item.creatorName;
-    creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL;
+    creatorInput.placeholder = ADMIN_UI_TEXT.MEDIA_CREATOR_PLACEHOLDER;
     creatorInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     creatorInput.setAttribute("data-edit-field", "creatorName");
-    const creatorField = createFieldWithCounter(
-      creatorInput,
-      "edit-creatorName",
-      ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
-    );
+    const creatorField = createCounterField({
+      id: `cv-media-edit-creator-${item.id}`,
+      labelText: ADMIN_UI_TEXT.MEDIA_CREATOR_LABEL,
+      input: creatorInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "edit-creatorName",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_CREATOR_LENGTH,
+    });
 
     const descInput = document.createElement("input");
     descInput.type = "text";
     descInput.value = item.description;
+    descInput.placeholder = ADMIN_UI_TEXT.MEDIA_DESC_PLACEHOLDER;
     descInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     descInput.setAttribute("data-edit-field", "description");
-    const descField = createFieldWithCounter(
-      descInput,
-      "edit-description",
-      ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
-    );
+    const descField = createCounterField({
+      id: `cv-media-edit-desc-${item.id}`,
+      labelText: ADMIN_UI_TEXT.MEDIA_DESC_LABEL,
+      input: descInput,
+      counterAttrName: "data-counter-for",
+      counterAttrValue: "edit-description",
+      maxLength: ADMIN_MEDIA_LIMITS.MAX_DESCRIPTION_LENGTH,
+      fullWidth: true,
+    });
 
     const formatSelect = document.createElement("select");
     formatSelect.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     formatSelect.setAttribute("data-edit-field", "format");
     const opt2D = document.createElement("option");
-    opt2D.value = "2D";
+    opt2D.value = ADMIN_MEDIA_FORMAT.STANDARD_2D;
     opt2D.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_2D;
     const optSbs = document.createElement("option");
-    optSbs.value = "SBS";
+    optSbs.value = ADMIN_MEDIA_FORMAT.HALF_SBS;
     optSbs.textContent = ADMIN_UI_TEXT.MEDIA_FORMAT_HALF_SBS;
     formatSelect.append(opt2D, optSbs);
-    formatSelect.value = isHalfSbsMediaType(item.mediaType) ? "SBS" : "2D";
+    formatSelect.value = isHalfSbsMediaType(item.mediaType)
+      ? ADMIN_MEDIA_FORMAT.HALF_SBS
+      : ADMIN_MEDIA_FORMAT.STANDARD_2D;
+
+    const formatField = createLabeledField({
+      id: `cv-media-edit-format-${item.id}`,
+      labelText: ADMIN_UI_TEXT.MEDIA_FORMAT_LABEL,
+      control: formatSelect,
+    });
+
+    const editActions = document.createElement("div");
+    editActions.className = `${ADMIN_UI_CLASSES.MEDIA_ITEM_ACTIONS} ${ADMIN_UI_CLASSES.MEDIA_FORM_FULL}`;
 
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
+    saveBtn.className = "cv-btn cv-btn--primary cv-admin-btn-inline";
     saveBtn.textContent = ADMIN_UI_TEXT.MEDIA_SAVE_BTN;
     saveBtn.setAttribute("data-action", "save-edit");
     saveBtn.addEventListener("click", () => {
+      const cleanTitle = titleInput.value.trim();
+      if (!cleanTitle) {
+        this.store.setValidationError(ADMIN_UI_TEXT.MEDIA_MISSING_TITLE_ERROR);
+        return;
+      }
       const nextKind = resolveMediaKind(
         isVideoMediaType(item.mediaType),
-        formatSelect.value === "SBS",
+        formatSelect.value === ADMIN_MEDIA_FORMAT.HALF_SBS,
       );
       this.editingItemId = null;
       void this.store.updateItemMetadata({
         id: item.id,
-        title: titleInput.value.trim(),
+        title: cleanTitle,
         creatorName: creatorInput.value.trim(),
         description: descInput.value.trim(),
         mediaKind: nextKind,
@@ -655,21 +794,31 @@ export class MediaManagerWidget {
       this.renderStandList(this.store.getSelectedItems());
     });
 
+    editActions.append(saveBtn, cancelBtn);
+
     form.append(
       titleField.wrapper,
       creatorField.wrapper,
       descField.wrapper,
-      formatSelect,
-      saveBtn,
-      cancelBtn,
+      formatField,
+      editActions,
     );
 
     if (isVideoMediaType(item.mediaType)) {
-      const posterFileInput = document.createElement("input");
-      posterFileInput.type = "file";
-      posterFileInput.accept = "image/jpeg,image/png,image/webp";
-      posterFileInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
-      posterFileInput.setAttribute("data-edit-field", "posterFile");
+      const posterFilePicker = createModernFileInput({
+        id: `cv-media-edit-poster-${item.id}`,
+        accept: "image/jpeg,image/png,image/webp",
+        dataAttrName: "data-edit-field",
+        dataAttrValue: "posterFile",
+      });
+      const posterFileInput = posterFilePicker.input;
+
+      const posterField = createLabeledField({
+        id: `cv-media-edit-poster-${item.id}`,
+        labelText: ADMIN_UI_TEXT.MEDIA_POSTER_CUSTOM_LABEL,
+        control: posterFilePicker.wrapper,
+        controlTargetForId: posterFileInput,
+      });
 
       const replacePosterBtn = document.createElement("button");
       replacePosterBtn.type = "button";
@@ -678,13 +827,16 @@ export class MediaManagerWidget {
       replacePosterBtn.addEventListener("click", () => {
         const posterFile = posterFileInput.files?.[0];
         if (!posterFile) {
+          this.store.setValidationError(
+            ADMIN_UI_TEXT.MEDIA_MISSING_POSTER_ERROR,
+          );
           return;
         }
         this.editingItemId = null;
         void this.store.replaceVideoPoster(item.id, posterFile);
       });
 
-      form.append(posterFileInput, replacePosterBtn);
+      form.append(posterField, replacePosterBtn);
     }
 
     return form;

@@ -33,6 +33,7 @@ import {
   AdminDashboardStore,
   AdminHttpError,
   type AdminNetworkFetcher,
+  ADMIN_HTTP_ERROR_TEXT,
   ADMIN_UI_CLASSES,
   ADMIN_UI_TEXT,
   AdminLoginModalView,
@@ -42,6 +43,7 @@ import {
   AdminDashboardView,
   AdminMediaStore,
   AdminController,
+  mapAdminErrorMessage,
 } from "../../src/admin/index";
 import type { AdminMediaProcessor } from "../../src/admin/media-processor";
 import { MediaManagerWidget } from "../../src/admin/views/media-manager-widget";
@@ -343,12 +345,13 @@ describe("Admin UI Widgets & AdminController", () => {
     vi.restoreAllMocks();
   });
 
-  it("AttendanceChartWidget syncs labels, values, peak badge, and connection status", async () => {
+  it("AttendanceChartWidget syncs labels, values, peak badge, hides connection indicator until offline, and switches chart ranges", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
     const store = new AdminDashboardStore({
       getToken: () => "jwt-token",
-      fetcher: new StubAdminFetcher(),
+      fetcher,
     });
 
     const chartWidget = new AttendanceChartWidget(store);
@@ -358,17 +361,13 @@ describe("Admin UI Widgets & AdminController", () => {
     const statusEl = el.querySelector(
       '[data-admin-metric="connection-status"]',
     ) as HTMLElement;
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
-    ).toBe(true);
-    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
+    // Hidden during initial connecting state
+    expect(statusEl.hidden).toBe(true);
 
     await store.fetchStats();
 
-    expect(
-      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_ONLINE),
-    ).toBe(true);
-    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_ONLINE);
+    // Remains hidden while online
+    expect(statusEl.hidden).toBe(true);
 
     const chart = chartWidget.getChartInstance() as unknown as {
       data: { labels: string[]; datasets: Array<{ data: number[] }> };
@@ -383,6 +382,45 @@ describe("Admin UI Widgets & AdminController", () => {
     ) as HTMLElement;
     expect(peakBadge.textContent).toContain("9");
 
+    // Visible only when offline
+    const savedStats = fetcher.statsResult;
+    fetcher.statsResult = new AdminHttpError(503, "Offline");
+    await store.fetchStats();
+    expect(statusEl.hidden).toBe(false);
+    expect(
+      statusEl.classList.contains(ADMIN_UI_CLASSES.CONNECTION_OFFLINE),
+    ).toBe(true);
+    expect(statusEl.textContent).toBe(ADMIN_UI_TEXT.CONNECTION_OFFLINE);
+
+    // Clicking week timeframe requests ?range=week and hides offline indicator on recovery
+    fetcher.statsResult = {
+      activeSessions: 2,
+      range: "week",
+      hourlyAttendance: {
+        labels: ["Lun 1", "Mar 2", "Mié 3", "Jue 4", "Vie 5", "Sáb 6", "Dom 7"],
+        values: [3, 5, 1, 2, 4, 8, 6],
+        peak: 8,
+      },
+      surveys: [],
+      averageRating: 0,
+    };
+    const weekBtn = el.querySelector(
+      '[data-chart-range="week"]',
+    ) as HTMLButtonElement;
+    expect(weekBtn).not.toBeNull();
+    weekBtn.click();
+
+    await vi.waitFor(() => {
+      expect(fetcher.getCalls.some((c) => c.url.includes("range=week"))).toBe(
+        true,
+      );
+      expect(weekBtn.getAttribute("aria-pressed")).toBe("true");
+      expect(statusEl.hidden).toBe(true);
+      expect(chart.data.labels).toHaveLength(7);
+      expect(peakBadge.textContent).toContain("8");
+    });
+
+    fetcher.statsResult = savedStats;
     chartWidget.unmount();
   });
 
@@ -420,6 +458,109 @@ describe("Admin UI Widgets & AdminController", () => {
     expect(tbody.children[2].children[1].textContent).toBe(
       ADMIN_UI_TEXT.VIEW_MODE_UNKNOWN,
     );
+
+    tableWidget.unmount();
+  });
+
+  it("SurveysTableWidget provides filter/sort controls and pagination controls wired to AdminDashboardStore", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
+    fetcher.statsResult = {
+      activeSessions: 1,
+      hourlyAttendance: {
+        labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
+        values: Array.from({ length: 24 }, () => 0),
+        peak: 0,
+      },
+      surveys: [
+        {
+          id: "11",
+          timestamp: Date.UTC(2026, 10, 23, 21, 30, 0),
+          rating: 5,
+          feedback: "Muy claro",
+          viewMode: "vr",
+        },
+      ],
+      averageRating: 4.5,
+      totalSurveys: 12,
+      surveysPagination: {
+        page: 1,
+        pageSize: 10,
+        totalItems: 12,
+        totalPages: 2,
+      },
+    };
+
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+    });
+    const tableWidget = new SurveysTableWidget(store);
+    tableWidget.mount(parent);
+    await store.fetchStats();
+
+    const el = tableWidget.getElement()!;
+    const modeSelect = el.querySelector(
+      '[data-survey-filter="mode"]',
+    ) as HTMLSelectElement;
+    const ratingSelect = el.querySelector(
+      '[data-survey-filter="rating"]',
+    ) as HTMLSelectElement;
+    const sortSelect = el.querySelector(
+      '[data-survey-filter="sort"]',
+    ) as HTMLSelectElement;
+    const commentCheck = el.querySelector(
+      '[data-survey-filter="has-feedback"]',
+    ) as HTMLInputElement;
+    const prevBtn = el.querySelector(
+      '[data-survey-page="prev"]',
+    ) as HTMLButtonElement;
+    const nextBtn = el.querySelector(
+      '[data-survey-page="next"]',
+    ) as HTMLButtonElement;
+    const pageSummary = el.querySelector(
+      '[data-survey-page="summary"]',
+    ) as HTMLElement;
+
+    expect(modeSelect).not.toBeNull();
+    expect(ratingSelect).not.toBeNull();
+    expect(sortSelect).not.toBeNull();
+    expect(commentCheck).not.toBeNull();
+    expect(prevBtn.disabled).toBe(true);
+    expect(nextBtn.disabled).toBe(false);
+    expect(pageSummary.textContent).toContain("1");
+    expect(pageSummary.textContent).toContain("2");
+
+    // Advance to page 2
+    fetcher.statsResult = {
+      ...(fetcher.statsResult as Record<string, unknown>),
+      surveysPagination: { page: 2, pageSize: 10, totalItems: 12, totalPages: 2 },
+    };
+    nextBtn.click();
+    await vi.waitFor(() => {
+      expect(fetcher.getCalls.some((c) => c.url.includes("surveyPage=2"))).toBe(
+        true,
+      );
+      expect(prevBtn.disabled).toBe(false);
+      expect(nextBtn.disabled).toBe(true);
+    });
+
+    // Changing filter resets page back to 1
+    modeSelect.value = "vr";
+    modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      const lastCall = fetcher.getCalls[fetcher.getCalls.length - 1];
+      expect(lastCall.url).toContain("surveyMode=vr");
+      expect(lastCall.url).not.toContain("surveyPage=2");
+    });
+
+    commentCheck.checked = true;
+    commentCheck.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      const lastCall = fetcher.getCalls[fetcher.getCalls.length - 1];
+      expect(lastCall.url).toContain("surveyHasFeedback=1");
+    });
 
     tableWidget.unmount();
   });
@@ -509,29 +650,28 @@ describe("Admin UI Widgets & AdminController", () => {
     modal.unmount();
   });
 
-  it("AdminHeaderWidget triggers logout & return-to-tour callbacks", () => {
+  it("AdminHeaderWidget omits return-to-tour button and triggers logout callback", () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
 
     let loggedOut = false;
-    let returnedToTour = false;
     const header = new AdminHeaderWidget({
       username: "alfredo",
       role: "librarian",
       onLogout: () => {
         loggedOut = true;
       },
-      onReturnToTour: () => {
-        returnedToTour = true;
-      },
+      onReturnToTour: () => {},
     });
 
     header.mount(parent);
-    const actions = header.getElement()!.children[1];
-    (actions.children[0] as HTMLElement).click();
-    (actions.children[1] as HTMLElement).click();
+    const headerEl = header.getElement()!;
+    expect(headerEl.querySelector(".cv-admin-btn-exit")).toBeNull();
+    const actions = headerEl.children[1];
+    const logoutBtn = actions.querySelector(".cv-admin-btn-logout") as HTMLElement;
+    expect(logoutBtn).not.toBeNull();
+    logoutBtn.click();
 
-    expect(returnedToTour).toBe(true);
     expect(loggedOut).toBe(true);
     header.unmount();
   });
@@ -581,10 +721,12 @@ describe("Admin UI Widgets & AdminController", () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
 
-    const authStore = new AdminAuthStore(
-      new InMemoryStorage(),
-      new StubAdminFetcher(),
-    );
+    const authFetcher = new StubAdminFetcher();
+    authFetcher.loginResult = {
+      token: "signed.jwt.token",
+      user: { username: "maria_biblio", role: "librarian" },
+    };
+    const authStore = new AdminAuthStore(new InMemoryStorage(), authFetcher);
     await authStore.login({ username: "librarian", password: "pw" });
 
     const statsFetcher = new StubAdminFetcher();
@@ -760,7 +902,9 @@ describe("Admin UI Widgets & AdminController", () => {
       `.${ADMIN_UI_CLASSES.MEDIA_ITEM_CARD}`,
     );
     expect(itemCards).toHaveLength(2);
-    expect(itemCards[0]?.textContent).toContain("Crédito: María Cruz");
+    expect(itemCards[0]?.textContent).toContain(
+      `${ADMIN_UI_TEXT.MEDIA_CREATOR_PREFIX}María Cruz`,
+    );
 
     // Trigger reorder down on first item
     const moveDownBtn = itemCards[0]!.querySelector(
@@ -779,7 +923,20 @@ describe("Admin UI Widgets & AdminController", () => {
       );
     });
 
-    // Inline edit on item w-1
+    // Inline edit on item w-1 via compact ⋯ menu
+    const w1MoreBtn = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    expect(w1MoreBtn).not.toBeNull();
+    expect(w1MoreBtn.getAttribute("aria-expanded")).toBe("false");
+    const w1Menu = mediaPanel.querySelector(
+      '[data-item-id="w-1"] [role="menu"]',
+    ) as HTMLElement;
+    expect(w1Menu.hidden).toBe(true);
+    w1MoreBtn.click();
+    expect(w1MoreBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(w1Menu.hidden).toBe(false);
+
     const editBtn = mediaPanel.querySelector(
       '[data-item-id="w-1"] [data-action="edit"]',
     ) as HTMLButtonElement;
@@ -800,11 +957,22 @@ describe("Admin UI Widgets & AdminController", () => {
       );
     });
 
-    // Delete item w-2
+    // Delete item w-2 via ⋯ menu -> two-step inline confirmation
+    const w2MoreBtn = mediaPanel.querySelector(
+      '[data-item-id="w-2"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    w2MoreBtn.click();
     const deleteBtn = mediaPanel.querySelector(
       '[data-item-id="w-2"] [data-action="delete"]',
     ) as HTMLButtonElement;
     deleteBtn.click();
+    expect(mediaFetcher.delete).not.toHaveBeenCalled();
+
+    const confirmDeleteBtn = mediaPanel.querySelector(
+      '[data-item-id="w-2"] [data-action="confirm-delete"]',
+    ) as HTMLButtonElement;
+    expect(confirmDeleteBtn).not.toBeNull();
+    confirmDeleteBtn.click();
     await vi.waitFor(() => {
       expect(mediaFetcher.delete).toHaveBeenCalledWith(
         expect.stringContaining("id=w-2"),
@@ -1038,6 +1206,10 @@ describe("Admin UI Widgets & AdminController", () => {
 
     // Inline edit on video reveals poster file replacement
     mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+    const v1MoreBtn = parent.querySelector(
+      '[data-item-id="v-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    v1MoreBtn.click();
     const editBtn = parent.querySelector(
       '[data-item-id="v-1"] [data-action="edit"]',
     ) as HTMLButtonElement;
@@ -1070,5 +1242,639 @@ describe("Admin UI Widgets & AdminController", () => {
     });
 
     widget.unmount();
+  });
+
+  it("maps HTTP and network errors into plain-Spanish librarian messages without raw codes or API paths", () => {
+    const tooLarge = mapAdminErrorMessage(
+      new AdminHttpError(413, "HTTP 413 from /api/admin/media/presign"),
+      "Error genérico",
+    );
+    expect(tooLarge).toBe(ADMIN_HTTP_ERROR_TEXT.PAYLOAD_TOO_LARGE);
+    expect(tooLarge).not.toContain("HTTP 413");
+    expect(tooLarge).not.toContain("/api/");
+
+    const badRequest = mapAdminErrorMessage(
+      new AdminHttpError(400, "HTTP 400 from /api/admin/media"),
+      "Error genérico",
+    );
+    expect(badRequest).toBe(ADMIN_HTTP_ERROR_TEXT.BAD_REQUEST);
+
+    const serverError = mapAdminErrorMessage(
+      new AdminHttpError(500, "Binary PUT failed with HTTP 500"),
+      "Error genérico",
+    );
+    expect(serverError).toBe(ADMIN_HTTP_ERROR_TEXT.SERVER_ERROR);
+
+    const networkError = mapAdminErrorMessage(
+      new TypeError("Failed to fetch"),
+      "Error genérico",
+    );
+    expect(networkError).toBe(ADMIN_HTTP_ERROR_TEXT.NETWORK_ERROR);
+
+    const domainSpanish = mapAdminErrorMessage(
+      new Error("El video supera el peso máximo permitido (100 MB)."),
+      "Error genérico",
+    );
+    expect(domainSpanish).toBe(
+      "El video supera el peso máximo permitido (100 MB).",
+    );
+  });
+
+  it("AdminLoginModalView renders SVG eye toggle for password visibility and hides internal API paths", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const authFetcher = new StubAdminFetcher();
+    authFetcher.loginResult = {
+      token: "signed.jwt.token",
+      user: { username: "maria_biblio", role: "librarian" },
+    };
+    const authStore = new AdminAuthStore(new InMemoryStorage(), authFetcher);
+    const modal = new AdminLoginModalView({ authStore });
+    modal.mount(parent);
+    modal.show();
+
+    const el = modal.getElement()!;
+    expect(el.textContent).toContain(ADMIN_UI_TEXT.LOGIN_TITLE);
+    expect(ADMIN_UI_TEXT.LOGIN_SERVICE_ERROR_MESSAGE).not.toContain("/api/");
+
+    const passInput = el.querySelector(
+      "#cv-admin-password",
+    ) as HTMLInputElement;
+    const toggleBtn = el.querySelector(
+      '[data-action="toggle-password"]',
+    ) as HTMLButtonElement;
+    expect(toggleBtn).not.toBeNull();
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
+    expect(passInput.type).toBe("password");
+
+    toggleBtn.click();
+    expect(passInput.type).toBe("text");
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD_ARIA,
+    );
+
+    toggleBtn.click();
+    expect(passInput.type).toBe("password");
+    expect(toggleBtn.querySelector("svg")).not.toBeNull();
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
+
+    modal.unmount();
+  });
+
+  it("AdminHeaderWidget displays signed-in username and AdminDashboardView uses plain-Spanish tabs and telemetry grid", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+
+    const authFetcher = new StubAdminFetcher();
+    authFetcher.loginResult = {
+      token: "signed.jwt.token",
+      user: { username: "maria_biblio", role: "librarian" },
+    };
+    const authStore = new AdminAuthStore(new InMemoryStorage(), authFetcher);
+    await authStore.login({ username: "maria_biblio", password: "pw" });
+
+    const dashboardStore = new AdminDashboardStore({
+      getToken: () => authStore.getState().token,
+      fetcher: new StubAdminFetcher(),
+    });
+    const mediaStore = new AdminMediaStore({
+      getToken: () => authStore.getState().token,
+      onUnauthorized: () => {},
+      fetcher: new StubAdminFetcher(),
+    });
+
+    const dashboardView = new AdminDashboardView({
+      authStore,
+      dashboardStore,
+      mediaStore,
+      onLogout: () => {},
+    });
+    dashboardView.mount(parent);
+
+    const el = dashboardView.getElement()!;
+    expect(el.textContent).toContain(ADMIN_UI_TEXT.HEADER_TITLE);
+    expect(el.textContent).toContain(ADMIN_UI_TEXT.HEADER_SUBTITLE);
+
+    expect(
+      el.querySelector('[data-admin-tab="telemetry"]')?.textContent,
+    ).toBe(ADMIN_UI_TEXT.TAB_TELEMETRY);
+    expect(el.querySelector('[data-admin-tab="media"]')?.textContent).toBe(
+      ADMIN_UI_TEXT.TAB_MEDIA,
+    );
+    expect(
+      el.querySelector('[data-admin-tab="playlists"]')?.textContent,
+    ).toBe(ADMIN_UI_TEXT.TAB_PLAYLISTS);
+
+    const telemetryGrid = el.querySelector(
+      `[data-admin-panel="telemetry"] .${ADMIN_UI_CLASSES.GRID_TELEMETRY}`,
+    );
+    expect(telemetryGrid).not.toBeNull();
+
+    dashboardView.unmount();
+  });
+
+  it("AttendanceChartWidget and SurveysTableWidget render plain-Spanish subtitles, date+time cells, and neutral empty rating badge", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const fetcher = new StubAdminFetcher();
+    fetcher.statsResult = {
+      activeSessions: 2,
+      hourlyAttendance: {
+        labels: [...ADMIN_DASHBOARD_CONSTANTS.DEFAULT_HOURLY_LABELS],
+        values: Array.from({ length: 24 }, () => 0),
+        peak: 5,
+      },
+      surveys: [
+        {
+          id: "s-date",
+          timestamp: Date.UTC(2026, 10, 23, 21, 30, 0), // 14:30 in UTC-7
+          rating: 5,
+          feedback: "Excelente guía",
+          viewMode: "vr",
+        },
+      ],
+      averageRating: 5,
+    };
+
+    const store = new AdminDashboardStore({
+      getToken: () => "jwt-token",
+      fetcher,
+    });
+    const chartWidget = new AttendanceChartWidget(store);
+    const surveyWidget = new SurveysTableWidget(store);
+    chartWidget.mount(parent);
+    surveyWidget.mount(parent);
+
+    // Empty state before hydration shows neutral rating badge
+    const avgBadge = surveyWidget
+      .getElement()!
+      .querySelector(`.${ADMIN_UI_CLASSES.SURVEY_AVG_BADGE}`) as HTMLElement;
+    expect(avgBadge.textContent).toBe(ADMIN_UI_TEXT.SURVEY_NO_RATINGS);
+    expect(chartWidget.getElement()!.textContent).toContain(
+      ADMIN_UI_TEXT.CHART_SUBTITLE,
+    );
+    expect(surveyWidget.getElement()!.textContent).toContain(
+      ADMIN_UI_TEXT.SURVEY_TITLE,
+    );
+
+    await store.fetchStats();
+
+    expect(avgBadge.textContent).toBe("★ 5.0 / 5.0");
+    const firstRowTimeCell = surveyWidget
+      .getElement()!
+      .querySelector(`tbody tr td.${ADMIN_UI_CLASSES.TABLE_TD_TIME}`);
+    expect(firstRowTimeCell?.textContent).toBe("23 nov 14:30");
+
+    chartWidget.unmount();
+    surveyWidget.unmount();
+  });
+
+  it("MediaManagerWidget renders visible labels, friendly format chips, collapsible 3D hint, validation feedback, cancelable delete, and download action", async () => {
+    const downloadTrigger = vi.fn();
+    const mediaFetcher: AdminNetworkFetcher = {
+      get: vi.fn(async (url: string) => {
+        if (url.includes("downloadId=w-1")) {
+          return {
+            downloadUrl: "https://r2.example.com/signed-w1",
+            filename: "estambre.webp",
+            expiresInSeconds: 300,
+          };
+        }
+        return {
+          items: [
+            {
+              id: "w-1",
+              roomId: RoomId.WIXARIKA,
+              standId: StandId.ARTE,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Estambre Ceremonial",
+              creatorName: "María Cruz",
+              description: "Tabla.",
+              mediaUrl: "https://pub.r2.dev/w-1.webp",
+              sortOrder: 0,
+            },
+            {
+              id: "w-2",
+              roomId: RoomId.WIXARIKA,
+              standId: StandId.ARTE,
+              mediaType: ExhibitMediaType.VIDEO_STEREO_SBS,
+              title: "Danza 3D",
+              creatorName: "",
+              description: "Video.",
+              mediaUrl: "https://pub.r2.dev/w-2.mp4",
+              posterUrl: "https://pub.r2.dev/w-2-poster.webp",
+              sortOrder: 1,
+            },
+          ],
+          storageUsageBytes: 1_048_576,
+          maxStorageBytes: 8_589_934_592,
+        };
+      }),
+      post: vi.fn(async () => ({})),
+      patch: vi.fn(async () => ({})),
+      delete: vi.fn(async () => ({ ok: true, storageUsageBytes: 0 })),
+      putBinary: vi.fn(async () => {}),
+    };
+
+    const mediaStore = new AdminMediaStore({
+      getToken: () => "jwt-token",
+      onUnauthorized: () => {},
+      fetcher: mediaFetcher,
+      downloadTrigger,
+    });
+    const widget = new MediaManagerWidget(mediaStore);
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    widget.mount(parent);
+    await mediaStore.fetchCatalog();
+    mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+
+    // Visible labels for filters & inputs
+    const labelsText = Array.from(parent.querySelectorAll("label")).map(
+      (l) => l.textContent,
+    );
+    expect(labelsText).toContain(ADMIN_UI_TEXT.MEDIA_ROOM_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.MEDIA_STAND_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.MEDIA_FILE_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.MEDIA_TITLE_LABEL);
+    expect(labelsText).toContain(ADMIN_UI_TEXT.MEDIA_FORMAT_LABEL);
+
+    // Friendly format chips instead of raw DB enums
+    const chips = Array.from(
+      parent.querySelectorAll(`.${ADMIN_UI_CLASSES.MEDIA_FORMAT_CHIP}`),
+    ).map((el) => el.textContent);
+    expect(chips).toEqual([
+      ADMIN_UI_TEXT.MEDIA_KIND_IMAGE_2D,
+      ADMIN_UI_TEXT.MEDIA_KIND_VIDEO_SBS,
+    ]);
+    expect(parent.textContent).not.toContain("IMAGE_2D");
+    expect(parent.textContent).not.toContain("VIDEO_STEREO_SBS");
+
+    // Modern custom file picker replaces native file input appearance and updates filename on selection/reset
+    const fileInput = parent.querySelector(
+      '[data-upload-field="file"]',
+    ) as HTMLInputElement;
+    const filePicker = fileInput.closest(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER}`,
+    ) as HTMLElement;
+    expect(filePicker).not.toBeNull();
+    const pickerBtn = filePicker.querySelector(
+      `.${ADMIN_UI_CLASSES.FILE_PICKER_BTN}`,
+    ) as HTMLButtonElement;
+    const pickerName = filePicker.querySelector(
+      '[data-file-name="true"]',
+    ) as HTMLElement;
+    expect(pickerBtn.querySelector("svg")).not.toBeNull();
+    expect(pickerName.textContent).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
+    const sampleFile = new File(["bytes"], "foto-ceremonial.jpg", {
+      type: "image/jpeg",
+    });
+    Object.defineProperty(fileInput, "files", {
+      value: [sampleFile],
+      configurable: true,
+    });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(pickerName.textContent).toContain("foto-ceremonial.jpg");
+
+    // Resetting clears selected filename label back to empty placeholder
+    Object.defineProperty(fileInput, "files", {
+      value: [],
+      configurable: true,
+    });
+    const formEl = fileInput.closest("form") as HTMLFormElement;
+    formEl.reset();
+    await Promise.resolve();
+    expect(pickerName.textContent).toBe(ADMIN_UI_TEXT.FILE_PICKER_EMPTY);
+
+    // No bottom <details> hint in MediaManagerWidget; format help sits beside label as hover-only popover
+    expect(parent.querySelector("details")).toBeNull();
+    const helpBtn = parent.querySelector(
+      '[data-help-toggle="format"]',
+    ) as HTMLButtonElement;
+    const helpPopover = parent.querySelector(
+      '[data-help-popover="format"]',
+    ) as HTMLElement;
+    const helpWrapper = helpBtn.closest(
+      `.${ADMIN_UI_CLASSES.FIELD_HELP_WRAPPER}`,
+    ) as HTMLElement;
+    expect(helpBtn).not.toBeNull();
+    expect(helpPopover).not.toBeNull();
+    expect(helpPopover.hidden).toBe(true);
+    expect(helpPopover.textContent).toContain("Half-SBS");
+
+    // Clicking the help icon does not toggle or change wrapper state (hover-only CSS)
+    helpBtn.click();
+    expect(helpPopover.hidden).toBe(true);
+    expect(helpWrapper.className).toBe(ADMIN_UI_CLASSES.FIELD_HELP_WRAPPER);
+
+    // Reorder buttons include accessible aria-label
+    const moveDownBtn = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="move-down"]',
+    ) as HTMLButtonElement;
+    expect(moveDownBtn.getAttribute("aria-label")).toBe(
+      ADMIN_UI_TEXT.MEDIA_MOVE_DOWN_ARIA,
+    );
+
+    // Submitting form without file renders inline validation error
+    const uploadForm = parent.querySelector("form") as HTMLFormElement;
+    uploadForm.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    expect(parent.textContent).toContain(ADMIN_UI_TEXT.MEDIA_MISSING_FILE_ERROR);
+
+    // Compact overflow menu hides Edit/Download/Delete until triggered; only one open at a time and dismisses on outside click / Escape
+    const moreW1 = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    const moreW2 = parent.querySelector(
+      '[data-item-id="w-2"] [data-action="more-actions"]',
+    ) as HTMLButtonElement;
+    const menuW1 = parent.querySelector(
+      '[data-item-id="w-1"] [role="menu"]',
+    ) as HTMLElement;
+    const menuW2 = parent.querySelector(
+      '[data-item-id="w-2"] [role="menu"]',
+    ) as HTMLElement;
+    expect(moreW1).not.toBeNull();
+    expect(menuW1.hidden).toBe(true);
+    moreW1.click();
+    expect(menuW1.hidden).toBe(false);
+
+    // Menu near bottom of viewport flips upward automatically so it stays visible without scrolling
+    vi.spyOn(moreW2, "getBoundingClientRect").mockReturnValue({
+      top: 720,
+      bottom: 760,
+      left: 300,
+      right: 340,
+      width: 40,
+      height: 40,
+      x: 300,
+      y: 720,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(menuW2, "getBoundingClientRect").mockReturnValue({
+      top: 766,
+      bottom: 916,
+      left: 170,
+      right: 340,
+      width: 170,
+      height: 150,
+      x: 170,
+      y: 766,
+      toJSON: () => ({}),
+    });
+    const origInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", {
+      value: 800,
+      configurable: true,
+    });
+    moreW2.click();
+    expect(menuW1.hidden).toBe(true);
+    expect(menuW2.hidden).toBe(false);
+    expect(menuW2.classList.contains("cv-admin-action-menu-list--up")).toBe(
+      true,
+    );
+    Object.defineProperty(window, "innerHeight", {
+      value: origInnerHeight,
+      configurable: true,
+    });
+
+    document.body.click();
+    expect(menuW2.hidden).toBe(true);
+
+    // Two-step delete cancel restores compact action strip without calling DELETE
+    moreW1.click();
+    const firstDeleteBtn = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="delete"]',
+    ) as HTMLButtonElement;
+    firstDeleteBtn.click();
+    const cancelDeleteBtn = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="cancel-delete"]',
+    ) as HTMLButtonElement;
+    expect(cancelDeleteBtn).not.toBeNull();
+    cancelDeleteBtn.click();
+    expect(
+      parent.querySelector('[data-item-id="w-1"] [data-action="more-actions"]'),
+    ).not.toBeNull();
+    expect(mediaFetcher.delete).not.toHaveBeenCalled();
+
+    // Download button inside overflow menu triggers presigned GET and downloadTrigger
+    (
+      parent.querySelector(
+        '[data-item-id="w-1"] [data-action="more-actions"]',
+      ) as HTMLButtonElement
+    ).click();
+    const downloadBtn = parent.querySelector(
+      '[data-item-id="w-1"] [data-action="download"]',
+    ) as HTMLButtonElement;
+    expect(downloadBtn).not.toBeNull();
+    downloadBtn.click();
+    await vi.waitFor(() => {
+      expect(downloadTrigger).toHaveBeenCalledWith(
+        "https://r2.example.com/signed-w1",
+        "estambre.webp",
+      );
+    });
+
+    // Real-time upload progress bar is hidden when idle and renders percentage while uploading
+    const progressEl = parent.querySelector(
+      '[data-upload-progress="media"]',
+    ) as HTMLElement;
+    expect(progressEl).not.toBeNull();
+    expect(progressEl.hidden).toBe(true);
+
+    let resolveUpload: (() => void) | null = null;
+    (mediaFetcher.post as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        media: {
+          key: "rooms/wixarika/arte/img.webp",
+          uploadUrl: "https://r2.example.com/img.webp",
+          headers: { "Content-Type": "image/webp" },
+        },
+      })
+      .mockResolvedValueOnce({
+        item: {
+          id: "w-3",
+          roomId: RoomId.WIXARIKA,
+          standId: StandId.ARTE,
+          mediaType: ExhibitMediaType.IMAGE_2D,
+          title: "Nueva Foto",
+          creatorName: "",
+          description: "",
+          mediaUrl: "https://pub.r2.dev/w-3.webp",
+          sortOrder: 2,
+        },
+      });
+    (mediaFetcher.putBinary as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _url: string,
+        _body: Blob,
+        _headers: Record<string, string>,
+        onProgress?: (p: { loaded: number; total: number; percent: number }) => void,
+      ) => {
+        onProgress?.({ loaded: 65, total: 100, percent: 65 });
+        await new Promise<void>((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+
+    const processorStub = {
+      optimizeImage: vi.fn(async () => ({
+        blob: new Blob(["webp"], { type: "image/webp" }),
+        mimeType: "image/webp" as const,
+        width: 800,
+        height: 600,
+      })),
+    };
+    const progressStore = new AdminMediaStore({
+      getToken: () => "jwt-token",
+      onUnauthorized: () => {},
+      fetcher: mediaFetcher,
+      processor: processorStub as never,
+    });
+    const progressWidget = new MediaManagerWidget(progressStore);
+    const p2 = document.createElement("div");
+    document.body.appendChild(p2);
+    progressWidget.mount(p2);
+
+    const uploadPromise = progressStore.uploadMedia({
+      roomId: RoomId.WIXARIKA,
+      standId: StandId.ARTE,
+      file: new File(["img"], "nueva.jpg", { type: "image/jpeg" }),
+      mediaKind: ExhibitMediaType.IMAGE_2D,
+      title: "Nueva Foto",
+      creatorName: "",
+      description: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(resolveUpload).not.toBeNull();
+      const bar = p2.querySelector(
+        '[data-upload-progress="media"]',
+      ) as HTMLElement;
+      expect(bar.hidden).toBe(false);
+      expect(bar.getAttribute("aria-valuenow")).toBe("65");
+      expect(bar.textContent).toContain("65%");
+    });
+
+    resolveUpload?.();
+    await uploadPromise;
+
+    const finishedBar = p2.querySelector(
+      '[data-upload-progress="media"]',
+    ) as HTMLElement;
+    expect(finishedBar.hidden).toBe(true);
+    progressWidget.unmount();
+
+    widget.unmount();
+  });
+
+  it("MediaManagerWidget displays edit confirmation inline inside the edited item card and auto-dismisses it", async () => {
+    vi.useFakeTimers();
+    try {
+      const mediaFetcher: AdminNetworkFetcher = {
+        get: vi.fn(async () => ({
+          items: [
+            {
+              id: "w-1",
+              roomId: RoomId.WIXARIKA,
+              standId: StandId.ARTE,
+              mediaType: ExhibitMediaType.IMAGE_2D,
+              title: "Estambre Ceremonial",
+              creatorName: "María Cruz",
+              description: "Tabla.",
+              mediaUrl: "https://pub.r2.dev/w-1.webp",
+              sortOrder: 0,
+            },
+          ],
+          storageUsageBytes: 100,
+          maxStorageBytes: 8_589_934_592,
+        })),
+        post: vi.fn(async () => ({})),
+        patch: vi.fn(async () => ({
+          item: {
+            id: "w-1",
+            roomId: RoomId.WIXARIKA,
+            standId: StandId.ARTE,
+            mediaType: ExhibitMediaType.IMAGE_2D,
+            title: "Estambre Actualizado",
+            creatorName: "María Cruz",
+            description: "Tabla.",
+            mediaUrl: "https://pub.r2.dev/w-1.webp",
+            sortOrder: 0,
+          },
+        })),
+        delete: vi.fn(async () => ({})),
+        putBinary: vi.fn(async () => {}),
+      };
+
+      const mediaStore = new AdminMediaStore({
+        getToken: () => "jwt-token",
+        onUnauthorized: () => {},
+        fetcher: mediaFetcher,
+      });
+      const widget = new MediaManagerWidget(mediaStore);
+      const parent = document.createElement("div");
+      document.body.appendChild(parent);
+      widget.mount(parent);
+      await mediaStore.fetchCatalog();
+      mediaStore.setSelection(RoomId.WIXARIKA, StandId.ARTE);
+
+      (
+        parent.querySelector(
+          '[data-item-id="w-1"] [data-action="more-actions"]',
+        ) as HTMLButtonElement
+      ).click();
+      const editBtn = parent.querySelector(
+        '[data-item-id="w-1"] [data-action="edit"]',
+      ) as HTMLButtonElement;
+      editBtn.click();
+
+      const titleInput = parent.querySelector(
+        '[data-item-id="w-1"] [data-edit-field="title"]',
+      ) as HTMLInputElement;
+      titleInput.value = "Estambre Actualizado";
+      const saveBtn = parent.querySelector(
+        '[data-item-id="w-1"] [data-action="save-edit"]',
+      ) as HTMLButtonElement;
+      saveBtn.click();
+
+      // Let async PATCH settle without running the 4s timer yet
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const topSuccessBanner = parent.querySelector(
+        `.${ADMIN_UI_CLASSES.SUCCESS_TEXT}`,
+      ) as HTMLElement;
+      expect(
+        topSuccessBanner.classList.contains(ADMIN_UI_CLASSES.SUCCESS_HIDDEN),
+      ).toBe(true);
+
+      const inlineSuccess = parent.querySelector(
+        '[data-item-id="w-1"] [data-item-success="true"]',
+      ) as HTMLElement;
+      expect(inlineSuccess).not.toBeNull();
+      expect(inlineSuccess.textContent).toBe(ADMIN_UI_TEXT.MEDIA_SUCCESS_EDIT);
+
+      await vi.advanceTimersByTimeAsync(4500);
+      expect(
+        parent.querySelector('[data-item-id="w-1"] [data-item-success="true"]'),
+      ).toBeNull();
+
+      widget.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

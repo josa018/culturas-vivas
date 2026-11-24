@@ -60,6 +60,20 @@ describe("api/_storage & api/_media-validation", () => {
     expect(presigned.expiresInSeconds).toBe(MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS);
     expect(presigned.uploadUrl).toContain("X-Amz-Algorithm=AWS4-HMAC-SHA256");
 
+    const downloadPresigned = await provider.createPresignedDownload({
+      objectKey: "rooms/wixarika/arte/a1.webp",
+      filename: "estambre.webp",
+    });
+    expect(downloadPresigned.expiresInSeconds).toBe(
+      MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    );
+    expect(downloadPresigned.downloadUrl).toContain(
+      "X-Amz-Algorithm=AWS4-HMAC-SHA256",
+    );
+    expect(downloadPresigned.downloadUrl).toContain(
+      "response-content-disposition=attachment",
+    );
+
     await expect(
       provider.deleteObject("rooms/wixarika/arte/a1.webp"),
     ).resolves.toBeUndefined();

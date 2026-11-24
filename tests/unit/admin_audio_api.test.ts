@@ -376,4 +376,68 @@ describe("Admin Audio API (/api/admin/audio)", () => {
     expect(getRes.getStatus()).toBe(200);
     expect(getRes.getBody().playbackMode).toBe("SHUFFLE");
   });
+
+  it("supports authenticated GET /api/admin/audio?downloadId=<id> with presigned attachment URL and local fallback", async () => {
+    const createPresignedDownload = vi.fn(async (input) => ({
+      key: input.objectKey,
+      downloadUrl: `https://r2.example/${input.objectKey}?response-content-disposition=attachment&sig=1`,
+      filename: input.filename,
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    }));
+    storageMock = {
+      ...storageMock,
+      createPresignedDownload,
+    };
+    const handler = buildHandler(true);
+
+    await handler(
+      {
+        method: "POST",
+        headers: { authorization: "Bearer token" },
+        body: {
+          id: "t1",
+          roomId: RoomId.LOBBY,
+          title: "Bienvenida Sierra",
+          mediaKey: "audio/lobby/t1.m4a",
+          mimeType: "audio/mp4",
+          fileSizeBytes: 1_000_000,
+        },
+      },
+      createMockRes().res,
+    );
+
+    const missingRes = createMockRes();
+    await handler(
+      {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+        query: { downloadId: "unknown" },
+      },
+      missingRes.res,
+    );
+    expect(missingRes.getStatus()).toBe(404);
+
+    const okRes = createMockRes();
+    await handler(
+      {
+        method: "GET",
+        headers: { authorization: "Bearer token" },
+        query: { downloadId: "t1" },
+      },
+      okRes.res,
+    );
+    expect(okRes.getStatus()).toBe(200);
+    expect(okRes.getHeader("cache-control")).toBe("no-store");
+    expect(createPresignedDownload).toHaveBeenCalledWith({
+      objectKey: "audio/lobby/t1.m4a",
+      filename: "bienvenida-sierra.m4a",
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    });
+    expect(okRes.getBody()).toEqual({
+      downloadUrl:
+        "https://r2.example/audio/lobby/t1.m4a?response-content-disposition=attachment&sig=1",
+      filename: "bienvenida-sierra.m4a",
+      expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+    });
+  });
 });

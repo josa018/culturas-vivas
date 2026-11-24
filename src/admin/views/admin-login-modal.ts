@@ -11,6 +11,7 @@ export class AdminLoginModalView {
   private container: HTMLElement | null = null;
   private userInput: HTMLInputElement | null = null;
   private passwordInput: HTMLInputElement | null = null;
+  private passwordToggleBtn: HTMLButtonElement | null = null;
   private submitButton: HTMLButtonElement | null = null;
   private errorElement: HTMLElement | null = null;
   private errorTextElement: HTMLElement | null = null;
@@ -47,11 +48,11 @@ export class AdminLoginModalView {
     title.className = ADMIN_UI_CLASSES.TITLE;
     title.textContent = ADMIN_UI_TEXT.LOGIN_TITLE;
 
-    header.appendChild(title);
+    header.append(title);
 
     const form = document.createElement("form");
     form.className = ADMIN_UI_CLASSES.FORM;
-    form.setAttribute("autocomplete", "off");
+    form.setAttribute("autocomplete", "on");
 
     // Error feedback element
     const errorContainer = document.createElement("div");
@@ -78,6 +79,7 @@ export class AdminLoginModalView {
     const userInput = document.createElement("input");
     userInput.id = "cv-admin-username";
     userInput.type = "text";
+    userInput.autocomplete = "username";
     userInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     userInput.setAttribute("required", "true");
     this.userInput = userInput;
@@ -93,14 +95,31 @@ export class AdminLoginModalView {
     passLabel.htmlFor = "cv-admin-password";
     passLabel.textContent = ADMIN_UI_TEXT.LOGIN_PASSWORD_LABEL;
 
+    const passwordWrapper = document.createElement("div");
+    passwordWrapper.className = ADMIN_UI_CLASSES.PASSWORD_WRAPPER;
+
     const passwordInput = document.createElement("input");
     passwordInput.id = "cv-admin-password";
     passwordInput.type = "password";
+    passwordInput.autocomplete = "current-password";
     passwordInput.className = ADMIN_UI_CLASSES.INPUT_TEXT;
     passwordInput.setAttribute("required", "true");
     this.passwordInput = passwordInput;
 
-    passGroup.append(passLabel, passwordInput);
+    const togglePasswordBtn = document.createElement("button");
+    togglePasswordBtn.type = "button";
+    togglePasswordBtn.className = ADMIN_UI_CLASSES.PASSWORD_TOGGLE_BTN;
+    togglePasswordBtn.setAttribute("data-action", "toggle-password");
+    this.passwordToggleBtn = togglePasswordBtn;
+    this.syncPasswordToggleState(false);
+    togglePasswordBtn.addEventListener("click", () => {
+      const shouldReveal = passwordInput.type === "password";
+      passwordInput.type = shouldReveal ? "text" : "password";
+      this.syncPasswordToggleState(shouldReveal);
+    });
+
+    passwordWrapper.append(passwordInput, togglePasswordBtn);
+    passGroup.append(passLabel, passwordWrapper);
 
     // Submit button
     const submitBtn = document.createElement("button");
@@ -146,6 +165,7 @@ export class AdminLoginModalView {
     }
     this.userInput = null;
     this.passwordInput = null;
+    this.passwordToggleBtn = null;
     this.submitButton = null;
     this.errorElement = null;
     this.errorTextElement = null;
@@ -259,6 +279,69 @@ export class AdminLoginModalView {
     }
     if (this.passwordInput) {
       this.passwordInput.value = "";
+      this.passwordInput.type = "password";
+    }
+    if (this.passwordToggleBtn) {
+      this.syncPasswordToggleState(false);
     }
   }
+
+  private syncPasswordToggleState(revealed: boolean): void {
+    if (!this.passwordToggleBtn) {
+      return;
+    }
+    this.passwordToggleBtn.replaceChildren(createEyeIconSvg(revealed));
+    this.passwordToggleBtn.setAttribute("aria-pressed", String(revealed));
+    this.passwordToggleBtn.setAttribute(
+      "aria-label",
+      revealed
+        ? ADMIN_UI_TEXT.LOGIN_HIDE_PASSWORD_ARIA
+        : ADMIN_UI_TEXT.LOGIN_SHOW_PASSWORD_ARIA,
+    );
+  }
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Builds an accessible Feather-style eye / eye-off SVG without innerHTML. */
+function createEyeIconSvg(revealed: boolean): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "20");
+  svg.setAttribute("height", "20");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const addPath = (d: string) => {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    svg.appendChild(p);
+  };
+
+  if (revealed) {
+    // Eye-off icon when password is visible (clicking hides it)
+    addPath("M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94");
+    addPath("M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19");
+    addPath("M14.12 14.12a3 3 0 1 1-4.24-4.24");
+    const slash = document.createElementNS(SVG_NS, "line");
+    slash.setAttribute("x1", "1");
+    slash.setAttribute("y1", "1");
+    slash.setAttribute("x2", "23");
+    slash.setAttribute("y2", "23");
+    svg.appendChild(slash);
+    return svg;
+  }
+
+  // Open eye icon when password is hidden (clicking reveals it)
+  addPath("M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z");
+  const pupil = document.createElementNS(SVG_NS, "circle");
+  pupil.setAttribute("cx", "12");
+  pupil.setAttribute("cy", "12");
+  pupil.setAttribute("r", "3");
+  svg.appendChild(pupil);
+  return svg;
 }

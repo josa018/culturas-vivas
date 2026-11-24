@@ -8,6 +8,17 @@ export class AdminHttpError extends Error {
   }
 }
 
+export interface BinaryUploadProgress {
+  readonly loaded: number;
+  readonly total: number;
+  readonly percent: number;
+}
+
+export interface UploadProgressState {
+  readonly percent: number;
+  readonly stageLabel: string;
+}
+
 export interface AdminNetworkFetcher {
   get<T = unknown>(url: string, headers?: Record<string, string>): Promise<T>;
   post<T = unknown>(
@@ -33,6 +44,7 @@ export interface AdminNetworkFetcher {
     url: string,
     body: Blob,
     headers?: Record<string, string>,
+    onProgress?: (progress: BinaryUploadProgress) => void,
   ): Promise<void>;
 }
 
@@ -55,6 +67,7 @@ export interface AdminMediaFetcher extends AdminNetworkFetcher {
     url: string,
     body: Blob,
     headers?: Record<string, string>,
+    onProgress?: (progress: BinaryUploadProgress) => void,
   ): Promise<void>;
 }
 
@@ -144,7 +157,53 @@ export function createDefaultAdminFetcher(): AdminMediaFetcher {
       url: string,
       body: Blob,
       headers: Record<string, string> = {},
+      onProgress?: (progress: BinaryUploadProgress) => void,
     ): Promise<void> => {
+      if (typeof XMLHttpRequest === "function") {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", url);
+          for (const [key, value] of Object.entries(headers)) {
+            xhr.setRequestHeader(key, value);
+          }
+          if (onProgress && xhr.upload) {
+            xhr.upload.addEventListener("progress", (event: ProgressEvent) => {
+              if (event.lengthComputable && event.total > 0) {
+                const percent = Math.min(
+                  100,
+                  Math.max(0, Math.round((event.loaded / event.total) * 100)),
+                );
+                onProgress({
+                  loaded: event.loaded,
+                  total: event.total,
+                  percent,
+                });
+              }
+            });
+          }
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(
+                new AdminHttpError(
+                  xhr.status,
+                  `Binary PUT failed with HTTP ${xhr.status}`,
+                ),
+              );
+            }
+          });
+          xhr.addEventListener("error", () => {
+            reject(new AdminHttpError(0, "Binary PUT network error"));
+          });
+          xhr.addEventListener("abort", () => {
+            reject(new AdminHttpError(0, "Binary PUT aborted"));
+          });
+          xhr.send(body);
+        });
+        return;
+      }
+
       const response = await fetch(url, {
         method: "PUT",
         headers,

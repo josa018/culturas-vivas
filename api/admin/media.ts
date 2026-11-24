@@ -14,11 +14,14 @@ import {
   isStandMediaKind,
   isVideoMediaKind,
   MEDIA_STORAGE_LIMITS,
+  MIME_TO_EXTENSION,
   validateMediaRecordCreate,
   validateQuotaCapacity,
 } from "../_media-validation.js";
 import {
+  buildSafeDownloadFilename,
   createMediaStorageProviderFromEnv,
+  resolveDownloadTargetPayload,
   type MediaStorageProvider,
 } from "../_storage.js";
 import {
@@ -79,8 +82,58 @@ export function createAdminMediaHandler(deps: AdminMediaHandlerDeps = {}) {
   const now = deps.now ?? (() => Date.now());
   const generateId = deps.generateId ?? (() => randomUUID());
 
-  async function handleGet(res: ServerlessResponse): Promise<void> {
+  async function handleGet(
+    req: ServerlessRequest,
+    res: ServerlessResponse,
+  ): Promise<void> {
+    const downloadId = extractQueryParam(req, "downloadId");
     const db = resolveDb();
+
+    if (downloadId !== null) {
+      const cleanId = downloadId.trim();
+      if (!cleanId) {
+        res
+          .status(API_HTTP_STATUS.BAD_REQUEST)
+          .json({ error: "Invalid downloadId." });
+        return;
+      }
+
+      const rowRes = await db.execute({
+        sql: "SELECT title, media_key, mime_type FROM room_media_items WHERE id = ?",
+        args: [cleanId],
+      });
+      if (rowRes.rows.length === 0) {
+        res
+          .status(API_HTTP_STATUS.NOT_FOUND)
+          .json({ error: "Media item not found." });
+        return;
+      }
+
+      const row = rowRes.rows[0] as {
+        title?: unknown;
+        media_key?: unknown;
+        mime_type?: unknown;
+      };
+      const mimeType = String(row.mime_type ?? "");
+      const ext = MIME_TO_EXTENSION[mimeType] ?? "bin";
+      const filename = buildSafeDownloadFilename(
+        String(row.title ?? ""),
+        ext,
+        "archivo",
+      );
+      const payload = await resolveDownloadTargetPayload({
+        storage: resolveStorage(),
+        objectKey: String(row.media_key ?? ""),
+        filename,
+        publicBaseUrl: resolvePublicBaseUrl(),
+        expiresInSeconds: MEDIA_STORAGE_LIMITS.PRESIGN_TTL_SECONDS,
+      });
+
+      res.setHeader?.("Cache-Control", "no-store");
+      res.status(API_HTTP_STATUS.OK).json(payload);
+      return;
+    }
+
     const rowsRes = await db.execute(
       `SELECT
          id, room_id, stand_id, media_kind, title, creator_name, description,
@@ -527,7 +580,7 @@ export function createAdminMediaHandler(deps: AdminMediaHandlerDeps = {}) {
     try {
       switch (req.method) {
         case "GET":
-          await handleGet(res);
+          await handleGet(req, res);
           return;
         case "POST":
           await handlePost(req, res);

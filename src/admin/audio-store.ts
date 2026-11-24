@@ -1,14 +1,21 @@
 import { DEFAULT_ROOM_ID, RoomId } from "../shared/room-catalog";
+import { mapAdminErrorMessage } from "./admin-error-mapper";
 import {
   AdminHttpError,
   createDefaultAdminFetcher,
   type AdminNetworkFetcher,
+  type UploadProgressState,
 } from "./admin-http-client";
 import {
   ADMIN_AUDIO_ENDPOINTS,
   ADMIN_AUDIO_LIMITS,
   ADMIN_MEDIA_LIMITS,
+  ADMIN_UI_TEXT,
 } from "./constants";
+import {
+  createDefaultAdminDownloadTrigger,
+  type AdminDownloadTrigger,
+} from "./download-trigger";
 
 export type AdminAudioPlaybackMode = "SEQUENTIAL" | "SHUFFLE";
 
@@ -34,7 +41,9 @@ export interface AdminAudioState {
   readonly tracks: readonly AdminAudioTrackRecord[];
   readonly isLoading: boolean;
   readonly isUploading: boolean;
+  readonly uploadProgress: UploadProgressState | null;
   readonly error: string | null;
+  readonly successMessage: string | null;
   readonly storageUsageBytes: number;
   readonly maxStorageBytes: number;
 }
@@ -61,6 +70,12 @@ export interface AdminAudioStoreOptions {
   readonly onUnauthorized: () => void;
   readonly fetcher?: AdminNetworkFetcher;
   readonly probeDurationMs?: AudioDurationProbe;
+  readonly downloadTrigger?: AdminDownloadTrigger;
+}
+
+interface AudioDownloadResponsePayload {
+  readonly downloadUrl?: string;
+  readonly filename?: string;
 }
 
 interface PresignAudioTarget {
@@ -182,6 +197,7 @@ export class AdminAudioStore {
   private readonly getToken: () => string | null;
   private readonly onUnauthorized: () => void;
   private readonly probeDurationMs: AudioDurationProbe;
+  private readonly downloadTrigger: AdminDownloadTrigger;
   private readonly listeners = new Set<AdminAudioListener>();
 
   private state: AdminAudioState = {
@@ -190,7 +206,9 @@ export class AdminAudioStore {
     tracks: [],
     isLoading: false,
     isUploading: false,
+    uploadProgress: null,
     error: null,
+    successMessage: null,
     storageUsageBytes: 0,
     maxStorageBytes: ADMIN_MEDIA_LIMITS.MAX_TOTAL_BYTES,
   };
@@ -201,6 +219,8 @@ export class AdminAudioStore {
     this.fetcher = options.fetcher ?? createDefaultAdminFetcher();
     this.probeDurationMs =
       options.probeDurationMs ?? createDefaultAudioDurationProbe();
+    this.downloadTrigger =
+      options.downloadTrigger ?? createDefaultAdminDownloadTrigger();
   }
 
   public getState(): AdminAudioState {
@@ -216,8 +236,12 @@ export class AdminAudioStore {
   }
 
   public async setRoom(roomId: RoomId): Promise<void> {
-    this.updateState({ selectedRoomId: roomId, error: null });
+    this.updateState({ selectedRoomId: roomId, error: null, successMessage: null });
     await this.fetchPlaylist(roomId);
+  }
+
+  public setValidationError(message: string): void {
+    this.updateState({ error: message, successMessage: null });
   }
 
   public async fetchPlaylist(
@@ -228,7 +252,7 @@ export class AdminAudioStore {
       return;
     }
 
-    this.updateState({ isLoading: true, error: null });
+    this.updateState({ isLoading: true, error: null, successMessage: null });
     try {
       const payload = await this.fetcher.get<AudioListResponsePayload>(
         `${ADMIN_AUDIO_ENDPOINTS.AUDIO}?roomId=${encodeURIComponent(roomId)}`,
@@ -283,7 +307,27 @@ export class AdminAudioStore {
       return;
     }
 
-    this.updateState({ isUploading: true, error: null });
+    this.updateState({
+      isUploading: true,
+      uploadProgress: {
+        percent: 5,
+        stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_PREPARING,
+      },
+      error: null,
+      successMessage: null,
+    });
+    const emitUploadPercent = (rawPercent: number) => {
+      const scaled = Math.min(
+        95,
+        Math.max(10, Math.round(10 + (rawPercent * 85) / 100)),
+      );
+      this.updateState({
+        uploadProgress: {
+          percent: scaled,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_UPLOADING,
+        },
+      });
+    };
     try {
       const durationMs = await this.probeDurationMs(input.file);
       const presign = await this.fetcher.post<PresignAudioResponsePayload>(
@@ -297,12 +341,20 @@ export class AdminAudioStore {
         headers,
       );
 
+      emitUploadPercent(0);
       await this.fetcher.putBinary(
         presign.audio.uploadUrl,
         input.file,
         presign.audio.headers,
+        (progress) => emitUploadPercent(progress.percent),
       );
 
+      this.updateState({
+        uploadProgress: {
+          percent: 96,
+          stageLabel: ADMIN_UI_TEXT.UPLOAD_STAGE_SAVING,
+        },
+      });
       const created = await this.fetcher.post<AudioTrackResponsePayload>(
         ADMIN_AUDIO_ENDPOINTS.AUDIO,
         {
@@ -332,10 +384,13 @@ export class AdminAudioStore {
           this.state.storageUsageBytes + input.file.size,
         maxStorageBytes: created.maxStorageBytes ?? this.state.maxStorageBytes,
         isUploading: false,
+        uploadProgress: null,
+        successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_UPLOAD,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo subir la pista de audio.", {
         isUploading: false,
+        uploadProgress: null,
       });
     }
   }
@@ -389,7 +444,11 @@ export class AdminAudioStore {
         const nextTracks = Array.isArray(response?.tracks)
           ? [...response.tracks].sort((a, b) => a.sortOrder - b.sortOrder)
           : this.state.tracks;
-        this.updateState({ tracks: nextTracks, error: null });
+        this.updateState({
+          tracks: nextTracks,
+          error: null,
+          successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_REORDER,
+        });
       }
     } catch (error) {
       this.handleApiError(error, "No se pudo reordenar la playlist.");
@@ -416,6 +475,7 @@ export class AdminAudioStore {
             track.id === input.id ? response.track : track,
           ),
           error: null,
+          successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_EDIT,
         });
       }
     } catch (error) {
@@ -439,7 +499,11 @@ export class AdminAudioStore {
         headers,
       );
       if (roomId === this.state.selectedRoomId) {
-        this.updateState({ playbackMode, error: null });
+        this.updateState({
+          playbackMode,
+          error: null,
+          successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_MODE,
+        });
       }
     } catch (error) {
       this.handleApiError(
@@ -467,9 +531,35 @@ export class AdminAudioStore {
         maxStorageBytes:
           response?.maxStorageBytes ?? this.state.maxStorageBytes,
         error: null,
+        successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_DELETE,
       });
     } catch (error) {
       this.handleApiError(error, "No se pudo eliminar la pista.");
+    }
+  }
+
+  public async requestDownload(id: string): Promise<void> {
+    const headers = this.buildAuthHeaders();
+    if (!headers) {
+      return;
+    }
+
+    this.updateState({ error: null, successMessage: null });
+    try {
+      const payload = await this.fetcher.get<AudioDownloadResponsePayload>(
+        `${ADMIN_AUDIO_ENDPOINTS.AUDIO}?downloadId=${encodeURIComponent(id)}`,
+        headers,
+      );
+      if (!payload?.downloadUrl) {
+        throw new Error(ADMIN_UI_TEXT.AUDIO_ERROR_DOWNLOAD);
+      }
+      this.downloadTrigger(payload.downloadUrl, payload.filename ?? "pista.mp3");
+      this.updateState({
+        error: null,
+        successMessage: ADMIN_UI_TEXT.AUDIO_SUCCESS_DOWNLOAD,
+      });
+    } catch (error) {
+      this.handleApiError(error, ADMIN_UI_TEXT.AUDIO_ERROR_DOWNLOAD);
     }
   }
 
@@ -491,12 +581,12 @@ export class AdminAudioStore {
       error instanceof AdminHttpError &&
       error.status === HTTP_STATUS_UNAUTHORIZED
     ) {
-      this.updateState({ ...extraPatch, error: null });
+      this.updateState({ ...extraPatch, error: null, successMessage: null });
       this.onUnauthorized();
       return;
     }
-    const message = error instanceof Error ? error.message : fallbackMessage;
-    this.updateState({ ...extraPatch, error: message });
+    const message = mapAdminErrorMessage(error, fallbackMessage);
+    this.updateState({ ...extraPatch, error: message, successMessage: null });
   }
 
   private updateState(patch: Partial<AdminAudioState>): void {
