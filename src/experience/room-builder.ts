@@ -214,7 +214,8 @@ export class ExhibitRoomBuilder {
           depth: 0.95,
           yOffset: -1.18,
         });
-        exhibitRoot.append(pedestal, modelGroup, contactShadow);
+        pedestal.appendChild(contactShadow);
+        exhibitRoot.append(pedestal, modelGroup);
         break;
       }
 

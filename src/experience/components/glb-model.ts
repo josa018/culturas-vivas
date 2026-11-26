@@ -1,5 +1,9 @@
 import { GLB_FALLBACK_COLORS, ROOM_LAYOUT_TOKENS } from "../constants";
-import { computeModelNormalizationTransform } from "../model-normalizer";
+import {
+  computeModelNormalizationTransform,
+  measureLocalObjectBounds,
+  type Box3Constructor,
+} from "../model-normalizer";
 
 export interface GlbModelComponentData {
   readonly src: string;
@@ -9,13 +13,11 @@ export interface GlbModelComponentData {
 interface ThreeLikeObject3D {
   scale?: { set?: (x: number, y: number, z: number) => void };
   position?: { set?: (x: number, y: number, z: number) => void };
+  updateMatrixWorld?: (force?: boolean) => void;
 }
 
-interface ThreeLikeBox3 {
-  min: { x: number; y: number; z: number };
-  max: { x: number; y: number; z: number };
-  setFromObject: (obj: unknown) => ThreeLikeBox3;
-  isEmpty?: () => boolean;
+export interface NormalizeLoadedMeshDependencies {
+  readonly Box3?: Box3Constructor;
 }
 
 export interface GlbModelEntity extends HTMLElement {
@@ -65,28 +67,26 @@ function createFallbackSculpture(): HTMLElement {
   return group;
 }
 
-function normalizeLoadedMesh(
+export function normalizeLoadedMesh(
   rootObj: unknown,
   maxExtent: number,
+  deps: NormalizeLoadedMeshDependencies = {},
 ): void {
-  const threeGlobal = (
-    globalThis as unknown as {
-      THREE?: { Box3?: new () => ThreeLikeBox3 };
-    }
-  ).THREE;
+  const globalThree = globalThis as unknown as {
+    AFRAME?: { THREE?: { Box3?: Box3Constructor } };
+    THREE?: { Box3?: Box3Constructor };
+  };
+  const box3Ctor =
+    deps.Box3 ?? globalThree.AFRAME?.THREE?.Box3 ?? globalThree.THREE?.Box3;
 
-  if (!threeGlobal?.Box3 || !rootObj) {
-    return;
-  }
-
-  const box = new threeGlobal.Box3().setFromObject(rootObj);
-  if (typeof box.isEmpty === "function" && box.isEmpty()) {
+  const bounds = measureLocalObjectBounds(rootObj, box3Ctor);
+  if (!bounds) {
     return;
   }
 
   const transform = computeModelNormalizationTransform(
-    box.min,
-    box.max,
+    bounds.min,
+    bounds.max,
     maxExtent,
   );
   const obj3D = rootObj as ThreeLikeObject3D;
@@ -96,6 +96,7 @@ function normalizeLoadedMesh(
     transform.offset.y,
     transform.offset.z,
   );
+  obj3D.updateMatrixWorld?.(true);
 }
 
 export function createGlbModelComponentDefinition() {
