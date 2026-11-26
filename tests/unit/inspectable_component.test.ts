@@ -9,8 +9,10 @@ import {
   ExhibitMediaType,
   EXHIBIT_DIMENSIONS,
   FOCAL_INSPECTION_DISTANCE,
+  INSPECTION_TARGET_TOKENS,
   InspectionState,
   INSPECTION_TIMINGS,
+  PLAYER_RIG_TOKENS,
 } from "../../src/experience/constants";
 import { ExhibitInspectionController } from "../../src/experience/inspection-controller";
 
@@ -135,17 +137,17 @@ describe("A-Frame Inspectable Component", () => {
     expect(instance.state).toBe(InspectionState.INSPECTING);
     expect(instance.billboardEl?.getAttribute("visible")).toBe("true");
     expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
-    expect(mockEl.getAttribute("position")).toBe("0 1.78 -1.4");
+    expect(mockEl.getAttribute("position")).toBe("0 1.4 -1.4");
 
     const inspectAnim = mockEl.getAttribute("animation__inspect");
     expect(inspectAnim).toContain(
       `dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}`,
     );
     expect(inspectAnim).toContain("from: 0 1.4 -2.8");
-    expect(inspectAnim).toContain("to: 0 1.78 -1.4");
+    expect(inspectAnim).toContain("to: 0 1.4 -1.4");
 
     // Pedestal counter-translation keeps pedestal anchored in gallery space
-    expect(pedestal.getAttribute("position")).toBe("0 -0.78 -1.4");
+    expect(pedestal.getAttribute("position")).toBe("0 -0.4 -1.4");
 
     instance.tick(0, 16);
     instance.tick(16, 250);
@@ -186,7 +188,7 @@ describe("A-Frame Inspectable Component", () => {
     // Position is deferred until animationcomplete__inspect fires
     expect(mockEl.getAttribute("position")).toBe("0 1.4 -2.8");
     mockEl.dispatchEvent(new Event("animationcomplete__inspect"));
-    expect(mockEl.getAttribute("position")).toBe("0 1.78 -1.4");
+    expect(mockEl.getAttribute("position")).toBe("0 1.4 -1.4");
 
     instance.billboardEl?.dispatchEvent(new Event("animationcomplete__panel_in"));
     expect(instance.billboardEl?.getAttribute("scale")).toBe("1 1 1");
@@ -324,7 +326,7 @@ describe("A-Frame Inspectable Component", () => {
 
     instB.inspect();
     expect(instB.state).toBe(InspectionState.INSPECTING);
-    expect(elB.getAttribute("position")).toBe("0.919 1.78 -0.919");
+    expect(elB.getAttribute("position")).toBe("0.919 1.4 -0.919");
     expect(instA.state).toBe(InspectionState.IDLE);
     expect(elA.getAttribute("position")).toBe("0 1.4 -2.8");
     expect(instA.billboardEl?.getAttribute("visible")).toBe("false");
@@ -597,5 +599,74 @@ describe("A-Frame Inspectable Component", () => {
     instance.returnToGallery();
     expect(pedestal.getAttribute("position")).toBe("0 0 0");
     expect(pedestal.getAttribute("animation__pedestal_return")).toContain("to: 0 0 0");
+  });
+
+  it("keeps .cv-model-pedestal stationary without synchronous snap or lost return origin when AFRAME is active and lowers MODEL_INSPECTION_Y_M below eye height", () => {
+    (globalThis as unknown as { AFRAME: unknown }).AFRAME = {};
+    expect(INSPECTION_TARGET_TOKENS.MODEL_INSPECTION_Y_M).toBeLessThan(
+      PLAYER_RIG_TOKENS.EYE_HEIGHT_M,
+    );
+
+    const def = createInspectableComponentDefinition();
+    const mockEl = createMockEntity({ x: 0, y: 1.2, z: -3.2 }, { x: 0, y: 0, z: 0 });
+    const pedestal = createMockEntity({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+    pedestal.setAttribute("class", "cv-model-pedestal");
+
+    // Simulate A-Frame getAttribute("position") returning a parsed vec3 object
+    const rawGetAttr = pedestal.getAttribute.bind(pedestal);
+    let pedAttrVec = { x: 0, y: 0, z: 0 };
+    pedestal.getAttribute = ((name: string) => {
+      if (name === "position") {
+        return pedAttrVec;
+      }
+      return rawGetAttr(name);
+    }) as typeof pedestal.getAttribute;
+    const rawSetAttr = pedestal.setAttribute.bind(pedestal);
+    pedestal.setAttribute = ((name: string, value: string) => {
+      if (name === "position" && typeof value === "string") {
+        const [x, y, z] = value.split(/\s+/).map(Number);
+        pedAttrVec = { x, y, z };
+      }
+      rawSetAttr(name, value);
+    }) as typeof pedestal.setAttribute;
+    mockEl.appendChild(pedestal);
+
+    const instance: InspectableComponentInstance = Object.create(def);
+    instance.el = mockEl as unknown as InspectableComponentInstance["el"];
+    instance.data = {
+      id: "exhibit-wixarika-artifact",
+      focalDistance: INSPECTION_TARGET_TOKENS.MODEL_FOCAL_DISTANCE_M,
+      autoRotate: true,
+      rotationSpeed: 0.35,
+      title: "Pieza Ceremonial Wixárika",
+      description: "Desc",
+      mediaType: ExhibitMediaType.MODEL_3D,
+    };
+
+    instance.init();
+    instance.inspect();
+
+    // Must NOT snap pedestal position synchronously while exhibit is still animating
+    expect(pedAttrVec).toEqual({ x: 0, y: 0, z: 0 });
+    expect(pedestal.getAttribute("animation__pedestal")).toContain("from: 0 0 0");
+
+    // Simulate A-Frame animation reaching counter-translated pose
+    const expectedPedY = Number((1.2 - INSPECTION_TARGET_TOKENS.MODEL_INSPECTION_Y_M).toFixed(3));
+    const expectedPedZ = -1.8;
+    pedestal.object3D.position = { x: 0, y: expectedPedY, z: expectedPedZ };
+    pedAttrVec = { x: 0, y: expectedPedY, z: expectedPedZ };
+    mockEl.object3D.position = { x: 0, y: INSPECTION_TARGET_TOKENS.MODEL_INSPECTION_Y_M, z: -1.4 };
+
+    instance.returnToGallery();
+
+    // Must animate back from live counter-translated pose (NOT "0 0 0") and NOT snap to "0 0 0"
+    expect(pedestal.getAttribute("animation__pedestal_return")).toContain(
+      `from: 0 ${expectedPedY} ${expectedPedZ}`,
+    );
+    expect(pedestal.getAttribute("animation__pedestal_return")).toContain("to: 0 0 0");
+    expect(pedAttrVec).toEqual({ x: 0, y: expectedPedY, z: expectedPedZ });
+
+    pedestal.dispatchEvent(new Event("animationcomplete__pedestal_return"));
+    expect(pedAttrVec).toEqual({ x: 0, y: 0, z: 0 });
   });
 });

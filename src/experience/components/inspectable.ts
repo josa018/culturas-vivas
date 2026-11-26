@@ -66,6 +66,8 @@ export interface InspectableComponentInstance {
   hideBillboardTimer: ReturnType<typeof setTimeout> | null;
   inspectCompleteHandler: (() => void) | null;
   returnCompleteHandler: (() => void) | null;
+  pedestalInspectCompleteHandler: (() => void) | null;
+  pedestalReturnCompleteHandler: (() => void) | null;
   panelInCompleteHandler: (() => void) | null;
   panelOutCompleteHandler: (() => void) | null;
   init: () => void;
@@ -112,6 +114,40 @@ function setClickableState(el: HTMLElement | null, enabled: boolean): void {
   el.setAttribute("class", filtered.join(" "));
 }
 
+function sampleEntityPositionAttr(el: HTMLElement, fallback: string): string {
+  const objPos = (
+    el as unknown as {
+      object3D?: { position?: { x?: number; y?: number; z?: number } };
+    }
+  ).object3D?.position;
+  if (
+    objPos &&
+    typeof objPos.x === "number" &&
+    typeof objPos.y === "number" &&
+    typeof objPos.z === "number" &&
+    Number.isFinite(objPos.x) &&
+    Number.isFinite(objPos.y) &&
+    Number.isFinite(objPos.z)
+  ) {
+    return `${Number(objPos.x.toFixed(3))} ${Number(objPos.y.toFixed(3))} ${Number(objPos.z.toFixed(3))}`;
+  }
+  const attrPos = el.getAttribute("position");
+  if (typeof attrPos === "string" && attrPos.trim().length > 0) {
+    return attrPos;
+  }
+  if (attrPos && typeof attrPos === "object") {
+    const obj = attrPos as Record<string, number>;
+    if (
+      Number.isFinite(obj.x) &&
+      Number.isFinite(obj.y) &&
+      Number.isFinite(obj.z)
+    ) {
+      return `${Number(obj.x.toFixed(3))} ${Number(obj.y.toFixed(3))} ${Number(obj.z.toFixed(3))}`;
+    }
+  }
+  return fallback;
+}
+
 function clearPendingTimersAndListeners(
   instance: InspectableComponentInstance,
 ): void {
@@ -136,6 +172,23 @@ function clearPendingTimersAndListeners(
       instance.returnCompleteHandler,
     );
     instance.returnCompleteHandler = null;
+  }
+  const pedestal =
+    instance.el.querySelector(".cv-model-pedestal") ??
+    instance.el.querySelector("a-cylinder");
+  if (pedestal && instance.pedestalInspectCompleteHandler) {
+    pedestal.removeEventListener?.(
+      "animationcomplete__pedestal",
+      instance.pedestalInspectCompleteHandler,
+    );
+    instance.pedestalInspectCompleteHandler = null;
+  }
+  if (pedestal && instance.pedestalReturnCompleteHandler) {
+    pedestal.removeEventListener?.(
+      "animationcomplete__pedestal_return",
+      instance.pedestalReturnCompleteHandler,
+    );
+    instance.pedestalReturnCompleteHandler = null;
   }
   if (instance.billboardEl && instance.panelInCompleteHandler) {
     instance.billboardEl.removeEventListener?.(
@@ -181,6 +234,8 @@ export function createInspectableComponentDefinition() {
       this.hideBillboardTimer = null;
       this.inspectCompleteHandler = null;
       this.returnCompleteHandler = null;
+      this.pedestalInspectCompleteHandler = null;
+      this.pedestalReturnCompleteHandler = null;
       this.panelInCompleteHandler = null;
       this.panelOutCompleteHandler = null;
       const initialPos = this.el.getAttribute("position");
@@ -445,15 +500,39 @@ export function createInspectableComponentDefinition() {
         const dx = targetPos.x - this.galleryPosition.x;
         const dy = targetPos.y - this.galleryPosition.y;
         const dz = targetPos.z - this.galleryPosition.z;
-        const pedX = Number((-dx).toFixed(3));
+        const yawRad = (this.galleryRotation.y * Math.PI) / 180;
+        const cosY = Math.cos(yawRad);
+        const sinY = Math.sin(yawRad);
+        const pedX = Number((-dx * cosY + dz * sinY).toFixed(3));
         const pedY = Number((restY - dy).toFixed(3));
-        const pedZ = Number((-dz).toFixed(3));
+        const pedZ = Number((-dx * sinY - dz * cosY).toFixed(3));
+        const pedFrom = sampleEntityPositionAttr(pedestal, `0 ${restY} 0`);
+        const pedTo = `${pedX} ${pedY} ${pedZ}`;
         pedestal.removeAttribute("animation__pedestal_return");
         pedestal.setAttribute(
           "animation__pedestal",
-          `property: position; from: 0 ${restY} 0; to: ${pedX} ${pedY} ${pedZ}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
+          `property: position; from: ${pedFrom}; to: ${pedTo}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
-        pedestal.setAttribute("position", `${pedX} ${pedY} ${pedZ}`);
+        if (!hasAFrame) {
+          pedestal.setAttribute("position", pedTo);
+        } else if (typeof pedestal.addEventListener === "function") {
+          const onPedestalInspectComplete = () => {
+            if (this.transitionEpoch !== epoch) {
+              return;
+            }
+            pedestal.setAttribute("position", pedTo);
+            pedestal.removeEventListener?.(
+              "animationcomplete__pedestal",
+              onPedestalInspectComplete,
+            );
+            this.pedestalInspectCompleteHandler = null;
+          };
+          this.pedestalInspectCompleteHandler = onPedestalInspectComplete;
+          pedestal.addEventListener(
+            "animationcomplete__pedestal",
+            onPedestalInspectComplete,
+          );
+        }
       }
 
       // Sub-exhibit billboard animated entrance (cancelable delay avoids A-Frame delay timer leak)
@@ -595,7 +674,7 @@ export function createInspectableComponentDefinition() {
         }
       }
 
-      // Restore pedestal grounded position
+      // Restore pedestal grounded position without synchronous snap in A-Frame mode
       const pedestal =
         this.el.querySelector(".cv-model-pedestal") ??
         this.el.querySelector("a-cylinder");
@@ -604,15 +683,32 @@ export function createInspectableComponentDefinition() {
           ? STATION_ARCHITECTURE_TOKENS.PEDESTAL_REST_Y
           : -0.4;
         const restPos = `0 ${restY} 0`;
-        const currentPedPos = pedestal.getAttribute("position");
-        const pedFrom =
-          typeof currentPedPos === "string" ? currentPedPos : restPos;
+        const pedFrom = sampleEntityPositionAttr(pedestal, restPos);
         pedestal.removeAttribute("animation__pedestal");
         pedestal.setAttribute(
           "animation__pedestal_return",
           `property: position; from: ${pedFrom}; to: ${restPos}; dur: ${INSPECTION_TIMINGS.ANIMATION_DURATION_MS}; easing: ${INSPECTION_TIMINGS.ANIMATION_EASING}`,
         );
-        pedestal.setAttribute("position", restPos);
+        if (!isAFrameActive()) {
+          pedestal.setAttribute("position", restPos);
+        } else if (typeof pedestal.addEventListener === "function") {
+          const onPedestalReturnComplete = () => {
+            if (this.transitionEpoch !== epoch) {
+              return;
+            }
+            pedestal.setAttribute("position", restPos);
+            pedestal.removeEventListener?.(
+              "animationcomplete__pedestal_return",
+              onPedestalReturnComplete,
+            );
+            this.pedestalReturnCompleteHandler = null;
+          };
+          this.pedestalReturnCompleteHandler = onPedestalReturnComplete;
+          pedestal.addEventListener(
+            "animationcomplete__pedestal_return",
+            onPedestalReturnComplete,
+          );
+        }
       }
 
       // Smooth A-Frame animation back to gallery position sampling live 3D coordinates
